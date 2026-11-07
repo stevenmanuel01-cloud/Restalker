@@ -1,8 +1,8 @@
 {
- "version": "v106",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v106_update.zip",
- "sha256": "2cc0a3b3db942eb181e169465032f7ff11557b99bec3ecc4e05d3d8505ed8bc8",
- "size": 665774,
- "notes": "No second page tab after an update",
- "files": 73
+ "version": "v107",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v107_update.zip",
+ "sha256": "f56de7d0a90980d720b7bb1f67d5b35f5efc4ab70a3c06da46d4440b35587081",
+ "size": 668922,
+ "notes": "Diagnostics: who sells it on the kept Amazon pages; which Amazon listing each tracker watches",
+ "files": 74
 }
