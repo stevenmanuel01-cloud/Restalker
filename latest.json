@@ -1,8 +1,8 @@
 {
- "version": "v105",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v105_update.zip",
- "sha256": "f4e8978510b85df62d3bcca25082b515cb4bbb0f290822e5a67d336f22543583",
- "size": 665217,
- "notes": "Update button next to the version; more Amazon page reads; tracker-alert evidence kept",
+ "version": "v106",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v106_update.zip",
+ "sha256": "2cc0a3b3db942eb181e169465032f7ff11557b99bec3ecc4e05d3d8505ed8bc8",
+ "size": 665774,
+ "notes": "No second page tab after an update",
  "files": 73
 }
