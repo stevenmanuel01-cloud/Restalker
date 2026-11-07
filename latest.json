@@ -1,8 +1,8 @@
 {
- "version": "v103",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v103_update.zip",
- "sha256": "dd6aecb3b18d3a1b6a3f4484d7638b283d0b3f3e2c6edd6a8abe3e3498053787",
- "size": 661333,
- "notes": "Product squares: a browser that keeps seeing it for sale wins over browsers that do not load it",
+ "version": "v104",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v104_update.zip",
+ "sha256": "c56428373091585f72ebd01e7035140c42ae5166670751c2b01bedfcdcd1d691",
+ "size": 662866,
+ "notes": "Update restarts Restalker by itself",
  "files": 73
 }
