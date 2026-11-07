@@ -1,8 +1,8 @@
 {
- "version": "v104",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v104_update.zip",
- "sha256": "c56428373091585f72ebd01e7035140c42ae5166670751c2b01bedfcdcd1d691",
- "size": 662866,
- "notes": "Update restarts Restalker by itself",
+ "version": "v104b",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v104b_update.zip",
+ "sha256": "c22cf7c82a07fce5133e3f8806f4ac996925151ca73a22dc9dc88adfd02a27d6",
+ "size": 663052,
+ "notes": "Test release: checks that Update restarts Restalker by itself (nothing else changed)",
  "files": 73
 }
