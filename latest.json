@@ -1,8 +1,8 @@
 {
- "version": "v109",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v109_update.zip",
- "sha256": "7ecb132104bf78d794e7e4ac2bc135deb2767ce6069385d181507f253d429b77",
- "size": 672563,
- "notes": "More than one link per square; a tracker's other Amazon page added by itself; one purchase per product across all its pages",
+ "version": "v110",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v110_update.zip",
+ "sha256": "c8d3b5e65e3d13da7e2bf2ba3ebe326cfeb7f265ca4454164e1e0c0914d4521c",
+ "size": 674911,
+ "notes": "Less game lag: no memory churn, Restalker keeps to half the cores while a game runs; graphics-card use in diagnostics",
  "files": 74
 }
