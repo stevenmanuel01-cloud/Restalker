@@ -1,8 +1,8 @@
 {
- "version": "v108",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v108_update.zip",
- "sha256": "1a19ffb9e9982d86c5910f879170290469a5f53d8f52e42534a00e094e4bc879",
- "size": 669095,
- "notes": "Amazon offers list read right after every tracker alert (it never ran)",
+ "version": "v109",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v109_update.zip",
+ "sha256": "7ecb132104bf78d794e7e4ac2bc135deb2767ce6069385d181507f253d429b77",
+ "size": 672563,
+ "notes": "More than one link per square; a tracker's other Amazon page added by itself; one purchase per product across all its pages",
  "files": 74
 }
