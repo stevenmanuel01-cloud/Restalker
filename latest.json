@@ -1,8 +1,8 @@
 {
- "version": "v110",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v110_update.zip",
- "sha256": "c8d3b5e65e3d13da7e2bf2ba3ebe326cfeb7f265ca4454164e1e0c0914d4521c",
- "size": 674911,
- "notes": "Less game lag: no memory churn, Restalker keeps to half the cores while a game runs; graphics-card use in diagnostics",
+ "version": "v111",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v111_update.zip",
+ "sha256": "9b47ea520a2a51b1e924b5d5f29873179ca8ebdf1c1b3c3e7d77e69c7c867cf9",
+ "size": 677859,
+ "notes": "Amazon checkout: tells you at once when Amazon cannot ship to your address; reads delivery on each product page; full checkout records",
  "files": 74
 }
