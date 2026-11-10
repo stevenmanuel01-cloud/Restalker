@@ -1,8 +1,8 @@
 {
- "version": "v111",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v111_update.zip",
- "sha256": "9b47ea520a2a51b1e924b5d5f29873179ca8ebdf1c1b3c3e7d77e69c7c867cf9",
- "size": 677859,
- "notes": "Amazon checkout: tells you at once when Amazon cannot ship to your address; reads delivery on each product page; full checkout records",
+ "version": "v112",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v112_update.zip",
+ "sha256": "c20016aeb03b5fea7bfbff27a777ed8273745fdd7b8e892081ddff6f62d388d4",
+ "size": 679520,
+ "notes": "Memory handling back to v108 (no reader restarts); Amazon offers list read regularly; new evidence: per-store tracker lead and every browser's view at each restock",
  "files": 74
 }
