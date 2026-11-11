@@ -1,8 +1,8 @@
 {
- "version": "v114",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v114_update.zip",
- "sha256": "0e7c4e5eb20d6cc3f7dcc7e8a07954b0269fce062b820324407bb1f5435fb318",
- "size": 690058,
- "notes": "Fixes the stuck 'checking out' after another browser bought; Show checkout button for live checkouts; a BOUGHT message only after the order is looked up in your Amazon orders (an earlier order is no longer taken for a new one)",
+ "version": "v115",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v115_update.zip",
+ "sha256": "be82cc62eb21a5e0df861ee35f6d1cfdc73931995330f5c1f7c0eedc70d58119",
+ "size": 692958,
+ "notes": "Auto-update switch (checks every hour, waits until no purchase is running); updates no longer leave command windows open (old ones are closed)",
  "files": 74
 }
