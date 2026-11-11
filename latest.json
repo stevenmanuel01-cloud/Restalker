@@ -1,8 +1,8 @@
 {
- "version": "v115",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v115_update.zip",
- "sha256": "be82cc62eb21a5e0df861ee35f6d1cfdc73931995330f5c1f7c0eedc70d58119",
- "size": 692958,
- "notes": "Auto-update switch (checks every hour, waits until no purchase is running); updates no longer leave command windows open (old ones are closed)",
+ "version": "v116",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v116_update.zip",
+ "sha256": "5938a3f047619e4bbd351b144907bf728fcd51c60ea8e4a4bd8955f963b018d3",
+ "size": 696246,
+ "notes": "The Purchases list checks itself against your Amazon orders (wrong entries crossed out, not counted); Remove / Keep buttons; plus v115: auto-update switch, no leftover command windows",
  "files": 74
 }
