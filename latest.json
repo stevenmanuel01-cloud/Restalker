@@ -1,8 +1,8 @@
 {
- "version": "v116",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v116_update.zip",
- "sha256": "5938a3f047619e4bbd351b144907bf728fcd51c60ea8e4a4bd8955f963b018d3",
- "size": 696246,
- "notes": "The Purchases list checks itself against your Amazon orders (wrong entries crossed out, not counted); Remove / Keep buttons; plus v115: auto-update switch, no leftover command windows",
- "files": 74
+ "version": "v117",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v117_update.zip",
+ "sha256": "ff3cbb9f4c3c26d4bb5a836a2d76e71c826018d14ae0efdf2e825e237416677a",
+ "size": 699464,
+ "notes": "After a Windows restart, Restalker's own browsers that Windows reopens are closed until you start Restalker (switch in the Browsers tab)",
+ "files": 75
 }
