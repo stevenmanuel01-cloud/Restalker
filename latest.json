@@ -1,8 +1,8 @@
 {
- "version": "v117",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v117_update.zip",
- "sha256": "ff3cbb9f4c3c26d4bb5a836a2d76e71c826018d14ae0efdf2e825e237416677a",
- "size": 699464,
- "notes": "After a Windows restart, Restalker's own browsers that Windows reopens are closed until you start Restalker (switch in the Browsers tab)",
- "files": 75
+ "version": "v118",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v118_update.zip",
+ "sha256": "d1f66ababe37bf398a4f5af148bdac6043c46df6c954bdef9c17d753a6f2828d",
+ "size": 711086,
+ "notes": "Products ordered by release date (year groups on Dec 1); Buy 1/2/3 in the price cap cell; phone message with one-tap Buy when a product is at or under MSRP; new versions heard from GitHub within seconds",
+ "files": 76
 }
