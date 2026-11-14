@@ -1,8 +1,8 @@
 {
- "version": "v118",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v118_update.zip",
- "sha256": "d1f66ababe37bf398a4f5af148bdac6043c46df6c954bdef9c17d753a6f2828d",
- "size": 711086,
- "notes": "Products ordered by release date (year groups on Dec 1); Buy 1/2/3 in the price cap cell; phone message with one-tap Buy when a product is at or under MSRP; new versions heard from GitHub within seconds",
+ "version": "v119",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v119_update.zip",
+ "sha256": "a7ae53fce458d14d568a238d888b1fc065eb111239d698057c9d397b858ea5c3",
+ "size": 712737,
+ "notes": "Products grouped by release year with sets inside (each folds and has its own Off/Watch/Buy); one at-MSRP message each time a product goes under MSRP, with Snooze 3 h; automatic updates via the release channel only; no more forced close of the old copy during an update",
  "files": 76
 }
