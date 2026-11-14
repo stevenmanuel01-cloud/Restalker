@@ -1,0 +1,26 @@
+# Tells every Restalker that a new version is out, the moment it is published here (v118). Restalker listens on this ntfy channel and
+# then checks latest.json itself (the download is still verified by its sha256 - this message can only make it look sooner, never
+# install anything). Runs only when latest.json changes on main.
+name: release-ping
+on:
+  push:
+    branches: [main]
+    paths: [latest.json]
+permissions:
+  contents: read
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Announce the new version on the release channel
+        env:
+          TOPIC: restalker-releases-93590d22731021d1
+        run: |
+          V=$(python3 -c "import json;print(json.load(open('latest.json'))['version'])")
+          echo "version $V"
+          for i in 1 2 3; do
+            curl -fsS -m 20 -H "Title: Restalker $V" -d "$V" "https://ntfy.sh/$TOPIC" && break
+            sleep 10
+          done
