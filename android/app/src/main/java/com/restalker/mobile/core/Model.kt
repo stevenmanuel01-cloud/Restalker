@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.3"
+const val APP_VERSION = "1.4"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -31,6 +31,9 @@ data class Product(
     val failEpisode: Long = 0,
     val lockedUntil: Long = 0,
     val practiceOkAt: Long = 0,
+    // 1.4: the desktop's groups for the home screen (release year, then set) - empty until a linked desktop says
+    val year: String = "",
+    val set: String = "",
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -46,7 +49,7 @@ data class Product(
         "status" to status, "price" to price, "lastCheck" to lastCheck, "buyable" to buyable, "episodeStart" to episodeStart,
         "alertedEpisode" to alertedEpisode, "inProgress" to inProgress, "attempted" to attempted, "purchased" to purchased,
         "submittedAt" to submittedAt, "orderNumber" to orderNumber, "fails" to fails, "failEpisode" to failEpisode,
-        "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt,
+        "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
     )
 
     companion object {
@@ -62,6 +65,7 @@ data class Product(
                 inProgress = m["inProgress"].asBool(), attempted = m["attempted"].asBool(), purchased = m["purchased"].asBool(),
                 submittedAt = m["submittedAt"].asLong() ?: 0, orderNumber = m["orderNumber"].asStr(), fails = (m["fails"].asLong() ?: 0).toInt(),
                 failEpisode = m["failEpisode"].asLong() ?: 0, lockedUntil = m["lockedUntil"].asLong() ?: 0, practiceOkAt = m["practiceOkAt"].asLong() ?: 0,
+                year = m["year"].asStr() ?: "", set = m["set"].asStr() ?: "",
             )
         }
     }
@@ -142,6 +146,23 @@ object Asin {
 }
 
 /** The product's words, taken from its Amazon title - the same rule as the desktop's content.js titleTokens(). */
+/** 1.4: the home screen's groups - (year, set). The linked desktop's when it gave them; otherwise the set from the product's title
+ *  ("Magic: The Gathering Nauctis: The Sunken Realm Collector Booster Display" -> "Nauctis: The Sunken Realm") under "Your products". */
+object Groups {
+    const val MINE = "Your products"
+    private val CUT = Regex("(?i)\\b(collector|play|draft|set|jumpstart|prerelease|commander|starter|gift|bundle|booster|display|box|pack|case|deck|kit|edition|secret lair|sld)\\b")
+    fun setOf(name: String): String {
+        var s = name.replace(Regex("(?i)magic\\s*:?\\s*the\\s+gathering|\\bmtg\\b|trading card game|\\btcg\\b"), " ")
+        s = s.split('|', '(', '[', ',').firstOrNull { it.trim().trim('-', ':', '–').isNotBlank() } ?: ""
+        CUT.find(s)?.let { s = s.substring(0, it.range.first) }
+        s = s.replace(Regex("\\s+"), " ").trim().trim('-', ':', '–', ' ').trim()
+        return s.ifBlank { "Other" }
+    }
+    fun of(p: Product): Pair<String, String> = (p.year.ifBlank { MINE }) to (p.set.ifBlank { setOf(p.label) })
+    /** Years newest first; "Other products" and "Your products" last. */
+    fun yearRank(y: String): Int = y.toIntOrNull()?.let { -it } ?: if (y == MINE) 100_000 else 50_000
+}
+
 object Tokens {
     private val STOP = setOf("the", "and", "for", "with", "from", "this", "that", "pack", "packs", "box", "magic", "gathering")
     fun fromTitle(title: String): List<String> =

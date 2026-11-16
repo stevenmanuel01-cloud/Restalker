@@ -35,7 +35,9 @@ object RealClock : Clock { override fun now() = System.currentTimeMillis(); over
  *  bought message only after the order was looked up in your Amazon orders. */
 class Engine(private val store: Store, private val page: Page, private val alerts: Alerts, private val clock: Clock = RealClock,
              /** "Wi-Fi" / "mobile" / null (no internet) - the Android side tells; tests give their own. */
-             private val network: () -> String? = { "wifi" }) {
+             private val network: () -> String? = { "wifi" },
+             /** 1.4: linked with the desktop and the desktop is the buyer right now (this phone only stands by). */
+             private val desktopBuys: () -> Boolean = { false }) {
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
@@ -48,6 +50,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
     @Volatile var pausedFor: String? = null               // e.g. "you are using the browser" - nothing is opened meanwhile
     @Volatile var busyWith: String = "idle"; private set
     @Volatile private var quit = false
+    @Volatile private var overrideDesk: String? = null
 
     fun send(c: Cmd) { q.offerLast(c) }
     /** Nothing to do and nothing running (the service may close when watching is off). */
@@ -81,12 +84,14 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (st.wifiOnly && net != "wifi") { status("Wi-Fi only is on - waiting for Wi-Fi"); waitFor(30_000); return }
         val watched = store.products().filter { it.watch }
         if (watched.isEmpty()) { status("Watching, but no product is switched on."); waitFor(30_000); return }
-        if (watched.any { it.buy } && now() - st.ordersReadAt > ORDERS_EVERY) { readOrders(); return }
-        val interval = st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
+        val desk = desktopBuys()
+        if (watched.any { it.buy } && !desk && now() - st.ordersReadAt > ORDERS_EVERY) { readOrders(); return }   // (the desktop reads them while it buys)
+        // 1.4: while the linked desktop watches and buys, this phone looks only every 10 minutes (a backup; it saves battery and data)
+        val interval = if (desk) maxOf(STANDBY_MS, st.intervalSec * 1000L) else st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
         val due = watched.minByOrNull { it.lastCheck } ?: return
         val wait = due.lastCheck + interval - now()
         offlineSince = 0
-        if (wait > 0) { status("Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
+        if (wait > 0) { status(if (desk) "Desktop is buying · this phone stands by (next look ${secs(wait)})" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
 
@@ -101,7 +106,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 store.update(p.id) { it.copy(buy = true, watch = true) }
                 if (!s().buying) store.setSettings { it.copy(buying = true) }
                 log("${p.label}: Buy now pressed on the message - set to buy, looking at it now.")
-                store.product(p.id)?.let { check(it, manual = true) }
+                overrideDesk = p.id                  // (your Buy now: this phone buys it now, even while a linked desktop is the buyer)
+                try { store.product(p.id)?.let { check(it, manual = true) } } finally { overrideDesk = null }
             }
             is Cmd.Practice -> {
                 val p = store.product(c.id) ?: return
@@ -189,6 +195,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (p.buyable) {
             val practicedThisRestock = s().practice && p.episodeStart > 0 && p.practiceOkAt >= p.episodeStart
             if (canAutoBuy(p) && !practicedThisRestock) buy(p, p.price)
+            else if (p.buy && s().buying && desktopBuys() && overrideDesk != p.id) {
+                if (p.alertedEpisode != p.episodeStart) { store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }; log("${p.label}: buyable - the linked desktop buys it (this phone stands by).") }
+            }
             else if (!canAutoBuy(p) && !p.purchased && !p.attempted && p.alertedEpisode != p.episodeStart && now() >= s().snoozeUntil) {
                 store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }
                 alerts.restock(p, p.price)
@@ -199,7 +208,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     private fun canAutoBuy(p: Product): Boolean {
         val st = s()
-        return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold()
+        return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold() && (overrideDesk == p.id || !desktopBuys())
     }
 
     /** Amazon asked to sign in: checkouts wait until you opened the sign-in (the app clears it) or for 1 hour. */
@@ -424,6 +433,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val LOCK_AFTER = 3
         const val LOCK_MS = 10 * 60_000L
         val VERIFY_LOOKS = longArrayOf(5_000, 15_000, 40_000, 120_000)
+        const val STANDBY_MS = 10 * 60_000L
         fun money(d: Double) = String.format(java.util.Locale.US, "%.2f", d)
         fun secs(ms: Long) = if (ms < 90_000) "in ${(ms + 999) / 1000} s" else "in ${(ms + 59_999) / 60_000} min"
     }

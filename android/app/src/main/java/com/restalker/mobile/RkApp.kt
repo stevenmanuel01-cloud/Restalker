@@ -31,6 +31,6 @@ class RkApp : Application() {
         }
 
         /** Tests only: start again with an empty folder. */
-        @Synchronized fun resetForTests(dir: File) { dir.deleteRecursively(); _store = null; store(dir) }
+        @Synchronized fun resetForTests(dir: File) { dir.deleteRecursively(); _store = null; store(dir); DeskLink.reset() }
     }
 }

@@ -304,6 +304,49 @@ class PhoneTests {
         assertTrue("an automatic report was sent after the failed checkout", autoLogged && (second.isEmpty() || second.contains("Amazon asked to sign in")))
     }
 
+    /** 1.4: the desktop link on the real phone, through the real ntfy.sh: a desktop's post (made here with the desktop's rules) adds its
+     *  product here with its groups; while the desktop is the buyer the phone stands by and does not check out; a desktop that says
+     *  "stopped" hands buying back at once; the phone's own product reaches the channel (read back from outside, like the desktop). */
+    @Test fun t15_desktopLink_realChannel() {
+        val code = com.restalker.mobile.core.LinkCrypto.make()
+        val (ch, sec) = com.restalker.mobile.core.LinkCrypto.parse(code)!!
+        RkApp.store().add(Product(id = "mine", asin = "B0TEST0002", name = "Phone Product", cap = 50.0, watch = true, buy = false))
+        assertEquals(null, DeskLink.get().connect(code))
+        fun desk(amz: Boolean, bye: Boolean = false) {
+            val now = System.currentTimeMillis() / 1000.0
+            val o = linkedMapOf<String, Any?>("v" to 1, "d" to "d-test", "r" to "desktop", "at" to now, "amz" to amz, "bye" to bye, "items" to listOf(
+                linkedMapOf("a" to "B0TEST0001", "n" to "Magic: The Gathering Hobbit Collector Booster Box", "c" to 120.0, "b" to true, "w" to true, "k" to "box",
+                    "t" to 2.0, "g" to false, "ba" to 0.0, "gy" to "2026", "gs" to "The Hobbit")))
+            val c = java.net.URL("https://ntfy.sh/$ch").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true; c.setRequestProperty("User-Agent", "Restalker-CI")
+            c.outputStream.use { it.write(com.restalker.mobile.core.LinkCrypto.seal(sec, com.restalker.mobile.core.MiniJson.write(o)).toByteArray()) }
+            assertTrue("posted", c.responseCode in 200..299); c.disconnect()
+        }
+        desk(amz = true)
+        var r = ""
+        val got = waitFor(60_000) { r = DeskLink.get().cycle(); RkApp.store().products().any { it.asin == "B0TEST0001" } }
+        val p1 = RkApp.store().products().firstOrNull { it.asin == "B0TEST0001" }
+        File(File(ctx.filesDir, "shots").also { it.mkdirs() }, "t15_link.txt").writeText("cycle: $r\nstate: ${DeskLink.get().state()}\n" + RkApp.store().log().joinToString("\n"))
+        assertTrue("the desktop's product arrived ($r)", got)
+        assertEquals("2026", p1!!.year); assertEquals("The Hobbit", p1.set); assertEquals(true, p1.buy); assertEquals(120.0, p1.cap, 0.001)
+        assertTrue("the desktop is the buyer", DeskLink.get().desktopBuys())
+        // the phone stands by: the product is in stock and set to buy, but no checkout starts here
+        start(false, true)
+        waitFor(40_000) { RkApp.store().products().first { it.asin == "B0TEST0001" }.lastCheck > 0 }
+        Thread.sleep(5_000)
+        assertEquals("no checkout while the desktop buys", 0, site.requests.count { it.contains("/checkout") })
+        // the desktop stops -> this phone buys again
+        desk(amz = true, bye = true)
+        assertTrue("stopped heard", waitFor(60_000) { DeskLink.get().cycle(); !DeskLink.get().desktopBuys() })
+        // our product reached the channel (read from outside, as the desktop does)
+        val lines = java.net.URL("https://ntfy.sh/$ch/json?poll=1&since=all").readText().lines().mapNotNull { com.restalker.mobile.core.MiniJson.obj(it) }
+        val mine = lines.mapNotNull { com.restalker.mobile.core.LinkCrypto.unseal(sec, it["message"] as? String) }.map { com.restalker.mobile.core.MiniJson.obj(it)!! }
+            .filter { it["r"] == "phone" }
+        assertTrue("the phone posted its product", mine.any { m -> (m["items"] as List<*>).any { (it as Map<*, *>)["a"] == "B0TEST0002" } })
+        DeskLink.get().unlink()
+        assertTrue("unlinked", !DeskLink.get().linked())
+    }
+
     @Test fun t13_testMessage_andDiagnostics() {
         Notifier.test(ctx)
         Thread.sleep(1_500)

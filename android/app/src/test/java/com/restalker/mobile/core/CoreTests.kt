@@ -78,13 +78,13 @@ object CoreTests {
         override fun problem(what: String) { problems.add(what) }
     }
 
-    class World(practice: Boolean = false, buying: Boolean = true, var net: String? = "wifi") {
+    class World(practice: Boolean = false, buying: Boolean = true, var net: String? = "wifi", var desk: Boolean = false) {
         val dir: File = kotlin.io.path.createTempDirectory("rkm").toFile()
         val clock = FakeClock()
         val store = Store(dir) { clock.t }
         val amz = FakeAmazon(clock).also { it.store = store }
         val said = Said()
-        val engine = Engine(store, amz, said, clock) { net }
+        val engine = Engine(store, amz, said, clock, { net }, { desk })
         init { store.setSettings { it.copy(watching = true, buying = buying, practice = practice) } }
         fun add(asin: String, cap: Double, buy: Boolean, stock: Boolean = true, price: Double = 99.99): Product {
             amz.items[asin] = FakeAmazon.Item(stock, price, "Magic: The Gathering Test Product $asin Collector Booster Box")
@@ -345,6 +345,41 @@ object CoreTests {
             val w = World(); var n = 0
             val ok = Report.send(w.store, "t", "x", "sent by you", retryMs = 1) { _, _, _ -> n++; if (n < 3) 503 else 200 }
             ok && n == 3 && Report.autoDue(w.store.settings(), System.currentTimeMillis())
+        }
+        t("40 link code: read, refused when wrong; sealed posts open only with the secret") {
+            val c = LinkCrypto.make(); val (ch, sec) = LinkCrypto.parse(c)!!
+            val w = LinkCrypto.seal(sec, "{\"a\":\"B0TEST0001\",\"x\":\"é ✓\"}")
+            ch.startsWith("rkl-") && LinkCrypto.parse("RK1.abc") == null && LinkCrypto.parse(c + "x") == null && LinkCrypto.parse(null) == null &&
+                LinkCrypto.unseal(sec, w) == "{\"a\":\"B0TEST0001\",\"x\":\"é ✓\"}" && LinkCrypto.unseal(ByteArray(32), w) == null &&
+                LinkCrypto.unseal(sec, w.dropLast(2) + "AA") == null && LinkCrypto.unseal(sec, "hello") == null && !w.contains("B0TEST0001")
+        }
+        t("41 a wrong link code is explained, nothing changes") {
+            val w = World(); val l = Link(w.store, object : LinkNet { override fun post(url: String, body: String, asFile: Boolean) = 200; override fun get(url: String) = "" })
+            l.connect("https://example.com/not-a-code") != null && !l.linked() && l.cycle() == "not linked" && !l.desktopBuys()
+        }
+        t("42 linked desktop buys: this phone does not check out, stands by every 10 min, no restock message for a Buy product") {
+            val w = World(desk = true); w.add("B0TEST0001", 120.0, true); w.check("B0TEST0001")
+            w.amz.begins == 0 && w.said.restocks.isEmpty() && w.store.log().any { it.contains("the linked desktop buys it") } &&
+                run { w.clock.t += 2 * 60_000; w.amz.gotoCount = 0; w.engine.step(); w.amz.gotoCount == 0 && w.said.last.contains("stands by") }
+        }
+        t("43 desktop stopped / silent: this phone buys again") {
+            val w = World(desk = true); w.add("B0TEST0001", 120.0, true); w.check("B0TEST0001")
+            w.desk = false; w.clock.t += 120_000; w.check("B0TEST0001")
+            w.amz.places == 1
+        }
+        t("44 Buy now on the phone's message buys at once even while the desktop buys") {
+            val w = World(desk = true); w.add("B0TEST0001", 120.0, false); w.check("B0TEST0001")
+            w.engine.send(Engine.Cmd.BuyNow(w.p("B0TEST0001").id)); w.engine.step()
+            w.amz.places == 1
+        }
+        t("45 home screen groups: the set from the title; the desktop's year / set when given") {
+            Groups.setOf("Magic: The Gathering Nauctis: The Sunken Realm Collector Booster Display") == "Nauctis: The Sunken Realm" &&
+            Groups.setOf("Magic: The Gathering | The Hobbit Collector Booster Box | 12 Packs") == "The Hobbit" &&
+            Groups.setOf("MTG Star Trek Collector Booster Box") == "Star Trek" && Groups.setOf("Dragon Shield Sleeves") == "Dragon Shield Sleeves" &&
+            Groups.setOf("Collector Booster Box") == "Other" &&
+            Groups.of(Product(id = "x", asin = "B0TEST0001", name = "MTG Star Trek Collector Booster Box")) == (Groups.MINE to "Star Trek") &&
+            Groups.of(Product(id = "x", asin = "B0TEST0001", name = "n", year = "2026", set = "Star Trek")) == ("2026" to "Star Trek") &&
+            listOf("2025", Groups.MINE, "2026", "Other products").sortedBy { Groups.yearRank(it) } == listOf("2026", "2025", "Other products", Groups.MINE)
         }
         return results
     }

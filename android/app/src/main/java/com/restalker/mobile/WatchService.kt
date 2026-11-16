@@ -34,10 +34,16 @@ class WatchService : Service() {
         web = AmazonWeb(this); web.create()
         val store = RkApp.store()
         startRx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); startAt = System.currentTimeMillis()
-        engine = Engine(store, web, notifier, network = { netKind(this) })
+        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() })
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
+        tick.postDelayed(object : Runnable {        // 1.4: the desktop link - a round every minute (when linked)
+            override fun run() {
+                if (DeskLink.get().linked()) DeskLink.cycleAsync()
+                tick.postDelayed(this, 60_000)
+            }
+        }, 5_000)
         tick.postDelayed(object : Runnable {        // watching off and nothing left to do (a Check now / practice was done): close
             override fun run() {
                 if (!RkApp.store().settings().watching && engine.idle() && !BrowserShown.on) { stopSelf(); return }

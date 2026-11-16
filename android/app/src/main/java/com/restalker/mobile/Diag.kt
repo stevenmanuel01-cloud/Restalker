@@ -33,6 +33,7 @@ object Diag {
         sb.append("Settings: watching=${st.watching} buying=${st.buying} practice=${st.practice} every=${st.intervalSec}s wifiOnly=${st.wifiOnly}" +
             " snoozed=${st.snoozeUntil > System.currentTimeMillis()} resting=${st.cooldownUntil > System.currentTimeMillis()} (streak ${st.cooldownStreak})" +
             " ordersRead=${if (st.ordersReadAt > 0) t.format(Date(st.ordersReadAt)) else "never"}\n")
+        sb.append("Desktop link: ${DeskLink.get().state().second}; desktop buys now: ${DeskLink.get().desktopBuys()}; last round: ${DeskLink.lastResult.ifBlank { "-" }}\n")
         sb.append("\nProducts (${s.products().size}):\n")
         for (p in s.products()) sb.append("- ${p.asin} cap \$${Engine.money(p.cap)} ${p.kind} watch=${p.watch} buy=${p.buy} bought=${p.purchased} attempted=${p.attempted}" +
             " fails=${p.fails} | ${p.status}" + (if (p.lastCheck > 0) " (${t.format(Date(p.lastCheck))})" else "") + " | ${p.label.take(80)}\n")

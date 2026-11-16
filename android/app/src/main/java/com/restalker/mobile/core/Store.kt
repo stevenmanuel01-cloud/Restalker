@@ -79,6 +79,10 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     fun flushLog() = synchronized(lock) { write("log.txt", logLines.joinToString("\n")) }
     private var writes = 0
 
+    /** A small file of its own (the desktop link): read / written whole, safely. */
+    fun readFile(name: String): String? = synchronized(lock) { read(name) }
+    fun writeFile(name: String, text: String) = synchronized(lock) { write(name, text) }
+
     fun newId(): String = synchronized(lock) { "p" + clock().toString(36) + (products.size + 1) }
 
     companion object { const val LOG_MAX = 400 }
