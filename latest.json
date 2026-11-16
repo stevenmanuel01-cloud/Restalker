@@ -1,8 +1,8 @@
 {
- "version": "v119",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v119_update.zip",
- "sha256": "a7ae53fce458d14d568a238d888b1fc065eb111239d698057c9d397b858ea5c3",
- "size": 712737,
- "notes": "Products grouped by release year with sets inside (each folds and has its own Off/Watch/Buy); one at-MSRP message each time a product goes under MSRP, with Snooze 3 h; automatic updates via the release channel only; no more forced close of the old copy during an update",
+ "version": "v120",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v120_update.zip",
+ "sha256": "a8becd7aa075c41c8de09acf1a067233b040f2b5a361ff59b2edec82baa400af",
+ "size": 713959,
+ "notes": "Stop works in one press again: the program no longer keeps a processor core busy after Stop, so the page and the diagnostics download answer at once; a second Stop does nothing more",
  "files": 76
 }
