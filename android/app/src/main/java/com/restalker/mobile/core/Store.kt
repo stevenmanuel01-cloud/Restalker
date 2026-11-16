@@ -37,6 +37,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
 
     private fun read(name: String): String? = try { File(dir, name).takeIf { it.exists() }?.readText() } catch (e: Exception) { null }
     private fun write(name: String, text: String) {
+        dir.mkdirs()                                   // (the folder is always there - unless removed under us; then it is made again)
         val tmp = File(dir, "$name.tmp"); tmp.writeText(text)
         if (!tmp.renameTo(File(dir, name))) { File(dir, name).delete(); tmp.renameTo(File(dir, name)) }
     }

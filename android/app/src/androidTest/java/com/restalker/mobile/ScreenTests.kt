@@ -126,8 +126,8 @@ class ScreenTests {
         s.add(prod("B0TEST0104", "Magic: The Gathering Nauctis: The Sunken Realm Collector Booster Display"))
         compose.waitForIdle(); Thread.sleep(500)
         shot("t10_groups")
-        compose.onNodeWithTag("grp-hot").assertIsDisplayed()
-        compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-hot")); compose.onNodeWithTag("grp-hot").assertIsDisplayed()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("top-B0TEST0103")); compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2025"))
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0101"))
         compose.onNodeWithTag("grp-2025").performClick(); compose.waitForIdle()
@@ -147,8 +147,10 @@ class ScreenTests {
         shot("t10_in_stock")
         compose.onNodeWithTag("product-B0TEST0101").assertDoesNotExist()
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0103"))
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter2"))
         compose.onNodeWithTag("filter2").performClick(); compose.waitForIdle()                     // Set to buy
         compose.onNodeWithTag("product-B0TEST0104").assertDoesNotExist()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter0"))
         compose.onNodeWithTag("filter0").performClick(); compose.waitForIdle()
     }
 
@@ -161,6 +163,7 @@ class ScreenTests {
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0201"))
         compose.onNodeWithTag("product-B0TEST0201").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("product-screen").assertIsDisplayed()
+        compose.waitForIdle(); Thread.sleep(800)
         shot("t11_product")
         compose.onNodeWithTag("buy-B0TEST0201").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0201").buy }
@@ -190,8 +193,8 @@ class ScreenTests {
         compose.waitUntil(10_000) { DeskLink.get().linked() }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Linked with the desktop", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("OK").performClick(); compose.waitForIdle()
-        shot("t12_linked")
-        compose.onNodeWithTag("link-title").assertIsDisplayed()
+        compose.onNodeWithTag("link-title").performScrollTo().assertIsDisplayed()
+        Thread.sleep(500); shot("t12_linked")
         compose.onNodeWithTag("unlink").performScrollTo().performClick()
         compose.onNodeWithTag("unlink-yes").performClick()
         compose.waitUntil(30_000) { !DeskLink.get().linked() }

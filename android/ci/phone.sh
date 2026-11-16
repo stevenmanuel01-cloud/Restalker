@@ -29,7 +29,9 @@ fi
 echo "=== big text, small screen"
 adb shell settings put system font_scale 1.3; adb shell wm size 720x1280; adb shell wm density 320; sleep 3
 adb shell am instrument -w -r -e debug false -e class $P.ScreenTests -e shotTag _big $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_big.txt 2>&1
-grep -E "^OK|FAILURES|Tests run|AssertionError" instrument_big.txt | tail -10
+grep -E "^OK|FAILURES|Tests run" instrument_big.txt | tail -3
+awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument_big.txt | cut -c1-600
+grep -E "ScreenTests.kt:[0-9]+" instrument_big.txt | head -10
 grep -q "^OK (" instrument_big.txt || fail=1
 adb shell settings put system font_scale 1.0; adb shell wm size reset; adb shell wm density reset
 

@@ -39,7 +39,7 @@ object Look {
 
     val scheme = lightColorScheme(
         primary = Teal, onPrimary = Color.White, primaryContainer = TealSoft, onPrimaryContainer = TealText,
-        secondary = Navy, onSecondary = Color.White, secondaryContainer = AmberSoft, onSecondaryContainer = AmberText,
+        secondary = Navy, onSecondary = Color.White, secondaryContainer = TealSoft, onSecondaryContainer = TealText,
         background = Ground, onBackground = Ink, surface = Color.White, onSurface = Ink, surfaceVariant = Ground, onSurfaceVariant = Muted,
         error = Red, outline = Color(0xFFCBD5E1),
     )

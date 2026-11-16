@@ -238,7 +238,7 @@ class MainActivity : ComponentActivity() {
                             val watched = products.count { it.watch }
                             Text(if (st.watching) "Watching $watched product${if (watched == 1) "" else "s"}" else "Not watching", color = Color.White,
                                 fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                            val line = svc?.notifier?.lastStatus?.ifBlank { null } ?: if (st.watching) "starting..." else "Switch on to start"
+                            val line = if (!st.watching) "Switch on to start" else svc?.notifier?.lastStatus?.ifBlank { null } ?: "starting..."
                             Text(line, color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 17.sp, maxLines = 3, modifier = Modifier.testTag("status"))
                             if (linked) Text(if (deskBuys) "Desktop linked · it buys" else "Desktop linked · this phone buys", color = Look.Mint, fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp).testTag("linkchip"))
