@@ -103,10 +103,10 @@ class MainActivity : ComponentActivity() {
         var editing by remember { mutableStateOf<Product?>(null) }
         var confirmReal by remember { mutableStateOf(false) }
         if (shared.value != null && !adding) adding = true
-        Scaffold(topBar = { TopAppBar(title = { Text("Restalker Mobile v$APP_VERSION", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("title")) }) },
-            floatingActionButton = {        // always on screen (a long setup card can't push it out of view)
-                if (tab == 0) ExtendedFloatingActionButton(onClick = { adding = true }, modifier = Modifier.testTag("add")) { Text("Add product") }
-            }) { pad ->
+        Scaffold(topBar = { TopAppBar(title = { Text("Restalker Mobile v$APP_VERSION", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("title"), maxLines = 1) },
+            actions = {        // always on screen, and it covers nothing (a floating button covered the switches with big text)
+                if (tab == 0) FilledTonalButton(onClick = { adding = true }, modifier = Modifier.padding(end = 8.dp).testTag("add")) { Text("+ Add", maxLines = 1) }
+            }) }) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
                 update.value?.let { (v, apk) ->
                     Card(Modifier.fillMaxWidth().padding(8.dp)) {
@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 TabRow(selectedTabIndex = tab) {
-                    listOf("Products", "Purchases", "Log").forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }, modifier = Modifier.testTag("tab$i")) }
+                    listOf("Products", "Bought", "Log").forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, maxLines = 1) }, modifier = Modifier.testTag("tab$i")) }
                 }
                 when (tab) {
                     0 -> ProductsTab(st, products, r, onEdit = { editing = it }, onRealAsk = { confirmReal = true }, onAdd = { adding = true })
@@ -173,7 +173,7 @@ class MainActivity : ComponentActivity() {
         val svc = WatchService.instance
         val status = svc?.notifier?.lastStatus?.ifBlank { null } ?: if (st.watching) "starting..." else "Not watching."
         val now = System.currentTimeMillis()
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp).testTag("list"), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp).testTag("list"), contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)) {
             item { SetupCard(products, r, onAdd) }
             item {
                 Card(Modifier.fillMaxWidth()) {
