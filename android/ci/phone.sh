@@ -7,7 +7,10 @@ fail=0
 adb install -r -g apk/outputs/apk/debug/app-debug.apk
 adb install -r -g apk/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r -e debug false $P.test/androidx.test.runner.AndroidJUnitRunner > instrument.txt 2>&1
-cat instrument.txt | grep -E "INSTRUMENTATION_STATUS: (test|class)=|INSTRUMENTATION_STATUS_CODE|^OK|FAILURES|Tests run|AssertionError|Exception:" | tail -120
+grep -E "^OK|FAILURES|Tests run" instrument.txt
+echo "--- failures (name + reason) ---"
+awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument.txt | cut -c1-600
+sed -n '/^There w/,/^FAILURES/p' instrument.txt | head -60
 grep -q "^OK (" instrument.txt && ! grep -q "FAILURES!!!\|INSTRUMENTATION_FAILED\|Process crashed" instrument.txt || fail=1
 
 echo "=== big text, small screen"

@@ -85,11 +85,22 @@ class PhoneTests {
     private var autoReports = false          // (tests send no reports, except t14 which checks them)
 
     /** Reads this phone's report channel back the way Claude does: the newest report file's text. */
+    private fun get(url: String): String {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Restalker test)"); c.connectTimeout = 20_000; c.readTimeout = 30_000
+        return c.inputStream.bufferedReader().use { it.readText() }
+    }
+    /** (the report server can answer a moment late or briefly refuse a busy test machine: 6 tries, 5 s apart) */
     private fun readBack(code: String): String {
-        val list = java.net.URL("https://ntfy.sh/$code/json?poll=1").readText()
-        val url = list.lines().filter { it.isNotBlank() }.mapNotNull { com.restalker.mobile.core.MiniJson.obj(it)?.get("attachment") as? Map<*, *> }
-            .lastOrNull()?.get("url") as? String ?: return ""
-        return java.net.URL(url).readText()
+        repeat(6) {
+            try {
+                val url = get("https://ntfy.sh/$code/json?poll=1").lines().filter { it.isNotBlank() }
+                    .mapNotNull { com.restalker.mobile.core.MiniJson.obj(it)?.get("attachment") as? Map<*, *> }.lastOrNull()?.get("url") as? String
+                if (url != null) return get(url)
+            } catch (e: Exception) { }
+            Thread.sleep(5_000)
+        }
+        return ""
     }
 
     @Test fun t1_realPurchase_inBackground_lockedAndVerified() {
