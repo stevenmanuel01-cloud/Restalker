@@ -1,8 +1,8 @@
 {
- "version": "v122",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v122_update.zip",
- "sha256": "44753b6140015bc248dca03e787fe376253459b089d4c82987efbd59b5437e60",
- "size": 718646,
- "notes": "Report problem button: sends the diagnostics straight to Claude; automatic reports when a checkout does not buy",
+ "version": "v123",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v123_update.zip",
+ "sha256": "2b0a3945baecce4277bdc5d981477d60e59193aea7b9e2af6272d115e08b09e2",
+ "size": 719936,
+ "notes": "Messages from Claude to your phone when your input is needed; problem reports retry",
  "files": 78
 }
