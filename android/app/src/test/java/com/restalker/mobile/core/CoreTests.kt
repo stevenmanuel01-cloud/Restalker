@@ -19,6 +19,8 @@ object CoreTests {
         private fun push(m: Map<String, Any?>): Long { n++; msgs.add(m + ("n" to n)); return n }
         override fun goto(url: String, timeoutMs: Long): Boolean { this.url = url; gotoCount++; clock.sleep(800); return !loadFails }
         override fun images(on: Boolean) {}
+        val seen = ArrayList<String>()
+        override fun visited(): List<String> { val l = seen.toList(); seen.clear(); return l }
         private fun asinHere() = Regex("/dp/([A-Z0-9]{10})").find(url)?.groupValues?.get(1)
         override fun ask(msg: Map<String, Any?>, timeoutMs: Long): Map<String, Any?>? {
             if (silent) { clock.sleep(timeoutMs); return null }
@@ -36,7 +38,7 @@ object CoreTests {
                 }
                 "begin" -> {
                     begins++; val a = asinHere()!!; val it = items[a]!!
-                    if (signinCheckout) { push(mapOf("type" to "FLOW_BLOCKED", "reason" to "Proceed to checkout unavailable", "page" to "/ap/signin")); return mapOf("ok" to true, "started" to true) }
+                    if (signinCheckout) { seen.add("/ap/signin"); seen.add("/gp/cart/view.html"); push(mapOf("type" to "FLOW_BLOCKED", "reason" to "Proceed to checkout unavailable", "page" to "/gp/cart/view.html")); return mapOf("ok" to true, "started" to true) }
                     push(mapOf("type" to "CHECKOUT_PRICE_EVIDENCE", "reason" to "MATCHED_EXACT_ITEM"))
                     push(mapOf("type" to "SUBMITTING", "fees" to mapOf("base" to it.price, "tax" to it.price * 0.0775, "shipping" to 0.0, "total" to it.price * 1.0775)))
                     waitingAsin = a

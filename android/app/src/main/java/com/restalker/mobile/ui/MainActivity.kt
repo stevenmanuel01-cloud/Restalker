@@ -13,6 +13,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -101,7 +103,10 @@ class MainActivity : ComponentActivity() {
         var editing by remember { mutableStateOf<Product?>(null) }
         var confirmReal by remember { mutableStateOf(false) }
         if (shared.value != null && !adding) adding = true
-        Scaffold(topBar = { TopAppBar(title = { Text("Restalker Mobile v$APP_VERSION", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("title")) }) }) { pad ->
+        Scaffold(topBar = { TopAppBar(title = { Text("Restalker Mobile v$APP_VERSION", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("title")) }) },
+            floatingActionButton = {        // always on screen (a long setup card can't push it out of view)
+                if (tab == 0) ExtendedFloatingActionButton(onClick = { adding = true }, modifier = Modifier.testTag("add")) { Text("Add product") }
+            }) { pad ->
             Column(Modifier.padding(pad).fillMaxSize()) {
                 update.value?.let { (v, apk) ->
                     Card(Modifier.fillMaxWidth().padding(8.dp)) {
@@ -115,7 +120,7 @@ class MainActivity : ComponentActivity() {
                     listOf("Products", "Purchases", "Log").forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t) }, modifier = Modifier.testTag("tab$i")) }
                 }
                 when (tab) {
-                    0 -> ProductsTab(st, products, r, onAdd = { adding = true }, onEdit = { editing = it }, onRealAsk = { confirmReal = true })
+                    0 -> ProductsTab(st, products, r, onEdit = { editing = it }, onRealAsk = { confirmReal = true }, onAdd = { adding = true })
                     1 -> PurchasesTab(r)
                     else -> LogTab(r)
                 }
@@ -133,7 +138,7 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
-    fun SetupCard(products: List<Product>, r: Int) {
+    fun SetupCard(products: List<Product>, r: Int, onAdd: () -> Unit) {
         val notes = remember(r) { notesOk() }; val signed = remember(r) { signedIn() }; val batt = remember(r) { battOk() }
         val practiced = products.any { it.practiceOkAt > 0 }
         if (notes && signed && batt && products.isNotEmpty() && practiced) return
@@ -143,7 +148,7 @@ class MainActivity : ComponentActivity() {
                 Step(notes, "1. Allow notifications (restock and purchase messages)", "Allow") { openNotifSettings() }
                 Step(signed, "2. Sign in to Amazon inside the app", "Sign in") { openBrowser(BrowserActivity.SIGNIN_URL) }
                 Step(batt, "3. Let it watch all day (battery setting)", "Allow") { openBattery() }
-                Step(products.isNotEmpty(), "4. Add a product (paste or share an Amazon link)", null) {}
+                Step(products.isNotEmpty(), "4. Add a product (paste or share an Amazon link)", "Add") { onAdd() }
                 Step(practiced, "5. Run one Practice on an in-stock product (nothing is bought)", null) {}
                 if (!batt) Text("Samsung / Xiaomi / OnePlus phones: also set Restalker to \"Unrestricted\" in the phone's battery settings for the app.", fontSize = 12.sp)
             }
@@ -161,15 +166,15 @@ class MainActivity : ComponentActivity() {
 
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
-    fun ProductsTab(st: Settings, products: List<Product>, r: Int, onAdd: () -> Unit, onEdit: (Product) -> Unit, onRealAsk: () -> Unit) {
+    fun ProductsTab(st: Settings, products: List<Product>, r: Int, onEdit: (Product) -> Unit, onRealAsk: () -> Unit, onAdd: () -> Unit) {
         val store = RkApp.store()
         val signed = remember(r) { signedIn() }
         val notes = remember(r) { notesOk() }
         val svc = WatchService.instance
         val status = svc?.notifier?.lastStatus?.ifBlank { null } ?: if (st.watching) "starting..." else "Not watching."
         val now = System.currentTimeMillis()
-        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-            item { SetupCard(products, r) }
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp).testTag("list"), contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
+            item { SetupCard(products, r, onAdd) }
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
@@ -221,7 +226,6 @@ class MainActivity : ComponentActivity() {
             item {
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Products (${products.size})", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Button(onClick = onAdd, modifier = Modifier.testTag("add")) { Text("Add product") }
                 }
                 if (products.isEmpty()) Text("No products yet. Tap Add product, or share a product from the Amazon app to Restalker.", fontSize = 13.sp, modifier = Modifier.padding(vertical = 8.dp))
                 if (products.size > 10) Text("Tip: a phone watches a few products best (each is looked at once every ${st.intervalSec} s).", fontSize = 12.sp)
@@ -307,7 +311,7 @@ class MainActivity : ComponentActivity() {
         var busy by remember { mutableStateOf(false) }
         var bigOk by remember { mutableStateOf(false) }
         AlertDialog(onDismissRequest = { if (!busy) onDone() }, title = { Text("Add an Amazon product") }, text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(link, { link = it; err = "" }, label = { Text("Amazon link or product code (ASIN)") }, modifier = Modifier.testTag("f-link"))
                 OutlinedTextField(cap, { cap = it; err = ""; bigOk = false }, label = { Text("Price cap \$ (most you will pay for the item)") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.testTag("f-cap"))
@@ -356,7 +360,7 @@ class MainActivity : ComponentActivity() {
         var confirmDelete by remember { mutableStateOf(false) }
         var err by remember { mutableStateOf("") }
         AlertDialog(onDismissRequest = onDone, title = { Text("Edit") }, text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(cap, { cap = it; err = "" }, label = { Text("Price cap \$") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.testTag("e-cap"))
                 OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
                 KindChips(kind) { kind = it }

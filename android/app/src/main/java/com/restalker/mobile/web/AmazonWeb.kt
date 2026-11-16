@@ -112,7 +112,10 @@ class AmazonWeb(private val appCtx: Context) : Page {
             else WebResourceResponse(r.first, "utf-8", 200, "OK", mapOf("Cache-Control" to "no-store"), ByteArrayInputStream(r.second.toByteArray()))
         }
 
-        override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) { currentUrl = url; startedNav = nav }
+        override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+            currentUrl = url; startedNav = nav
+            synchronized(seen) { seen.add(Uri.parse(url).path ?: ""); while (seen.size > 50) seen.removeAt(0) }
+        }
 
         override fun onPageFinished(view: WebView, url: String) {
             currentUrl = url
@@ -172,6 +175,9 @@ class AmazonWeb(private val appCtx: Context) : Page {
     }
 
     override fun images(on: Boolean) = onMain { web.settings.blockNetworkImage = !on }
+
+    private val seen = ArrayList<String>()
+    override fun visited(): List<String> = synchronized(seen) { val l = seen.toList(); seen.clear(); l }
 
     fun destroy() = onMain { try { web.stopLoading(); (web.parent as? android.view.ViewGroup)?.removeView(web); web.destroy() } catch (e: Exception) {} }
 

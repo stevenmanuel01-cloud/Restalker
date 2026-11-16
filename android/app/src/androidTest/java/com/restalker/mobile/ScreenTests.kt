@@ -9,6 +9,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -48,6 +50,7 @@ class ScreenTests {
         compose.waitForIdle()
         shot("t5_screen")
         assertEquals(120.0, p("B0TEST0001").cap, 0.001)
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0001"))
         compose.onNodeWithTag("product-B0TEST0001").assertIsDisplayed()
     }
     @Test fun t6_firstRun_setupCard_andRealPurchasesNeedYes() {
@@ -56,6 +59,7 @@ class ScreenTests {
         compose.waitForIdle()
         compose.onNodeWithTag("setup").assertIsDisplayed()
         shot("t6_first_run")
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("practice"))
         compose.onNodeWithTag("practice").performClick()             // switching Practice off asks first
         compose.onNodeWithTag("confirm-real").assertIsDisplayed()
         assertEquals("still practicing until Yes", true, RkApp.store().settings().practice)

@@ -10,6 +10,8 @@ interface Page {
     /** Asks the Amazon part (amz_part.js) a question; keeps trying while a page is changing. null = no answer in time. */
     fun ask(msg: Map<String, Any?>, timeoutMs: Long = 8_000): Map<String, Any?>?
     fun images(on: Boolean)
+    /** The pages opened since the last call (their paths), then forgotten. Used to see that Amazon showed its sign-in page. */
+    fun visited(): List<String> = emptyList()
 }
 
 /** Messages to you (the Android side shows them as notifications with buttons). */
@@ -221,6 +223,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         store.update(p.id) { it.copy(inProgress = true, status = if (practice) "PRACTICE CHECKOUT - starting" else "CHECKOUT - starting") }
         log("${p.label}: ${if (practice) "PRACTICE checkout" else "CHECKOUT"} started" + (price?.let { " (\$${money(it)}, cap \$${money(p.cap)})" } ?: ""))
         page.images(true)
+        page.visited()                                  // (forget the pages before this checkout)
         var end = End.STOPPED; var why = ""; var order: String? = null; var paid: Double? = price
         var practiceFees: Map<String, Any?>? = null
         var submitted = false
@@ -283,6 +286,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 if (found != null) { end = End.BOUGHT; order = found } else { end = End.UNCLEAR; why = "Amazon did not answer within ${CHECKOUT_MS / 1000} s after Place your order" }
             } else { end = End.FAILED; why = "the checkout did not finish within ${CHECKOUT_MS / 1000} s" }
         } finally {
+            if ((end == End.FAILED || end == End.STOPPED) && !why.contains("sign in", true) &&
+                (try { page.visited() } catch (e: Exception) { emptyList() }).any { it.startsWith("/ap/") }) {
+                // Amazon showed its sign-in / verification page during this checkout: that is why it did not finish
+                why = "Amazon asked to sign in"; end = End.STOPPED; actionRequired(p, "sign in required")
+            }
             if (end != End.BOUGHT) try { page.ask(mapOf("bb" to "reset"), 4_000) } catch (e: Exception) { }    // (no unfinished checkout is left in the browser)
             finish(p, end, why, order, paid, practiceFees, submitted)
             try { page.images(false) } catch (e: Exception) { }
