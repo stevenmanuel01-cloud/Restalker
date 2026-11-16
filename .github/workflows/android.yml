@@ -87,3 +87,28 @@ jobs:
             instrument.txt
             shots/
             logcat.txt
+
+  # A tested, signed APK becomes a GitHub release (once per version). Only with the app's own signing key (repository secret):
+  # every version must carry the same key, or a phone refuses the update.
+  publish:
+    needs: [build, phone]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: apk, path: apk }
+      - name: Release the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HAS_KEY: ${{ secrets.RKM_KEYSTORE_B64 != '' }}
+        run: |
+          VER=$(grep -o 'versionName = "[^"]*"' android/app/build.gradle.kts | cut -d'"' -f2)
+          if [ "$HAS_KEY" != "true" ]; then echo "No signing key in the repository secrets yet - not released."; exit 0; fi
+          if gh release view "mobile-v$VER" >/dev/null 2>&1; then echo "mobile-v$VER is already released."; exit 0; fi
+          APK=$(ls apk/outputs/apk/release/*.apk | head -1)
+          cp "$APK" "restalker-mobile-$VER.apk"
+          sha256sum "restalker-mobile-$VER.apk"
+          gh release create "mobile-v$VER" "restalker-mobile-$VER.apk" --title "Restalker Mobile $VER" --notes-file android/RELEASE_NOTES.md
