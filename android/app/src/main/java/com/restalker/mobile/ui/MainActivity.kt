@@ -192,6 +192,10 @@ class MainActivity : ComponentActivity() {
                             Text("Restock messages snoozed until ${SimpleDateFormat("h:mm a", Locale.US).format(Date(st.snoozeUntil))}", fontSize = 12.sp, modifier = Modifier.weight(1f))
                             TextButton(onClick = { store.setSettings { it.copy(snoozeUntil = 0) }; store.log("Snooze ended by you.") }) { Text("Unsnooze") }
                         }
+                        if (st.signinNeededAt > 0 && now - st.signinNeededAt < 3_600_000L) Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Amazon asked to sign in - nothing is bought until you do.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { openBrowser(BrowserActivity.SIGNIN_URL) }) { Text("Sign in") }
+                        }
                         if (st.cooldownUntil > now) Text("Resting: Amazon showed a robot check. Show browser and finish it yourself; it looks again at ${SimpleDateFormat("h:mm a", Locale.US).format(Date(st.cooldownUntil))}.",
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                         Toggle("Watching", "Looks at each product on its own, all day (a notification stays while it watches).", st.watching, "watching") { on ->

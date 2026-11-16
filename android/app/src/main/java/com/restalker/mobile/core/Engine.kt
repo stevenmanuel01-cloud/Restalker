@@ -197,8 +197,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     private fun canAutoBuy(p: Product): Boolean {
         val st = s()
-        return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil
+        return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold()
     }
+
+    /** Amazon asked to sign in: checkouts wait until you opened the sign-in (the app clears it) or for 1 hour. */
+    private fun signinHold() = s().signinNeededAt > 0 && now() - s().signinNeededAt < 60 * 60_000L
 
     private fun amazonCheck(p: Product) {
         val st = s()
@@ -341,6 +344,16 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun actionRequired(p: Product, reason: String) {
         val signin = Regex("sign ?in|password|login", RegexOption.IGNORE_CASE).containsMatchIn(reason)
         val check = Regex("challenge|verification|captcha", RegexOption.IGNORE_CASE).containsMatchIn(reason)
+        if (signin) {
+            val already = signinHold()
+            store.setSettings { it.copy(signinNeededAt = now()) }
+            log("! Amazon asked to sign in - no checkout until you sign in (tap Amazon sign-in in the app).")
+            if (already) return                         // (told once - not again at every look)
+        }
+        if (check) {                                    // a robot check during a checkout: rest like on a product page
+            val streak = s().cooldownStreak + 1; val rest = minOf(60L * 60_000, 10L * 60_000 * streak)
+            store.setSettings { it.copy(cooldownUntil = now() + rest, cooldownStreak = streak) }
+        }
         val title = when { signin -> "Sign in to Amazon in the app"; check -> "Amazon wants to check it's you"; else -> "Amazon needs you" }
         val text = when {
             signin -> "${p.label} was buyable but Amazon wants you to sign in. Open the app and press Amazon sign-in."
@@ -362,6 +375,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         for (a in armed) {
             val r = page.ask(mapOf("bb" to "orders", "asin" to a), 15_000) ?: continue
             if (r["signin"] == true) {
+                store.setSettings { it.copy(signinNeededAt = now()) }
                 log("! Your Amazon order list needs a sign-in - press Amazon sign-in in the app.")
                 if (now() - s().needYouAt > 60 * 60_000L) { store.setSettings { it.copy(needYouAt = now()) }; alerts.needYou("Sign in to Amazon in the app", "Restalker can't read your Amazon orders (and can't buy) until you sign in: open the app and press Amazon sign-in.") }
                 break

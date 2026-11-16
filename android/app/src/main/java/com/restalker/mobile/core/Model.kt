@@ -82,6 +82,7 @@ data class Settings(
     val intervalSec: Int = 90,            // each product is looked at once every this many seconds
     val snoozeUntil: Long = 0,            // restock messages silenced until then
     val wifiOnly: Boolean = false,        // look only while on Wi-Fi (saves mobile data)
+    val signinNeededAt: Long = 0,         // Amazon asked to sign in: no checkout until you opened the sign-in (or 1 hour passed)
     val cooldownUntil: Long = 0,          // Amazon showed a robot check / slowed us down: no page until then
     val cooldownStreak: Int = 0,
     val needYouAt: Long = 0,              // last "Amazon needs you" message (at most one an hour)
@@ -89,14 +90,14 @@ data class Settings(
     val ordersKnown: Map<String, List<String>> = emptyMap(),   // ASIN -> order numbers already in your Amazon orders (before a checkout)
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
-        "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
+        "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown)
     companion object {
         const val MIN_INTERVAL = 60
         fun fromMap(m: Map<String, Any?>?): Settings {
             if (m == null) return Settings()
             return Settings(m["watching"].asBool(), m["buying"].asBool(), m["practice"] != false,
-                ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["cooldownUntil"].asLong() ?: 0,
+                ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["signinNeededAt"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
                 (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } })
         }

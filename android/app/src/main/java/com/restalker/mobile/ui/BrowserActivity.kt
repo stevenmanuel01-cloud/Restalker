@@ -93,6 +93,8 @@ class BrowserActivity : Activity() {
         }
         shared = null
         BrowserShown.on = false
+        // you may have signed in: checkouts may try again (if Amazon still wants a sign-in, it asks again and you are told)
+        if (RkApp.store().settings().signinNeededAt > 0) { RkApp.store().setSettings { it.copy(signinNeededAt = 0) }; RkApp.store().log("Sign-in hold cleared (the browser was used).") }
         CookieManager.getInstance().flush()
         super.onStop()
     }

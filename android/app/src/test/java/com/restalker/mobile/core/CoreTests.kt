@@ -307,6 +307,19 @@ object CoreTests {
             val w = World(); w.add("B0TEST0001", 0.0, true, price = 0.0); w.check("B0TEST0001")
             w.amz.begins == 0 && w.p("B0TEST0001").cap == 0.0
         }
+        t("34 Amazon wants a sign-in: told ONCE, no checkout tries until the sign-in browser was used (or 1 hour)") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.signinCheckout = true
+            w.check("B0TEST0001"); w.check("B0TEST0001"); w.check("B0TEST0001")
+            val once = w.said.needYou.count { it.startsWith("Sign in to Amazon") } == 1 && w.amz.begins == 1
+            w.store.setSettings { it.copy(signinNeededAt = 0) }; w.amz.signinCheckout = false      // (you signed in)
+            w.check("B0TEST0001")
+            once && w.amz.places == 1
+        }
+        t("35 the sign-in hold ends by itself after 1 hour") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.signinCheckout = true; w.check("B0TEST0001")
+            w.amz.signinCheckout = false; w.clock.t += 61 * 60_000L; w.check("B0TEST0001")
+            w.amz.places == 1
+        }
         return results
     }
 
