@@ -150,4 +150,41 @@ class PhoneTests {
         assertTrue("40 timers of 25 ms finished within 6 s while hidden (took $ms ms)", ms in 900.0..6000.0)
     }
 
+    @Test fun t6_browserShownWhileWatching_thenWatchingGoesOn() {
+        start(false, false, Product(id = "a7", asin = "B0TEST0002", cap = 120.0, buy = false, watch = true))
+        assertTrue(waitFor(60_000) { p("B0TEST0002").lastCheck > 0 })
+        val sc = androidx.test.core.app.ActivityScenario.launch<com.restalker.mobile.ui.BrowserActivity>(
+            android.content.Intent(ctx, com.restalker.mobile.ui.BrowserActivity::class.java).putExtra(com.restalker.mobile.ui.BrowserActivity.EXTRA_URL, "https://www.amazon.com/dp/B0TEST0001"))
+        Thread.sleep(4_000)
+        val paused = WatchService.instance?.engine?.pausedFor
+        shot("t6_browser")
+        // a page outside Amazon is refused (the app's browser stays on amazon.com)
+        val l = java.util.concurrent.CountDownLatch(1)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { WatchService.instance!!.web.web.evaluateJavascript("location.href='https://evil.example.com/x'") { l.countDown() } }
+        l.await(); Thread.sleep(2_000)
+        val urlAfter = WatchService.instance!!.web.currentUrl
+        sc.close()
+        Thread.sleep(1_000)
+        val t0 = p("B0TEST0002").lastCheck
+        WatchService.cmd(ctx, "check", "a7")
+        val again = waitFor(40_000) { p("B0TEST0002").lastCheck > t0 }
+        dumpLog("t6")
+        assertEquals("watching paused while you use the browser", "you are using the browser", paused)
+        assertTrue("stayed on Amazon: $urlAfter", urlAfter.startsWith("https://www.amazon.com/"))
+        assertTrue("no request to another site", site.requests.none { it.contains("evil.example.com") })
+        assertTrue("watching works again after the browser was closed", again)
+        assertEquals(null, WatchService.instance?.engine?.pausedFor)
+    }
+
+    @Test fun t7_buyNowButtonOnMessage() {
+        start(false, false, Product(id = "a8", asin = "B0TEST0001", cap = 120.0, buy = false, watch = true))
+        assertTrue("restock seen", waitFor(60_000) { p("B0TEST0001").buyable })
+        assertEquals(0, site.places)
+        ctx.sendBroadcast(android.content.Intent(ctx, ActionReceiver::class.java).setAction(ActionReceiver.BUY_NOW).putExtra("id", "a8"))
+        val ok = waitFor(150_000) { RkApp.store().purchases().isNotEmpty() }
+        dumpLog("t7")
+        assertTrue("bought after Buy now", ok)
+        assertEquals(1, site.places)
+        assertTrue(p("B0TEST0001").purchased)
+    }
 }
