@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -41,6 +42,10 @@ class ScreenTests {
     @Test fun t5_screen_titleAndAddProduct() {
         RkApp.store().products().forEach { RkApp.store().remove(it.id) }
         compose.onNodeWithTag("title").assertIsDisplayed()
+        // the whole title, version included, is shown (not cut off) - with normal and with big text
+        val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
+        assertEquals("title not cut off", false, lay.first().hasVisualOverflow)
         compose.onNodeWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}").assertIsDisplayed()
         compose.onNodeWithTag("add").performClick()
         compose.onNodeWithTag("f-link").performTextInput("https://www.amazon.com/Magic-Hobbit/dp/B0TEST0001/ref=sr_1_1")
