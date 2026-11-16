@@ -25,7 +25,7 @@ class ScreenTests {
     private fun shot(name: String) {
         try {
             val bmp: Bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: return
-            val d = File(ctx.getExternalFilesDir(null), "shots").also { it.mkdirs() }
+            val d = File(ctx.filesDir, "shots").also { it.mkdirs() }
             File(d, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 90, it) }
         } catch (e: Exception) { }
     }

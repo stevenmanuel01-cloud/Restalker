@@ -74,10 +74,8 @@ jobs:
             adb install -r -g apk/outputs/apk/debug/app-debug.apk || adb install -r -g $(ls apk/**/app-debug.apk | head -1)
             adb install -r -g apk/outputs/apk/androidTest/debug/app-debug-androidTest.apk || adb install -r -g $(ls apk/**/app-debug-androidTest.apk | head -1)
             adb shell am instrument -w -r -e debug false com.restalker.mobile.test/androidx.test.runner.AndroidJUnitRunner | tee instrument.txt
-            mkdir -p shots; adb pull /sdcard/Android/data/com.restalker.mobile/files/shots shots/ || true
             adb logcat -d > logcat.txt || true
-            for f in shots/shots/*.txt shots/*.txt; do [ -f "$f" ] && { echo "=== FILE $f"; cat "$f"; echo "=== END"; }; done
-            for f in shots/shots/*.png shots/*.png; do [ -f "$f" ] && { convert "$f" -resize 45% "$f.small.png" 2>/dev/null || cp "$f" "$f.small.png"; echo "=== SHOT $f $(base64 -w0 "$f.small.png")"; }; done
+            bash android/ci/evidence.sh || true
             grep -q "FAILURES!!!\|INSTRUMENTATION_FAILED\|Process crashed" instrument.txt && exit 1 || grep -q "^OK (" instrument.txt
       - uses: actions/upload-artifact@v4
         if: always()

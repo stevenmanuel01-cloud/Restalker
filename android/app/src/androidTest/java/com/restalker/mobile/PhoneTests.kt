@@ -60,14 +60,14 @@ class PhoneTests {
     private fun shot(name: String) {
         try {
             val bmp: Bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: return
-            val d = File(ctx.getExternalFilesDir(null), "shots").also { it.mkdirs() }
+            val d = File(ctx.filesDir, "shots").also { it.mkdirs() }
             File(d, "$name.png").outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 90, it) }
         } catch (e: Exception) { }
     }
 
     private fun dumpLog(name: String) {
         try {
-            val d = File(ctx.getExternalFilesDir(null), "shots").also { it.mkdirs() }
+            val d = File(ctx.filesDir, "shots").also { it.mkdirs() }
             File(d, "$name.log.txt").writeText(RkApp.store().log().joinToString("\n") + "\n\n--- requests ---\n" + site.requests.joinToString("\n"))
         } catch (e: Exception) { }
     }
@@ -146,7 +146,7 @@ class PhoneTests {
         }
         l2.await()
         val ms = res.get()?.trim('"')?.toDoubleOrNull() ?: -1.0
-        File(File(ctx.getExternalFilesDir(null), "shots").also { it.mkdirs() }, "t4_timers.txt").writeText("40 x 25 ms timers took $ms ms in the hidden browser\n")
+        File(File(ctx.filesDir, "shots").also { it.mkdirs() }, "t4_timers.txt").writeText("40 x 25 ms timers took $ms ms in the hidden browser\n")
         assertTrue("40 timers of 25 ms finished within 6 s while hidden (took $ms ms)", ms in 900.0..6000.0)
     }
 
