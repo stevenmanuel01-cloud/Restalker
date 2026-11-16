@@ -45,7 +45,9 @@ class ScreenTests {
         // the whole title, version included, is shown (not cut off) - with normal and with big text
         val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
         compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
-        assertEquals("title not cut off", false, lay.first().hasVisualOverflow)
+        val l0 = lay.first(); val full = l0.layoutInput.text.text
+        assertEquals("the whole title is visible: $full", full.length, l0.getLineEnd(l0.lineCount - 1, visibleEnd = true))
+        assertEquals("no line is cut with ...", false, (0 until l0.lineCount).any { l0.isLineEllipsized(it) })
         compose.onNodeWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}").assertIsDisplayed()
         compose.onNodeWithTag("add").performClick()
         compose.onNodeWithTag("f-link").performTextInput("https://www.amazon.com/Magic-Hobbit/dp/B0TEST0001/ref=sr_1_1")
