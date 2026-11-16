@@ -1,8 +1,8 @@
 {
- "version": "v121",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v121_update.zip",
- "sha256": "6de86d6117b4787c781990d511db5f125d48b3e4392d8af19311a583450f4165",
- "size": 715615,
- "notes": "Your phone gets one message with the download link when the Restalker phone app (Android) is ready",
- "files": 77
+ "version": "v122",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v122_update.zip",
+ "sha256": "44753b6140015bc248dca03e787fe376253459b089d4c82987efbd59b5437e60",
+ "size": 718646,
+ "notes": "Report problem button: sends the diagnostics straight to Claude; automatic reports when a checkout does not buy",
+ "files": 78
 }
