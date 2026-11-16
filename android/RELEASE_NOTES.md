@@ -1,4 +1,9 @@
-Restalker Mobile 1.2 (Android).
+Restalker Mobile 1.3 (Android).
+
+- NEW: Report problem (top of the Products tab, and in the Log tab): the app's log goes straight to Claude. Automatic reports (on): when a
+  checkout does not buy or something needs you, a report is sent by itself (at most every 30 minutes).
+- The log now keeps Amazon's own words at every checkout step.
+
 
 - Watches your Amazon products on its own, all day, and buys a product set to Buy when it is in stock at or under your cap
   (the desktop Restalker's own Amazon checkout). One purchase per product; Re-arm to buy again.

@@ -75,13 +75,22 @@ class PhoneTests {
     private fun start(practice: Boolean, buying: Boolean = true, vararg ps: Product) {
         val s = RkApp.store()
         ps.forEach { s.add(it) }
-        s.setSettings { it.copy(watching = true, buying = buying, practice = practice, intervalSec = 60) }
+        s.setSettings { it.copy(watching = true, buying = buying, practice = practice, intervalSec = 60, autoReport = autoReports) }
         device.pressHome()                      // (the app is in the background, as on your phone)
         WatchService.start(ctx)
         assertTrue("watching started", waitFor(15_000) { WatchService.instance != null })
     }
 
     private fun p(asin: String) = RkApp.store().products().first { it.asin == asin }
+    private var autoReports = false          // (tests send no reports, except t14 which checks them)
+
+    /** Reads this phone's report channel back the way Claude does: the newest report file's text. */
+    private fun readBack(code: String): String {
+        val list = java.net.URL("https://ntfy.sh/$code/json?poll=1").readText()
+        val url = list.lines().filter { it.isNotBlank() }.mapNotNull { com.restalker.mobile.core.MiniJson.obj(it)?.get("attachment") as? Map<*, *> }
+            .lastOrNull()?.get("url") as? String ?: return ""
+        return java.net.URL(url).readText()
+    }
 
     @Test fun t1_realPurchase_inBackground_lockedAndVerified() {
         start(false, true, Product(id = "a1", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))
@@ -258,6 +267,27 @@ class PhoneTests {
         s.setSettings { it.copy(watching = true) }
         BootReceiver().onReceive(ctx, android.content.Intent(android.content.Intent.ACTION_MY_PACKAGE_REPLACED))
         assertTrue("watching restarted", waitFor(15_000) { WatchService.instance != null })
+    }
+
+    @Test fun t14_reports_reachClaude_byButtonAndByThemselves() {
+        // 1) the button (Reporter.send = what Report problem does)
+        val done = java.util.concurrent.CountDownLatch(1); var ok = false
+        RkApp.store().log("t14 marker 1")
+        Reporter.send(ctx, "sent by you") { ok = it; done.countDown() }
+        done.await(90, java.util.concurrent.TimeUnit.SECONDS)
+        val code = com.restalker.mobile.core.Report.code(RkApp.store())
+        Thread.sleep(2_000)
+        val first = readBack(code)
+        // 2) by itself: a checkout that does not buy (Amazon asks to sign in) sends one
+        autoReports = true; site.signinAtCheckout = true
+        start(false, true, Product(id = "rp", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))
+        val sentAgain = waitFor(200_000) { readBack(code).contains("automatic: ") || RkApp.store().log().any { it.contains("Report sent to Claude") && it.contains("automatic") } }
+        Thread.sleep(3_000)
+        val second = readBack(code)
+        File(File(ctx.filesDir, "shots").also { it.mkdirs() }, "t14_report.txt").writeText("code $code\n--- first ---\n" + first.take(3000) + "\n--- second ---\n" + second.take(3000))
+        assertTrue("the button's report was sent", ok)
+        assertTrue("Claude can read it: app version, log", first.contains("Restalker Mobile v") && first.contains("t14 marker 1"))
+        assertTrue("an automatic report was sent after the failed checkout", sentAgain && second.contains("Amazon asked to sign in"))
     }
 
     @Test fun t13_testMessage_andDiagnostics() {

@@ -21,6 +21,8 @@ interface Alerts {
     fun needYou(title: String, text: String, p: Product? = null)
     fun practice(p: Product, text: String)
     fun status(text: String)
+    /** Something went wrong (a checkout that did not finish, a message that needs you): the Android side may send a report. */
+    fun problem(what: String) {}
 }
 
 interface Clock { fun now(): Long; fun sleep(ms: Long) }
@@ -241,6 +243,10 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 for (x in m["msgs"].asList().mapNotNull { it.asMap() }) {
                     seen = maxOf(seen, x["n"].asLong() ?: 0)
                     val t = x["type"].asStr() ?: ""; val reason = x["reason"].asStr() ?: ""
+                    if (t != "CHECKOUT_PRICE_EVIDENCE") log("  checkout step: $t" + (if (reason.isNotBlank()) " - $reason" else "") +
+                        listOf("page", "step", "label").mapNotNull { k -> x[k]?.let { v -> " $k=$v" } }.joinToString("") +
+                        (x["headings"]?.let { " headings=$it" } ?: "") + (x["notes"]?.let { " notes=$it" } ?: "") +
+                        (x["fees"]?.let { " fees=" + MiniJson.write(it) } ?: ""))
                     when (t) {
                         "CHECKOUT_PRICE_EVIDENCE" -> store.update(p.id) { it.copy(status = "checkout: " + reason.lowercase().replace('_', ' ')) }
                         "SUBMITTING" -> {
@@ -323,6 +329,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
             End.UNCLEAR -> {
                 store.update(p.id) { it.copy(inProgress = false, attempted = true, buy = false, status = "ORDER MAY HAVE BEEN PLACED - check Amazon") }
                 log("! ${p.label}: order unclear - $why. Not bought again (press Re-arm after checking Amazon).")
+                alerts.problem("${p.label}: order unclear - $why")
                 store.addPurchase(Purchase(now(), p.asin, p.label, paid, null, false, "unclear - check Amazon"))
                 alerts.needYou("Check your Amazon orders", "${p.label}: $why. Restalker will not buy it again until you press Re-arm.", p)
             }
@@ -336,6 +343,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
                         status = (if (end == End.FAILED) "NOT BOUGHT - " else "STOPPED - ") + why.take(160))
                 }
                 log("${p.label}: ${if (end == End.FAILED) "not bought" else "stopped"} - $why" + if (lock) " (stopped trying for ${LOCK_MS / 60_000} min after $fails tries)" else "")
+                alerts.problem("${p.label}: ${if (end == End.FAILED) "not bought" else "stopped"} - $why")
                 if (lock) alerts.needYou("Stopped trying", "${p.label}: $fails checkouts in a row did not finish (last: ${why.take(120)}). Trying again in ${LOCK_MS / 60_000} min.", p)
             }
         }

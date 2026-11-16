@@ -30,6 +30,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.restalker.mobile.BuildConfig
 import com.restalker.mobile.Diag
 import com.restalker.mobile.Notifier
+import com.restalker.mobile.Reporter
 import com.restalker.mobile.RkApp
 import com.restalker.mobile.WatchService
 import com.restalker.mobile.core.APP_VERSION
@@ -49,6 +50,14 @@ class MainActivity : ComponentActivity() {
     private val bump: () -> Unit = { rev.intValue++ }
     private var shared = mutableStateOf<String?>(null)
     private var update = mutableStateOf<Pair<String, String>?>(null)
+    private var reportResult = mutableStateOf<String?>(null)
+    private fun report() {
+        reportResult.value = "Sending..."
+        Reporter.send(this, "sent by you") { ok ->
+            reportResult.value = if (ok) "Sent to Claude.\nYour report code:\n${com.restalker.mobile.core.Report.code(RkApp.store())}\n\nTell Claude \"reported\" (the first time, also send this code)."
+                                 else "Could not send it (no internet?). Try again."
+        }
+    }
     private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
     private val tick = object : Runnable { override fun run() { bump(); ticker.postDelayed(this, 5_000) } }
 
@@ -129,6 +138,19 @@ class MainActivity : ComponentActivity() {
         }
         if (adding) AddDialog(shared.value, onDone = { adding = false; shared.value = null })
         editing?.let { p -> EditDialog(p) { editing = null } }
+        reportResult.value?.let { msg ->
+            AlertDialog(onDismissRequest = { reportResult.value = null }, title = { Text("Report problem") },
+                text = { androidx.compose.foundation.text.selection.SelectionContainer { Text(msg, modifier = Modifier.testTag("report-msg")) } },
+                confirmButton = {
+                    Row {
+                        if (msg.contains("rkr-")) TextButton(onClick = {
+                            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("Restalker report code", com.restalker.mobile.core.Report.code(RkApp.store())))
+                        }) { Text("Copy code") }
+                        TextButton(onClick = { reportResult.value = null }) { Text("OK") }
+                    }
+                })
+        }
         if (confirmReal) AlertDialog(onDismissRequest = { confirmReal = false }, title = { Text("Make real purchases?") },
             text = { Text("With Practice mode off, products set to Buy are really ordered on Amazon when they are in stock at or under their cap.") },
             confirmButton = { Button(onClick = {
@@ -179,7 +201,10 @@ class MainActivity : ComponentActivity() {
             item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(status, fontSize = 13.sp, modifier = Modifier.testTag("status"))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(status, fontSize = 13.sp, modifier = Modifier.weight(1f).testTag("status"))
+                            Button(onClick = { report() }, modifier = Modifier.testTag("report")) { Text("Report problem") }
+                        }
                         svc?.dataText()?.takeIf { it.isNotEmpty() }?.let { Text(it, fontSize = 12.sp) }
                         if (svc != null && !svc.web.available) Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("This phone's \"Android System WebView\" is too old for Restalker - update it in the Play Store.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
@@ -209,6 +234,9 @@ class MainActivity : ComponentActivity() {
                         }
                         Toggle("Practice mode", "ON: every checkout stops right before \"Place your order\" - nothing is bought. Switch off for real purchases.", st.practice, "practice") { on ->
                             if (on) { store.setSettings { it.copy(practice = true) }; store.log("Practice mode switched ON (nothing is bought).") } else onRealAsk()
+                        }
+                        Toggle("Send problem reports", "When something goes wrong, the app's log is sent to Claude by itself (at most every 30 min).", st.autoReport, "autoreport") { on ->
+                            store.setSettings { it.copy(autoReport = on) }; store.log("Automatic problem reports switched ${if (on) "ON" else "OFF"}.")
                         }
                         Toggle("Wi-Fi only", "Look only while on Wi-Fi (saves mobile data).", st.wifiOnly, "wifionly") { on ->
                             store.setSettings { it.copy(wifiOnly = on) }; store.log("Wi-Fi only switched ${if (on) "ON" else "OFF"}.")
@@ -407,6 +435,7 @@ class MainActivity : ComponentActivity() {
     fun LogTab(r: Int) {
         val lines = remember(r) { RkApp.store().log().asReversed() }
         LazyColumn(Modifier.fillMaxSize().padding(10.dp).testTag("log")) {
+            item { Button(onClick = { report() }, modifier = Modifier.fillMaxWidth().testTag("report-log")) { Text("Report problem (sends this log to Claude)") } }
             if (lines.isEmpty()) item { Text("Nothing yet.") }
             items(lines) { Text(it, fontSize = 12.sp, modifier = Modifier.padding(vertical = 2.dp)) }
         }

@@ -74,6 +74,8 @@ object CoreTests {
         override fun needYou(title: String, text: String, p: Product?) { needYou.add("$title: $text") }
         override fun practice(p: Product, text: String) { practice.add(text) }
         override fun status(text: String) { last = text }
+        val problems = ArrayList<String>()
+        override fun problem(what: String) { problems.add(what) }
     }
 
     class World(practice: Boolean = false, buying: Boolean = true, var net: String? = "wifi") {
@@ -319,6 +321,24 @@ object CoreTests {
             val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.signinCheckout = true; w.check("B0TEST0001")
             w.amz.signinCheckout = false; w.clock.t += 61 * 60_000L; w.check("B0TEST0001")
             w.amz.places == 1
+        }
+        t("36 report: a private code made once and kept; the whole log sent as a file") {
+            val w = World(); val c1 = Report.code(w.store); val c2 = Report.code(Store(w.dir))
+            val sent = ArrayList<Triple<String, Map<String, String>, ByteArray>>()
+            val ok = Report.send(w.store, "Restalker Mobile report", "LOG " + "x".repeat(200_000) + " END", "sent by you") { u, h, b -> sent.add(Triple(u, h, b)); 200 }
+            Report.valid(c1) && c1 == c2 && ok && sent.single().first == "https://ntfy.sh/$c1" && sent.single().second["Filename"] == "restalker-mobile-report.txt" &&
+                String(sent.single().third).endsWith(" END") && w.store.log().last().contains("Report sent")
+        }
+        t("37 report: no internet -> told, no crash; automatic reports at most every 30 minutes and only when on") {
+            val w = World()
+            val bad = Report.send(w.store, "t", "x", "y") { _, _, _ -> throw java.io.IOException("no internet") }
+            val s0 = w.store.settings().copy(reportAt = 1_000_000L)
+            !bad && w.store.log().last().contains("could not be sent") && Report.autoDue(s0, 1_000_000L + 31 * 60_000L) &&
+                !Report.autoDue(s0, 1_000_000L + 10 * 60_000L) && !Report.autoDue(s0.copy(autoReport = false), 9_000_000_000L)
+        }
+        t("38 a checkout that does not buy is a problem (a report may go); its Amazon messages are in the log") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.placeFail = 1; w.check("B0TEST0001")
+            w.said.problems.size == 1 && w.said.problems[0].contains("not bought") && w.store.log().any { it.contains("checkout step: DEFINITE_SUBMISSION_FAILURE") }
         }
         return results
     }

@@ -43,3 +43,33 @@ object Diag {
         return sb.toString()
     }
 }
+
+/** Sends reports to Claude (see core/Report.kt) from the phone: by the Report problem button, or by itself after a problem. */
+object Reporter {
+    fun put(url: String, headers: Map<String, String>, body: ByteArray): Int {
+        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        c.requestMethod = "PUT"; c.doOutput = true; c.connectTimeout = 20_000; c.readTimeout = 60_000
+        headers.forEach { (k, v) -> c.setRequestProperty(k, v) }
+        c.setFixedLengthStreamingMode(body.size)
+        c.outputStream.use { it.write(body) }
+        val code = c.responseCode
+        c.disconnect()
+        return code
+    }
+
+    /** In the background; [done] gets true/false on the main thread. */
+    fun send(ctx: android.content.Context, why: String, done: ((Boolean) -> Unit)? = null) {
+        val store = RkApp.store()
+        Thread {
+            val ok = com.restalker.mobile.core.Report.send(store, "Restalker Mobile report", Diag.text(ctx), why, ::put)
+            if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post { done(ok) }
+        }.start()
+    }
+
+    fun auto(ctx: android.content.Context, why: String) {
+        val s = RkApp.store().settings()
+        if (!com.restalker.mobile.core.Report.autoDue(s, System.currentTimeMillis())) return
+        RkApp.store().setSettings { it.copy(reportAt = System.currentTimeMillis()) }     // (one at a time)
+        send(ctx, "automatic: $why")
+    }
+}

@@ -44,7 +44,10 @@ class Notifier(private val ctx: Context) : Alerts {
         if (title.contains("check it's you") || title.contains("Sign in")) b.addAction(0, if (title.contains("Sign in")) "Sign in" else "Show browser",
             if (title.contains("Sign in")) openBrowser(BrowserActivity.SIGNIN_URL, 9) else openBrowser(null, 8))
         post(idFor("n", title + (p?.id ?: "")), b.build())
+        Reporter.auto(ctx, "$title - $text")
     }
+
+    override fun problem(what: String) = Reporter.auto(ctx, what)
 
     override fun practice(p: Product, text: String) = post(idFor("p", p.id), base(CH_BUY, "PRACTICE: ${p.label}", text).build())
 

@@ -94,6 +94,17 @@ class ScreenTests {
         assertEquals(4500.0, p("B0TEST0009").cap, 0.001)
     }
 
+    @Test fun t9_reportButton_showsCodeToCopy() {
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("report"))
+        compose.onNodeWithTag("report").performClick()
+        compose.waitUntil(90_000) { compose.onAllNodesWithTag("report-msg").fetchSemanticsNodes().isNotEmpty() &&
+            RkApp.store().log().any { it.contains("Report sent") || it.contains("could not be sent") } }
+        compose.waitForIdle(); Thread.sleep(1_000)
+        shot("t9_report")
+        val code = com.restalker.mobile.core.Report.code(RkApp.store())
+        compose.onNodeWithText(code, substring = true).assertIsDisplayed()
+    }
+
     @Test fun t8_turnPhoneSideways_noCrash() {
         val dev = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         dev.setOrientationLeft(); Thread.sleep(2_000); compose.waitForIdle()

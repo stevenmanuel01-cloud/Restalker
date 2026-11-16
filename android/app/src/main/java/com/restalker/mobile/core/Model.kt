@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.2"
+const val APP_VERSION = "1.3"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -83,6 +83,9 @@ data class Settings(
     val snoozeUntil: Long = 0,            // restock messages silenced until then
     val wifiOnly: Boolean = false,        // look only while on Wi-Fi (saves mobile data)
     val signinNeededAt: Long = 0,         // Amazon asked to sign in: no checkout until you opened the sign-in (or 1 hour passed)
+    val reportTopic: String = "",         // this phone's private report channel (made once): problem reports go to Claude through it
+    val autoReport: Boolean = true,       // send a problem report by itself when something goes wrong (at most one every 30 minutes)
+    val reportAt: Long = 0,
     val cooldownUntil: Long = 0,          // Amazon showed a robot check / slowed us down: no page until then
     val cooldownStreak: Int = 0,
     val needYouAt: Long = 0,              // last "Amazon needs you" message (at most one an hour)
@@ -90,14 +93,14 @@ data class Settings(
     val ordersKnown: Map<String, List<String>> = emptyMap(),   // ASIN -> order numbers already in your Amazon orders (before a checkout)
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
-        "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
+        "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown)
     companion object {
         const val MIN_INTERVAL = 60
         fun fromMap(m: Map<String, Any?>?): Settings {
             if (m == null) return Settings()
             return Settings(m["watching"].asBool(), m["buying"].asBool(), m["practice"] != false,
-                ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["signinNeededAt"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
+                ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["signinNeededAt"].asLong() ?: 0, m["reportTopic"].asStr() ?: "", m["autoReport"] != false, m["reportAt"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
                 (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } })
         }
