@@ -514,7 +514,9 @@ class MainActivity : ComponentActivity() {
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val linked = remember { DeskLink.get().linked() }
         ModalBottomSheet(onDismissRequest = { if (!busy) onDone() }, sheetState = sheet, containerColor = Color.White) {
-            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // (the fields scroll; the error and the Add button stay on screen - a small phone with big text must still reach them)
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp)) {
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Add a product", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(link, { link = it; err = "" }, label = { Text("Amazon link or product code") }, singleLine = true,
@@ -531,8 +533,10 @@ class MainActivity : ComponentActivity() {
                 Text("Kind - the page must show the same kind (\"other\" = not checked)", fontSize = 12.sp, color = Look.Muted)
                 FlowRow { listOf("box", "bundle", "pack", "other").forEach { k -> FilterChip(kind == k, { kind = k }, { Text(k) }, Modifier.padding(end = 6.dp)) } }
                 SwitchRowPlain("Buy it when in stock", "Off = just tell me", buy, "f-buy") { buy = it }
-                if (busy) Text("Opening the short link...", fontSize = 13.sp)
-                if (err.isNotEmpty()) Text(err, color = Look.Red, fontSize = 13.sp, modifier = Modifier.testTag("f-err"))
+            }
+                if (busy) Text("Opening the short link...", fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                if (err.isNotEmpty()) Text(err, color = Look.Red, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp).testTag("f-err"))
+                Spacer(Modifier.height(10.dp))
                 Button(enabled = !busy, onClick = {
                     val c = cap.replace("$", "").replace(",", "").trim().toDoubleOrNull()
                     if (c == null || c <= 0) { err = "Enter the price cap (for example 449.99)."; return@Button }
@@ -549,7 +553,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("f-save")) { Text("Add product", fontSize = 16.sp) }
-                if (linked) Text("It is also added to your desktop (linked).", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                if (linked) Text("It is also added to your desktop (linked).", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp))
             }
         }
     }
