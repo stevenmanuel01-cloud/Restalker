@@ -1,8 +1,8 @@
 {
- "version": "v120",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v120_update.zip",
- "sha256": "a8becd7aa075c41c8de09acf1a067233b040f2b5a361ff59b2edec82baa400af",
- "size": 713959,
- "notes": "Stop works in one press again: the program no longer keeps a processor core busy after Stop, so the page and the diagnostics download answer at once; a second Stop does nothing more",
- "files": 76
+ "version": "v121",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v121_update.zip",
+ "sha256": "6de86d6117b4787c781990d511db5f125d48b3e4392d8af19311a583450f4165",
+ "size": 715615,
+ "notes": "Your phone gets one message with the download link when the Restalker phone app (Android) is ready",
+ "files": 77
 }
