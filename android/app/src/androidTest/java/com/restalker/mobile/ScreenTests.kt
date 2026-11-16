@@ -15,8 +15,6 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.assertIsNotDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.restalker.mobile.ui.MainActivity
