@@ -103,7 +103,8 @@ class MainActivity : ComponentActivity() {
         var editing by remember { mutableStateOf<Product?>(null) }
         var confirmReal by remember { mutableStateOf(false) }
         if (shared.value != null && !adding) adding = true
-        Scaffold(topBar = { TopAppBar(title = { Text("Restalker Mobile v$APP_VERSION", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("title"), maxLines = 2, fontSize = 20.sp, lineHeight = 22.sp)   // (the version always shows: 2 lines with big text) },
+        // (the title: the version always shows - 2 lines with big text)
+        Scaffold(topBar = { TopAppBar(title = { Text("Restalker Mobile v$APP_VERSION", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("title"), maxLines = 2, fontSize = 20.sp, lineHeight = 22.sp) },
             actions = {        // always on screen, and it covers nothing (a floating button covered the switches with big text)
                 if (tab == 0) FilledTonalButton(onClick = { adding = true }, modifier = Modifier.padding(end = 8.dp).testTag("add")) { Text("+ Add", maxLines = 1) }
             }) }) { pad ->
