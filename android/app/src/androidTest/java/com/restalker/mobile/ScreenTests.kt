@@ -95,7 +95,11 @@ class ScreenTests {
     }
 
     @Test fun t9_reportButton_showsCodeToCopy() {
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("report"))
+        // (the screen may still be drawing on a slow test phone: wait for it, and scroll a second time if the first try is too early)
+        compose.waitUntil(30_000) { compose.onAllNodesWithTag("list").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitForIdle()
+        try { compose.onNodeWithTag("list").performScrollToNode(hasTestTag("report")) }
+        catch (e: Throwable) { Thread.sleep(2_000); compose.waitForIdle(); compose.onNodeWithTag("list").performScrollToNode(hasTestTag("report")) }
         compose.onNodeWithTag("report").performClick()
         compose.waitUntil(90_000) { compose.onAllNodesWithTag("report-msg").fetchSemanticsNodes().isNotEmpty() &&
             RkApp.store().log().any { it.contains("Report sent") || it.contains("could not be sent") } }

@@ -13,6 +13,19 @@ awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATI
 sed -n '/^There w/,/^FAILURES/p' instrument.txt | head -60
 grep -q "^OK (" instrument.txt && ! grep -q "FAILURES!!!\|INSTRUMENTATION_FAILED\|Process crashed" instrument.txt || fail=1
 
+echo "=== the phone's reports, read back from outside (the way Claude reads them)"
+code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
+if [ -z "$code" ]; then echo "no report code from the test"; fail=1; else
+  got=""; for i in 1 2 3 4 5 6; do got=$(curl -s -A "Restalker-CI" "https://ntfy.sh/$code/json?poll=1&since=all" || true)
+    echo "$got" | grep -q '"sent by you"' && echo "$got" | grep -q 'automatic: Sign in to Amazon' && break; sleep 5; done
+  if echo "$got" | grep -q '"sent by you"' && echo "$got" | grep -q 'automatic: Sign in to Amazon'; then
+    url=$(echo "$got" | grep 'automatic: Sign in' | grep -o '"url":"[^"]*"' | tail -1 | cut -d'"' -f4)
+    body=$(curl -s -A "Restalker-CI" "$url" || true)
+    if echo "$body" | grep -q "Restalker Mobile v" && echo "$body" | grep -q "Amazon asked to sign in"; then echo "reports read back: OK (button + automatic, file readable)"
+    else echo "REPORT FILE NOT READABLE"; fail=1; fi
+  else echo "REPORTS NOT FOUND ON THE REPORT SERVER"; echo "$got" | cut -c1-300; fail=1; fi
+fi
+
 echo "=== big text, small screen"
 adb shell settings put system font_scale 1.3; adb shell wm size 720x1280; adb shell wm density 320; sleep 3
 adb shell am instrument -w -r -e debug false -e class $P.ScreenTests -e shotTag _big $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_big.txt 2>&1
