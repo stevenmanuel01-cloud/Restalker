@@ -331,14 +331,20 @@ object CoreTests {
         }
         t("37 report: no internet -> told, no crash; automatic reports at most every 30 minutes and only when on") {
             val w = World()
-            val bad = Report.send(w.store, "t", "x", "y") { _, _, _ -> throw java.io.IOException("no internet") }
+            var tries = 0
+            val bad = Report.send(w.store, "t", "x", "y", retryMs = 1) { _, _, _ -> tries++; throw java.io.IOException("no internet") }
             val s0 = w.store.settings().copy(reportAt = 1_000_000L)
-            !bad && w.store.log().last().contains("could not be sent") && Report.autoDue(s0, 1_000_000L + 31 * 60_000L) &&
+            !bad && tries == 3 && w.store.log().last().contains("could not be sent") && Report.autoDue(s0, 1_000_000L + 31 * 60_000L) &&
                 !Report.autoDue(s0, 1_000_000L + 10 * 60_000L) && !Report.autoDue(s0.copy(autoReport = false), 9_000_000_000L)
         }
         t("38 a checkout that does not buy is a problem (a report may go); its Amazon messages are in the log") {
             val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.placeFail = 1; w.check("B0TEST0001")
             w.said.problems.size == 1 && w.said.problems[0].contains("not bought") && w.store.log().any { it.contains("checkout step: DEFINITE_SUBMISSION_FAILURE") }
+        }
+        t("39 report: a report you send does not hold back the automatic one; a refusal for a moment is tried again") {
+            val w = World(); var n = 0
+            val ok = Report.send(w.store, "t", "x", "sent by you", retryMs = 1) { _, _, _ -> n++; if (n < 3) 503 else 200 }
+            ok && n == 3 && Report.autoDue(w.store.settings(), System.currentTimeMillis())
         }
         return results
     }

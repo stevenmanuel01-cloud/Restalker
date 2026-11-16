@@ -61,7 +61,7 @@ object Reporter {
     fun send(ctx: android.content.Context, why: String, done: ((Boolean) -> Unit)? = null) {
         val store = RkApp.store()
         Thread {
-            val ok = com.restalker.mobile.core.Report.send(store, "Restalker Mobile report", Diag.text(ctx), why, ::put)
+            val ok = com.restalker.mobile.core.Report.send(store, "Restalker Mobile report", Diag.text(ctx), why, put = ::put)
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post { done(ok) }
         }.start()
     }
