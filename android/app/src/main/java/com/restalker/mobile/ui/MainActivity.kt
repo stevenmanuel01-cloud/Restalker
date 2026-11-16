@@ -65,9 +65,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); bump(); ticker.post(tick) }
     override fun onPause() { ticker.removeCallbacks(tick); super.onPause() }
     override fun onDestroy() { RkApp.listeners.remove(bump); super.onDestroy() }
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults); bump()
-    }
 
     private fun sharedText(i: Intent?) {
         if (i?.action == Intent.ACTION_SEND) i.getStringExtra(Intent.EXTRA_TEXT)?.let { t -> shared.value = Asin.firstLink(t) ?: t }
