@@ -70,7 +70,9 @@ class AmazonWeb(private val appCtx: Context) : Page {
         st.mediaPlaybackRequiresUserGesture = true
         st.textZoom = 100
         st.cacheMode = WebSettings.LOAD_DEFAULT
-        st.userAgentString = desktopAgent(st.userAgentString)     // Amazon's desktop pages: the ones the desktop checkout is made for
+        val own = st.userAgentString
+        st.userAgentString = desktopAgent(own)     // Amazon's desktop pages: the ones the desktop checkout is made for
+        lookLikeChrome(st, own)
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, true)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -188,6 +190,26 @@ class AmazonWeb(private val appCtx: Context) : Page {
         fun allowed(u: Uri): Boolean {
             val h = (u.host ?: "").lowercase()
             return u.scheme == "https" && (h == "amazon.com" || h.endsWith(".amazon.com"))
+        }
+
+        /** The browser also tells sites it is an app's browser (the X-Requested-With header with the app's name, and "Android WebView"
+         *  in its client hints). Both are switched to what desktop Chrome sends, where this phone's WebView allows it. */
+        fun lookLikeChrome(st: WebSettings, own: String) {
+            try {
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST))
+                    androidx.webkit.WebSettingsCompat.setRequestedWithHeaderOriginAllowList(st, emptySet())
+            } catch (e: Throwable) { }
+            try {
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.USER_AGENT_METADATA)) {
+                    val major = Regex("Chrome/([0-9]+)").find(own)?.groupValues?.get(1) ?: "131"
+                    fun bv(b: String, v: String) = androidx.webkit.UserAgentMetadata.BrandVersion.Builder().setBrand(b).setMajorVersion(v).setFullVersion("$v.0.0.0").build()
+                    val md = androidx.webkit.UserAgentMetadata.Builder()
+                        .setBrandVersionList(listOf(bv("Google Chrome", major), bv("Chromium", major), bv("Not_A Brand", "24")))
+                        .setFullVersion("$major.0.0.0").setPlatform("Windows").setPlatformVersion("10.0.0").setArchitecture("x86")
+                        .setModel("").setMobile(false).setBitness(64).setWow64(false).build()
+                    androidx.webkit.WebSettingsCompat.setUserAgentMetadata(st, md)
+                }
+            } catch (e: Throwable) { }
         }
 
         fun desktopAgent(own: String): String {

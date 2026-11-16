@@ -29,7 +29,9 @@ object RealClock : Clock { override fun now() = System.currentTimeMillis(); over
  *  driver for it (multibuy.py _try_amazon / _amz_order_check), with the desktop's purchase rules: one purchase per product (the lock is
  *  written BEFORE "Place your order" is allowed), never a robot check answered, practice mode stops before Place your order, and a
  *  bought message only after the order was looked up in your Amazon orders. */
-class Engine(private val store: Store, private val page: Page, private val alerts: Alerts, private val clock: Clock = RealClock) {
+class Engine(private val store: Store, private val page: Page, private val alerts: Alerts, private val clock: Clock = RealClock,
+             /** "Wi-Fi" / "mobile" / null (no internet) - the Android side tells; tests give their own. */
+             private val network: () -> String? = { "wifi" }) {
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
@@ -54,6 +56,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
     /** The engine's own thread runs this until Quit. */
     fun run() {
         log("Restalker Mobile $APP_VERSION started (Amazon checkout from desktop $ENGINE_FROM).")
+        // a checkout that was running when watching last stopped is not running any more (its lock fields stay as they were)
+        store.products().filter { it.inProgress }.forEach { p -> store.update(p.id) { it.copy(inProgress = false) } }
         while (!quit) {
             try { step() } catch (e: InterruptedException) { break } catch (e: Exception) { log("! engine problem: ${e.message?.take(160)}"); waitFor(5_000) }
         }
@@ -68,12 +72,16 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (!st.watching) { status("Not watching. Switch Watching on to start."); waitFor(30_000); return }
         pausedFor?.let { status("Paused - $it"); waitFor(2_000); return }
         if (now() < st.cooldownUntil) { status("Amazon asked us to slow down - next look ${secs(st.cooldownUntil - now())}"); waitFor(minOf(st.cooldownUntil - now(), 30_000)); return }
+        val net = network()
+        if (net == null) { offline(); status("No internet - waiting for it"); waitFor(15_000); return }
+        if (st.wifiOnly && net != "wifi") { status("Wi-Fi only is on - waiting for Wi-Fi"); waitFor(30_000); return }
         val watched = store.products().filter { it.watch }
         if (watched.isEmpty()) { status("Watching, but no product is switched on."); waitFor(30_000); return }
         if (watched.any { it.buy } && now() - st.ordersReadAt > ORDERS_EVERY) { readOrders(); return }
         val interval = st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
         val due = watched.minByOrNull { it.lastCheck } ?: return
         val wait = due.lastCheck + interval - now()
+        offlineSince = 0
         if (wait > 0) { status("Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
@@ -116,7 +124,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun openAndRead(p: Product): Boolean {
         busyWith = "looking at ${p.label}"
         page.images(false)
-        if (!page.goto(p.url)) { setSeen(p, "the page did not load", null, false); return false }
+        if (!page.goto(p.url)) { setSeen(p, "the page did not load", null, false); loadFailed(); return false }
+        loadFails = 0
         page.ask(mapOf("bb" to "reset"), 10_000)
         val r = page.ask(mapOf("bb" to "eligible", "product" to p.forPage()), 12_000)
         lastReply = r
@@ -141,6 +150,22 @@ class Engine(private val store: Store, private val page: Page, private val alert
         }
         setSeen(store.product(p.id) ?: p, text, price, eligible)
         return true
+    }
+
+    // ---- pages that don't load / no internet: after 10 failures in a row (or 10 minutes without internet) you are told once
+    private var loadFails = 0
+    private var offlineSince = 0L
+    private var offlineTold = false
+    private fun loadFailed() {
+        loadFails++
+        if (loadFails == 10) alerts.needYou("Amazon is not loading", "The last 10 Amazon pages did not load. Restalker keeps trying; check the phone's internet.")
+    }
+    private fun offline() {
+        if (offlineSince == 0L) { offlineSince = now(); offlineTold = false }
+        if (!offlineTold && now() - offlineSince > 10 * 60_000L && s().watching) {
+            offlineTold = true
+            alerts.needYou("No internet", "The phone has had no internet for 10 minutes - Restalker can't watch until it is back.")
+        }
     }
 
     private fun setSeen(p: Product, text: String, price: Double?, buyable: Boolean) {
@@ -243,6 +268,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
                         }
                         "FLOW_BLOCKED" -> {
                             if (practice && end == End.PRACTICE_OK) return
+                            if ((x["page"].asStr() ?: "").startsWith("/ap/")) {        // (Amazon's sign-in / verification pages)
+                                end = End.STOPPED; why = "Amazon asked to sign in"; actionRequired(p, "sign in required"); return
+                            }
                             end = End.FAILED; why = "Amazon checkout: $reason"; return
                         }
                     }
@@ -255,9 +283,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 if (found != null) { end = End.BOUGHT; order = found } else { end = End.UNCLEAR; why = "Amazon did not answer within ${CHECKOUT_MS / 1000} s after Place your order" }
             } else { end = End.FAILED; why = "the checkout did not finish within ${CHECKOUT_MS / 1000} s" }
         } finally {
-            if (end != End.BOUGHT) page.ask(mapOf("bb" to "reset"), 4_000)     // (no unfinished checkout is left in the browser)
+            if (end != End.BOUGHT) try { page.ask(mapOf("bb" to "reset"), 4_000) } catch (e: Exception) { }    // (no unfinished checkout is left in the browser)
             finish(p, end, why, order, paid, practiceFees, submitted)
-            page.images(false)
+            try { page.images(false) } catch (e: Exception) { }
             busyWith = "idle"
         }
     }

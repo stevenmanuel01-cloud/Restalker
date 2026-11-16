@@ -187,4 +187,89 @@ class PhoneTests {
         assertEquals(1, site.places)
         assertTrue(p("B0TEST0001").purchased)
     }
+    /** A checkout trap: must end with NO order, and you are told. */
+    private fun trap(name: String, set: (FakeAmazonSite) -> Unit, told: (Product) -> Boolean) {
+        set(site)
+        start(false, true, Product(id = "tr", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))
+        val ended = waitFor(200_000) { val x = p("B0TEST0001"); !x.inProgress && (x.fails > 0 || x.status.startsWith("STOPPED") || x.status.startsWith("NOT BOUGHT")) }
+        Thread.sleep(2_000)
+        dumpLog("t8_$name")
+        val x = p("B0TEST0001")
+        assertTrue("$name: the checkout ended (${x.status})", ended)
+        assertEquals("$name: never an order", 0, site.places)
+        assertTrue("$name: not marked bought", !x.purchased && !x.attempted)
+        assertTrue("$name: you are told (${x.status})", told(x))
+    }
+
+    @Test fun t8a_trap_priceHigherAtCheckout() = trap("price", { it.checkoutPrice = 149.99 }) { it.status.startsWith("NOT BOUGHT") }
+    @Test fun t8b_trap_shippingOver20() = trap("shipping", { it.shipping = 25.0 }) { it.status.contains("shipping") }
+    @Test fun t8c_trap_soldOutAtCheckout() = trap("soldout", { it.soldOutAtCheckout = true }) { it.status.contains("unavailable", true) || it.status.contains("out of stock", true) }
+    @Test fun t8d_trap_otherItemInOrder() = trap("extra", { it.extraItem = true }) { it.status.startsWith("NOT BOUGHT") }
+    @Test fun t8e_trap_signInAtCheckout() = trap("signin", { it.signinAtCheckout = true }) { it.status.contains("sign in", true) }
+
+    @Test fun t9_noOrderNumber_stillFoundInOrders() {
+        site.noOrderNumber = true
+        start(false, true, Product(id = "nn", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))
+        val ok = waitFor(200_000) { RkApp.store().purchases().isNotEmpty() }
+        dumpLog("t9")
+        assertTrue(ok)
+        assertEquals(1, site.places)
+        assertTrue("found in the order list", RkApp.store().purchases().first().verified)
+    }
+
+    @Test fun t10_browserCrash_recovers() {
+        start(false, false, Product(id = "cr", asin = "B0TEST0002", cap = 120.0, buy = false, watch = true))
+        assertTrue(waitFor(60_000) { p("B0TEST0002").lastCheck > 0 })
+        val before = WatchService.instance!!.web.web
+        val l = java.util.concurrent.CountDownLatch(1)
+        android.os.Handler(android.os.Looper.getMainLooper()).post { before.loadUrl("chrome://crash"); l.countDown() }
+        l.await()
+        val replaced = waitFor(20_000) { WatchService.instance?.web?.web !== before }
+        val t0 = p("B0TEST0002").lastCheck
+        WatchService.cmd(ctx, "check", "cr")
+        val again = waitFor(60_000) { p("B0TEST0002").lastCheck > t0 }
+        dumpLog("t10")
+        assertTrue("a new browser was made after the crash", replaced)
+        assertTrue("watching works after the crash", again && p("B0TEST0002").status.startsWith("out of stock"))
+    }
+
+    @Test fun t11_appKilledDuringCheckout_neverBuysTwice() {
+        site.loadMs = 6000
+        start(false, true, Product(id = "kl", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))
+        assertTrue("the order was being placed", waitFor(120_000) { p("B0TEST0001").attempted })
+        WatchService.stop(ctx)                      // the app is closed right then (like the phone killing it)
+        assertTrue(waitFor(15_000) { WatchService.instance == null })
+        val placedBefore = site.places
+        val checkouts = site.requests.count { it.contains("/itemselect") }
+        site.loadMs = 1500
+        WatchService.start(ctx)
+        WatchService.cmd(ctx, "check", "kl")
+        Thread.sleep(45_000)
+        dumpLog("t11")
+        val x = p("B0TEST0001")
+        assertTrue("at most one order ($placedBefore, now ${site.places})", site.places <= 1)
+        assertEquals("no new checkout after the restart", checkouts, site.requests.count { it.contains("/itemselect") })
+        assertTrue("still locked: ${x.status}", x.attempted)
+        assertTrue("not running any more", !x.inProgress)
+    }
+
+    @Test fun t12_afterRestartOrUpdate_watchingStartsAgain() {
+        val s = RkApp.store()
+        s.setSettings { it.copy(watching = true) }
+        BootReceiver().onReceive(ctx, android.content.Intent(android.content.Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertTrue("watching restarted", waitFor(15_000) { WatchService.instance != null })
+    }
+
+    @Test fun t13_testMessage_andDiagnostics() {
+        Notifier.test(ctx)
+        Thread.sleep(1_500)
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+        val shown = nm.activeNotifications.any { it.id == 42 }
+        RkApp.store().add(Product(id = "dg", asin = "B0TEST0003", cap = 120.0))
+        val d = Diag.text(ctx)
+        File(File(ctx.filesDir, "shots").also { it.mkdirs() }, "t13_diagnostics.txt").writeText(d)
+        assertTrue("test message shown", shown)
+        assertTrue(d.contains("Restalker Mobile v") && d.contains("B0TEST0003") && d.contains("Log (newest last)"))
+        assertTrue("no password or card text", !d.contains("password", true) && !d.contains("card number", true))
+    }
 }

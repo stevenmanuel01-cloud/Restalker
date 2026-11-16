@@ -33,7 +33,8 @@ class WatchService : Service() {
         instance = this
         web = AmazonWeb(this); web.create()
         val store = RkApp.store()
-        engine = Engine(store, web, notifier)
+        startRx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); startAt = System.currentTimeMillis()
+        engine = Engine(store, web, notifier, network = { netKind(this) })
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
@@ -70,8 +71,26 @@ class WatchService : Service() {
         super.onDestroy()
     }
 
+    private var startRx = 0L; private var startAt = 0L
+    /** Data this app has downloaded since watching started, and per hour (shown on the screen). */
+    fun dataText(): String {
+        val rx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid())
+        if (rx < 0 || startRx < 0) return ""
+        val mb = (rx - startRx) / 1_048_576.0
+        val h = (System.currentTimeMillis() - startAt) / 3_600_000.0
+        return String.format(java.util.Locale.US, "Data used while watching: %.0f MB", mb) + if (h > 0.25) String.format(java.util.Locale.US, " (about %.0f MB an hour)", mb / h) else ""
+    }
+
     companion object {
         @Volatile var instance: WatchService? = null
+
+        /** "wifi", "mobile", or null (no internet). */
+        fun netKind(ctx: Context): String? {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return null) ?: return null
+            if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) return null
+            return if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) "wifi" else "mobile"
+        }
         const val ACT_CMD = "com.restalker.mobile.CMD"
 
         fun start(ctx: Context) = ContextCompat.startForegroundService(ctx, Intent(ctx, WatchService::class.java))

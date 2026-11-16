@@ -87,6 +87,14 @@ class Notifier(private val ctx: Context) : Alerts {
             nm.createNotificationChannel(NotificationChannel(CH_NEED, "Restalker needs you", NotificationManager.IMPORTANCE_HIGH))
         }
 
+        /** "Test message" button: shows that messages reach you (sound and all). */
+        fun test(ctx: Context) {
+            val n = NotificationCompat.Builder(ctx, CH_BUY).setSmallIcon(R.drawable.ic_note).setContentTitle("Restalker test message")
+                .setContentText("Messages work. Restocks and purchases will look and sound like this.").setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH).setContentIntent(openMain(ctx)).build()
+            try { NotificationManagerCompat.from(ctx).notify(42, n) } catch (e: SecurityException) { }
+        }
+
         fun openMain(ctx: Context): PendingIntent = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 

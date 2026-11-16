@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.0"
+const val APP_VERSION = "1.1"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -81,6 +81,7 @@ data class Settings(
     val practice: Boolean = true,         // ON = every checkout stops right before "Place your order" (nothing is bought)
     val intervalSec: Int = 90,            // each product is looked at once every this many seconds
     val snoozeUntil: Long = 0,            // restock messages silenced until then
+    val wifiOnly: Boolean = false,        // look only while on Wi-Fi (saves mobile data)
     val cooldownUntil: Long = 0,          // Amazon showed a robot check / slowed us down: no page until then
     val cooldownStreak: Int = 0,
     val needYouAt: Long = 0,              // last "Amazon needs you" message (at most one an hour)
@@ -88,14 +89,14 @@ data class Settings(
     val ordersKnown: Map<String, List<String>> = emptyMap(),   // ASIN -> order numbers already in your Amazon orders (before a checkout)
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
-        "snoozeUntil" to snoozeUntil, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
+        "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown)
     companion object {
         const val MIN_INTERVAL = 60
         fun fromMap(m: Map<String, Any?>?): Settings {
             if (m == null) return Settings()
             return Settings(m["watching"].asBool(), m["buying"].asBool(), m["practice"] != false,
-                ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
+                ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["cooldownUntil"].asLong() ?: 0,
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
                 (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } })
         }
@@ -106,6 +107,27 @@ data class Settings(
 object Asin {
     private val PATH = Regex("""/(?:dp|gp/product|gp/aw/d|exec/obidos/asin|o/ASIN|product)/([A-Z0-9]{10})(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
     private val BARE = Regex("""^[A-Z0-9]{10}$""", RegexOption.IGNORE_CASE)
+    /** Amazon's short share links (a.co/d/..., amzn.to/..., amzn.com/...): they hide the product - [follow] opens them. */
+    val SHORT = Regex("""^(?:https?://)?(?:www\.)?(a\.co|amzn\.to|amzn\.com|amzn\.eu)/\S+""", RegexOption.IGNORE_CASE)
+
+    /** The first web address in a shared text ("Check out this item on Amazon https://a.co/d/xyz"). */
+    fun firstLink(text: String): String? = Regex("""https?://[^\s<>"']+""").find(text)?.value?.trimEnd('.', ',', ')')
+
+    /** Reads a link or code, following Amazon's short links. [follow] = the address a link sends to (null = could not open it).
+     *  At most 5 hops, and only through Amazon's own addresses. */
+    fun resolve(input: String, follow: (String) -> String?): String? {
+        parse(input)?.let { return it }
+        var url = (firstLink(input) ?: input.trim()).let { if (it.startsWith("http", true)) it else "https://$it" }
+        repeat(5) {
+            parse(url)?.let { return it }
+            val h = Regex("^https?://([^/?#]+)", RegexOption.IGNORE_CASE).find(url)?.groupValues?.get(1)?.lowercase() ?: return null
+            val amazonish = h == "a.co" || h == "amzn.to" || h == "amzn.com" || h == "www.amzn.com" || h == "amzn.eu" || h == "amazon.com" || h.endsWith(".amazon.com")
+            if (!amazonish) return null
+            url = follow(url) ?: return null
+        }
+        return parse(url)
+    }
+
     fun parse(input: String): String? {
         val s = input.trim()
         if (BARE.matches(s)) return s.uppercase().takeIf { it.any(Char::isDigit) || it.startsWith("B0") }

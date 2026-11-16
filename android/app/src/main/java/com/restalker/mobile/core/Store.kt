@@ -10,16 +10,29 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     private var settings: Settings = Settings()
     private var purchases: List<Purchase> = emptyList()
     private val logLines = ArrayDeque<String>()
+    /** Files found damaged at start (set aside as NAME.bad; told in the log). Declared before init: init fills it. */
+    val damaged = ArrayList<String>()
     var onChange: (() -> Unit)? = null
 
     init {
         dir.mkdirs()
-        products = (MiniJson.read(read("products.json") ?: "[]") as? List<*>)?.mapNotNull { it.asMap()?.let(Product::fromMap) } ?: emptyList()
-        settings = Settings.fromMap(MiniJson.obj(read("settings.json")))
-        purchases = (MiniJson.read(read("purchases.json") ?: "[]") as? List<*>)?.mapNotNull { it.asMap()?.let(Purchase::fromMap) } ?: emptyList()
+        products = list("products.json")?.mapNotNull { it.asMap()?.let(Product::fromMap) } ?: emptyList()
+        settings = read("settings.json")?.let { t -> MiniJson.obj(t) ?: run { setAside("settings.json"); null } }.let(Settings::fromMap)
+        purchases = list("purchases.json")?.mapNotNull { it.asMap()?.let(Purchase::fromMap) } ?: emptyList()
         read("log.txt")?.lines()?.filter { it.isNotBlank() }?.takeLast(LOG_MAX)?.forEach { logLines.addLast(it) }
+        if (damaged.isNotEmpty()) logLines.addLast("! These files were damaged and set aside (the app started without them): ${damaged.joinToString()}")
         // a checkout that was running when the app was closed: it is not running any more (the lock fields stay as they were)
         if (products.any { it.inProgress }) { products = products.map { it.copy(inProgress = false) }; saveProducts() }
+    }
+
+    /** A file that can't be read (damaged) is kept aside as NAME.bad and the app starts without it - it never stops the app. */
+    private fun list(name: String): List<*>? {
+        val t = read(name) ?: return null
+        return try { MiniJson.read(t) as? List<*> ?: throw IllegalArgumentException("not a list") } catch (e: Exception) { setAside(name); null }
+    }
+    private fun setAside(name: String) {
+        try { File(dir, name).renameTo(File(dir, "$name.bad")) } catch (e: Exception) {}
+        damaged.add(name)
     }
 
     private fun read(name: String): String? = try { File(dir, name).takeIf { it.exists() }?.readText() } catch (e: Exception) { null }

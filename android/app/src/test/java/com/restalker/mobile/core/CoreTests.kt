@@ -12,12 +12,12 @@ object CoreTests {
         data class Item(var stock: Boolean, var price: Double, var title: String, var captcha: Boolean = false, var wrongPage: Boolean = false)
         val items = HashMap<String, Item>()
         val orders = ArrayList<Pair<String, String>>()      // order number -> ASIN
-        var url = ""; var places = 0; var placeFail = 0; var noConfirm = false; var signinOrders = false; var silent = false
+        var url = ""; var places = 0; var placeFail = 0; var noConfirm = false; var signinOrders = false; var silent = false; var signinCheckout = false; var loadFails = false
         var gotoCount = 0; var begins = 0
         var lockSeenAtReply: Boolean? = null; var store: Store? = null; var replyOk: Boolean? = null
         private val msgs = ArrayList<Map<String, Any?>>(); private var n = 0L; private var waitingAsin: String? = null
         private fun push(m: Map<String, Any?>): Long { n++; msgs.add(m + ("n" to n)); return n }
-        override fun goto(url: String, timeoutMs: Long): Boolean { this.url = url; gotoCount++; clock.sleep(800); return true }
+        override fun goto(url: String, timeoutMs: Long): Boolean { this.url = url; gotoCount++; clock.sleep(800); return !loadFails }
         override fun images(on: Boolean) {}
         private fun asinHere() = Regex("/dp/([A-Z0-9]{10})").find(url)?.groupValues?.get(1)
         override fun ask(msg: Map<String, Any?>, timeoutMs: Long): Map<String, Any?>? {
@@ -36,6 +36,7 @@ object CoreTests {
                 }
                 "begin" -> {
                     begins++; val a = asinHere()!!; val it = items[a]!!
+                    if (signinCheckout) { push(mapOf("type" to "FLOW_BLOCKED", "reason" to "Proceed to checkout unavailable", "page" to "/ap/signin")); return mapOf("ok" to true, "started" to true) }
                     push(mapOf("type" to "CHECKOUT_PRICE_EVIDENCE", "reason" to "MATCHED_EXACT_ITEM"))
                     push(mapOf("type" to "SUBMITTING", "fees" to mapOf("base" to it.price, "tax" to it.price * 0.0775, "shipping" to 0.0, "total" to it.price * 1.0775)))
                     waitingAsin = a
@@ -73,13 +74,13 @@ object CoreTests {
         override fun status(text: String) { last = text }
     }
 
-    class World(practice: Boolean = false, buying: Boolean = true) {
+    class World(practice: Boolean = false, buying: Boolean = true, var net: String? = "wifi") {
         val dir: File = kotlin.io.path.createTempDirectory("rkm").toFile()
         val clock = FakeClock()
         val store = Store(dir) { clock.t }
         val amz = FakeAmazon(clock).also { it.store = store }
         val said = Said()
-        val engine = Engine(store, amz, said, clock)
+        val engine = Engine(store, amz, said, clock) { net }
         init { store.setSettings { it.copy(watching = true, buying = buying, practice = practice) } }
         fun add(asin: String, cap: Double, buy: Boolean, stock: Boolean = true, price: Double = 99.99): Product {
             amz.items[asin] = FakeAmazon.Item(stock, price, "Magic: The Gathering Test Product $asin Collector Booster Box")
@@ -238,6 +239,71 @@ object CoreTests {
         t("24 the page gets the product's kind (box / bundle / pack) to check, like the desktop's table row") {
             val p = Product(id = "x", asin = "B0TEST0001", cap = 10.0, kind = "box")
             p.forPage()["rkShape"] == "box" && Product(id = "y", asin = "B0TEST0001", kind = "other").forPage()["rkShape"] == null
+        }
+
+        t("25 damaged data files: the app still starts, they are set aside and told") {
+            val d = kotlin.io.path.createTempDirectory("rkbad").toFile()
+            java.io.File(d, "products.json").writeText("[{\"id\":\"x\", broken")
+            java.io.File(d, "settings.json").writeText("{nope")
+            java.io.File(d, "purchases.json").writeText("{\"not\":\"a list\"}")
+            val st = Store(d)
+            st.products().isEmpty() && !st.settings().watching && st.purchases().isEmpty() && java.io.File(d, "products.json.bad").exists() &&
+                st.damaged.size == 3 && st.log().last().contains("damaged") && st.add(Product(id = "n", asin = "B0TEST0001", cap = 1.0))
+        }
+        t("26 Amazon short links (a.co / amzn.to) and shared text are followed to the product; other sites are not") {
+            val hops = mapOf("https://a.co/d/abc123" to "https://www.amazon.com/dp/B0GXC89N66?ref=share", "https://amzn.to/3xYz" to "https://a.co/d/abc123",
+                "https://a.co/d/evil" to "https://evil.com/dp/B0GXC89N66", "https://a.co/d/loop" to "https://a.co/d/loop")
+            val f: (String) -> String? = { hops[it] }
+            Asin.resolve("Check out this item on Amazon https://a.co/d/abc123", f) == "B0GXC89N66" && Asin.resolve("amzn.to/3xYz", f) == "B0GXC89N66" &&
+                Asin.resolve("https://a.co/d/evil", f) == null && Asin.resolve("https://a.co/d/loop", f) == null && Asin.resolve("https://a.co/d/none", f) == null &&
+                Asin.resolve("https://bit.ly/x", f) == null && Asin.resolve("B0GXC89N66", f) == "B0GXC89N66"
+        }
+        t("27 no internet: no page opened; told once after 10 minutes") {
+            val w = World(net = null); w.add("B0TEST0001", 120.0, true)
+            repeat(60) { w.engine.step() }       // (each waits 15 s on the test clock = 15 minutes)
+            w.amz.gotoCount == 0 && w.said.needYou.count { it.startsWith("No internet") } == 1
+        }
+        t("28 Wi-Fi only on mobile data: no page opened; on Wi-Fi it looks again") {
+            val w = World(net = "mobile"); w.add("B0TEST0002", 120.0, false, stock = false); w.store.setSettings { it.copy(wifiOnly = true) }
+            repeat(5) { w.engine.step() }
+            val none = w.amz.gotoCount == 0
+            w.net = "wifi"; repeat(3) { w.engine.step() }
+            none && w.amz.gotoCount > 0
+        }
+        t("29 Amazon not loading 10 times in a row: you are told once") {
+            val w = World(); w.add("B0TEST0002", 120.0, false, stock = false); w.amz.loadFails = true
+            repeat(15) { w.check("B0TEST0002") }
+            w.said.needYou.count { it.startsWith("Amazon is not loading") } == 1 && w.p("B0TEST0002").status == "the page did not load"
+        }
+        t("30 Amazon asks to sign in at the checkout: you are told to sign in; nothing ordered") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.signinCheckout = true; w.check("B0TEST0001")
+            w.amz.places == 0 && w.said.needYou.any { it.startsWith("Sign in to Amazon") } && !w.p("B0TEST0001").attempted
+        }
+        t("31 the product is removed while it is being bought: no crash, the purchase is still recorded") {
+            val w = World(); w.add("B0TEST0001", 120.0, true)
+            val s0 = w.store
+            w.amz.store = null
+            val p = w.p("B0TEST0001")
+            // remove it at the moment Place your order is allowed
+            val amz2 = object : Page by w.amz {
+                override fun ask(msg: Map<String, Any?>, timeoutMs: Long): Map<String, Any?>? {
+                    if (msg["bb"] == "reply") s0.remove(p.id)
+                    return w.amz.ask(msg, timeoutMs)
+                }
+            }
+            val e2 = Engine(w.store, amz2, w.said, w.clock)
+            e2.check(p)
+            w.amz.places == 1 && w.store.purchases().size == 1 && w.said.bought.size == 1
+        }
+        t("32 Re-arm after a purchase: it may be bought again (a new order)") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.check("B0TEST0001")
+            w.store.update("idB0TEST0001") { it.copy(purchased = false, attempted = false, buy = true, orderNumber = null) }
+            w.amz.items["B0TEST0001"]!!.stock = false; w.check("B0TEST0001"); w.amz.items["B0TEST0001"]!!.stock = true; w.check("B0TEST0001")
+            w.amz.places == 2 && w.store.purchases().size == 2 && w.said.bought.all { it.endsWith("|true") }
+        }
+        t("33 the price cap is never raised by the app, and a cap of 0 never buys") {
+            val w = World(); w.add("B0TEST0001", 0.0, true, price = 0.0); w.check("B0TEST0001")
+            w.amz.begins == 0 && w.p("B0TEST0001").cap == 0.0
         }
         return results
     }
