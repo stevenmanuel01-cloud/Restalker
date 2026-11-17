@@ -1,8 +1,8 @@
 {
- "version": "v132",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v132_update.zip",
- "sha256": "a6b828cec541cfdaff383bcb3e07524c9e1779ca8695aa8dd6eafb20fe1b4fb4",
- "size": 741193,
- "notes": "Who buys on Amazon (chosen in the phone app): PC, phone (the PC signals it within seconds) or both. The phone-app message opens the download page. Store links reach the phone.",
+ "version": "v133",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v133_update.zip",
+ "sha256": "d20820837e0a979cf399fbca1cfe820248699b23d71a9c3909bfa2089b27e376",
+ "size": 741426,
+ "notes": "The same automatic problem report goes out at most once per 6 hours.",
  "files": 81
 }
