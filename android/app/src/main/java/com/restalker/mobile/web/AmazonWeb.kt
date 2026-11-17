@@ -138,7 +138,8 @@ class AmazonWeb(private val appCtx: Context) : Page {
     }
 
     // ------------------------------------------------------------------ Page (called from the engine's thread)
-    @Volatile private var resting = false
+    @Volatile var resting = false
+        private set
 
     override fun rest() {
         if (!available || resting || com.restalker.mobile.BrowserShown.on) return

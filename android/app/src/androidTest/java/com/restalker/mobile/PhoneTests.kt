@@ -160,7 +160,12 @@ class PhoneTests {
         start(true, false, Product(id = "a6", asin = "B0TEST0002", cap = 120.0, buy = false, watch = true))
         assertTrue(waitFor(60_000) { p("B0TEST0002").lastCheck > 0 })
         val web = WatchService.instance!!.web
-        web.wake()                       // (2.0: between looks the page rests - its scripts are paused; a look or a checkout wakes it first)
+        // 2.0: between looks the page rests (scripts paused); a look or a checkout wakes it first. 2.1 (a race seen once on API 34):
+        // wait for the engine's own rest after its look, then switch the product off so no new look / rest comes during the measurement.
+        assertTrue("the page rests after the look", waitFor(45_000) { web.resting })
+        RkApp.store().update("a6") { it.copy(watch = false) }
+        Thread.sleep(300)
+        web.wake()
         Thread.sleep(500)
         val res = java.util.concurrent.atomic.AtomicReference<String>()
         val l = java.util.concurrent.CountDownLatch(1)
