@@ -155,8 +155,8 @@ class ScreenTests {
         shot("t10_groups")
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-hot")); compose.onNodeWithTag("grp-hot").assertIsDisplayed()
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("top-B0TEST0103")); compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2025"))
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0101"))
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2025"))
         compose.onNodeWithTag("grp-2025").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("product-B0TEST0101").assertDoesNotExist()                          // folded
         assertEquals(true, s.readFile("folded.json")!!.contains("y:2025"))                         // remembered
@@ -326,10 +326,6 @@ class ScreenTests {
         compose.onNodeWithTag("capfield-B0TEST0601").performTextReplacement("395")
         compose.onNodeWithTag("capfield-B0TEST0601").performImeAction()
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 395.0 }
-        // 2.3: pulling the product page down looks at it now (and nothing breaks)
-        compose.onNodeWithTag("prefresh-B0TEST0601").performTouchInput { swipeDown(startY = height * 0.15f, endY = height * 0.7f) }
-        compose.waitForIdle(); Thread.sleep(500)
-        compose.onNodeWithTag("product-screen").assertExists()
         shot("t16_cap_typed")
         // a swipe that does not start on the cap mark changes nothing
         compose.onNodeWithTag("capdrag-B0TEST0601", useUnmergedTree = true).performTouchInput { swipe(Offset(width * 0.02f, height * 0.4f), Offset(width * 0.1f, height * 0.4f), 300) }
@@ -341,6 +337,10 @@ class ScreenTests {
         val c = p("B0TEST0601").cap
         assertTrue("on a \$5 mark: $c", Math.abs(c / 5.0 - Math.round(c / 5.0)) < 1e-9)
         shot("t16_cap_dragged")
+        // 2.3: pulling the product page down looks at it now (and nothing breaks)
+        compose.onNodeWithTag("prefresh-B0TEST0601").performTouchInput { swipeDown(startY = height * 0.15f, endY = height * 0.7f) }
+        compose.waitForIdle(); Thread.sleep(500)
+        compose.onNodeWithTag("product-screen").assertExists()
         // no cap -> Buy asks for one first
         s.update("idB0TEST0601") { it.copy(cap = 0.0, buy = false) }; compose.waitForIdle(); Thread.sleep(400)
         compose.onNodeWithTag("buy-B0TEST0601").performScrollTo().performClick()
