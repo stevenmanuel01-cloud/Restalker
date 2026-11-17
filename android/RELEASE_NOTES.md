@@ -1,3 +1,8 @@
+# Restalker Mobile 2.1 (2026-11-17)
+- Battery: while the PC buys, the phone is no longer kept awake at all; it is woken for a moment every 15 minutes instead, and when
+  the PC has stopped, it takes over within those 15 minutes.
+- After an update, the PC learns the app's new version at once.
+
 # Restalker Mobile 2.0 (2026-11-17; your notes of last night)
 - Pictures: the PC's picture first (the PC checks each picture against the product) - the phone shows the same pictures as the PC;
   its own Amazon picture only when not linked or the PC has none. (1.9: the main picture first, a badge picture never kept.)

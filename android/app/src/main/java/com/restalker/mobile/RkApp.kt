@@ -12,6 +12,13 @@ class RkApp : Application() {
         super.onCreate()
         app = this
         Notifier.channels(this)
+        // 2.1: after an update the linked PC learns this app's version at once (it then sends no "new version" message)
+        Thread {
+            try {
+                val s = store(); val v = BuildConfig.VERSION_CODE.toString()
+                if (s.readFile("lastav") != v) { if (DeskLink.get().linked()) DeskLink.get().touched(); s.writeFile("lastav", v) }
+            } catch (e: Exception) { }
+        }.start()
         // 1.7: a crash is written down; the self-check sends it to Claude by itself the next time the app runs
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->

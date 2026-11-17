@@ -79,6 +79,7 @@ class WatchService : Service() {
 
     override fun onDestroy() {
         instance = null
+        try { StandbyAlarm.cancel(this) } catch (e: Exception) { }
         tick.removeCallbacksAndMessages(null)
         engine.send(Engine.Cmd.Quit)
         thread?.interrupt()
@@ -90,7 +91,7 @@ class WatchService : Service() {
     /** 2.0 (owner: "The app does seem to use the battery fairly quickly"): while the PC (or another phone) buys, this phone looks only
      *  every 30 minutes - then the phone may sleep between looks (no wake lock) and the notice has no icon. When this phone is the buyer:
      *  the wake lock (looks every minute or so even with the screen off). */
-    private fun standbyCheck() {
+    fun standbyCheck() {
         val sb = try { DeskLink.get().othersBuy() } catch (e: Exception) { false }
         if (sb != Notifier.standby) {
             Notifier.standby = sb
@@ -100,6 +101,9 @@ class WatchService : Service() {
             val w = wake ?: return
             if (sb && w.isHeld) w.release() else if (!sb && !w.isHeld) w.acquire()
         } catch (e: Exception) { }
+        // 2.1: asleep in standby, the phone is still woken every 15 minutes (an alarm): the link is read and, when the PC has stopped,
+        // this phone takes over within 15 minutes - without keeping the phone awake all the time
+        if (sb) StandbyAlarm.schedule(this) else StandbyAlarm.cancel(this)
     }
 
     private var startRx = 0L; private var startAt = 0L

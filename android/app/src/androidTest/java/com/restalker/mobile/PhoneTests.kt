@@ -344,9 +344,14 @@ class PhoneTests {
         waitFor(40_000) { RkApp.store().products().first { it.asin == "B0TEST0001" }.lastCheck > 0 }
         Thread.sleep(5_000)
         assertEquals("no checkout while the desktop buys", 0, site.requests.count { it.contains("/checkout") })
+        // 2.1: standby - no wake lock, an alarm every 15 minutes instead
+        WatchService.instance?.standbyCheck()
+        assertTrue("standby alarm set", StandbyAlarm.isSet(ctx))
         // the desktop stops -> this phone buys again
         desk(amz = true, bye = true)
         assertTrue("stopped heard", waitCycle(90_000) { DeskLink.get().cycle(); !DeskLink.get().desktopBuys() })
+        WatchService.instance?.standbyCheck()
+        assertTrue("this phone is the buyer again: no standby alarm", !StandbyAlarm.isSet(ctx))
         // our product reached the channel (read from outside, as the desktop does)
         val lines = java.net.URL("https://ntfy.sh/$ch/json?poll=1&since=all").readText().lines().mapNotNull { com.restalker.mobile.core.MiniJson.obj(it) }
         val mine = lines.mapNotNull { com.restalker.mobile.core.LinkCrypto.unseal(sec, it["message"] as? String) }.map { com.restalker.mobile.core.MiniJson.obj(it)!! }
