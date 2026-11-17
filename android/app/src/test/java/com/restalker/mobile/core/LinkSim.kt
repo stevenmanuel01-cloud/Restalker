@@ -21,7 +21,7 @@ object LinkSim {
         val dir = File(args[0]); val port = args[1].toInt(); val cmd = args[2]; val a = args.drop(3)
         val clock = System.getenv("SIM_NOW")?.toLongOrNull()?.let { t -> { t } } ?: System::currentTimeMillis
         val store = Store(dir, clock)
-        val link = Link(store, LocalNet(port), clock)
+        val link = Link(store, LocalNet(port), clockMs = clock)
         fun prod(asin: String) = store.products().first { it.asin == asin }
         when (cmd) {
             "connect" -> println(link.connect(a[0]) ?: "linked")

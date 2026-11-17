@@ -467,7 +467,7 @@ object CoreTests {
             p.image == "" && p.picTriedAt == 0L && q.image == "https://m.media-amazon.com/images/I/810ZB7WLddL.jpg" && q.picTriedAt == 99L && r.dImg == "" && d.dImg == I }
         t("76_shown_own_first_then_desktop") {
             val d = "https://target.scene7.com/is/image/Target/GUEST_1"
-            Pics.shown(Product("a", "B0TEST0071", image = I, dImg = d)) == listOf(I, d) && Pics.shown(Product("a", "B0TEST0071", dImg = d)) == listOf(d) &&
+            Pics.shown(Product("a", "B0TEST0071", image = I, dImg = d)) == listOf(d, I) && Pics.shown(Product("a", "B0TEST0071", dImg = d)) == listOf(d) &&
                 Pics.shown(Product("a", "B0TEST0071", image = GREY)).isEmpty() && Pics.shown(Product("a", "B0TEST0071", image = I, dImg = I)) == listOf(I) }
         t("77_short_name_for_diagnostics") { Pics.short(I) == "81Xk2+abcL.jpg" && Pics.short("https://target.scene7.com/is/x") == "target.scene7.com" }
         val now0 = 1_800_000_000_000L
@@ -578,6 +578,57 @@ object CoreTests {
             val (bad, ids) = Pics.repair(ps, { u -> if (u == I) "failed: the picture server answered 404" else "ok" }, { u -> if (u == I) 2 else 0 })
             val (bad2, ids2) = Pics.repair(ps.drop(2), { u -> if (u == I) "failed: no internet" else "ok" }, { 5 })
             bad == setOf("31uI7WnC0LL", "81Xk2+abcL") && ids.toSet() == setOf("a", "b", "c") && bad2.isEmpty() && ids2.isEmpty() }
+        // ---------------- 2.0 (owner's notes of Nov 17)
+        t("100_price_bar_ticks_and_rows") {
+            val pm = PriceMarks.of(399.99, 380.0, 455.88, 410.0)
+            val k = pm.items.map { it.kind }
+            val near = pm.items.filter { it.kind != PriceMarks.NOW }.zipWithNext().all { (a, b) -> a.row != b.row || pm.frac(b.value) - pm.frac(a.value) >= PriceMarks.NEAR }
+            k.containsAll(listOf("zero", "msrp", "tcg", "cap", "now")) && pm.items.first { it.kind == "now" }.label == "Now \$400" && pm.frac(0.0) == 0f &&
+                pm.frac(455.88) < 1f && near && PriceMarks.of(null, 90.0, null, null).items.map { it.kind } == listOf("zero", "cap") &&
+                PriceMarks.of(1299.0, 1200.0, null, null).items.first { it.kind == "cap" }.label == "Cap \$1,200" }
+        t("101_practice_over_the_cap_runs_and_never_orders") {
+            val w = World(practice = false); w.add("B0TEST0201", 50.0, buy = false, price = 99.99)
+            w.engine.send(Engine.Cmd.Practice("idB0TEST0201")); w.engine.step()
+            w.amz.begins == 1 && w.amz.places == 0 && w.amz.replyOk == false && w.said.practice.any { it.contains("stopped") } && w.p("B0TEST0201").cap == 50.0 &&
+                !w.p("B0TEST0201").attempted && !w.p("B0TEST0201").purchased }
+        t("102_practice_out_of_stock_explains") {
+            val w = World(); w.add("B0TEST0202", 50.0, buy = false, stock = false)
+            w.engine.send(Engine.Cmd.Practice("idB0TEST0202")); w.engine.step()
+            w.amz.begins == 0 && w.said.practice.any { it.contains("in stock (at any price)") } }
+        t("103_practice_with_any_item_not_kept_not_bought") {
+            val w = World(practice = false)
+            w.amz.items["B0TEST0203"] = FakeAmazon.Item(true, 12.99, "Dragon Shield Matte Sleeves Black 100 count")
+            w.engine.send(Engine.Cmd.PracticeAny("B0TEST0203")); w.engine.step()
+            w.amz.begins == 1 && w.amz.places == 0 && w.store.products().none { it.asin == "B0TEST0203" } && w.said.practice.any { it.contains("stopped") } }
+        t("104_practice_with_any_item_already_in_the_list_uses_it") {
+            val w = World(practice = false); w.add("B0TEST0204", 500.0, buy = true, price = 99.99)
+            w.engine.send(Engine.Cmd.PracticeAny("B0TEST0204")); w.engine.step()
+            w.amz.begins == 1 && w.amz.places == 0 && w.store.products().count { it.asin == "B0TEST0204" } == 1 && !w.p("B0TEST0204").attempted }
+        t("105_two_phones_one_buyer_and_a_phone_is_never_taken_for_the_desktop") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val posts = ArrayList<String>()
+            val net = object : LinkNet {
+                override fun post(url: String, body: String, asFile: Boolean): Int { posts.add(body); return 200 }
+                override fun get(url: String): String = posts.mapIndexed { i, b -> MiniJson.write(mapOf("event" to "message", "id" to "m$i", "time" to 1.8e9 + i, "message" to b)) }.joinToString("\n")
+            }
+            val wa = World(); val wb = World()
+            var aBuys = true
+            val la = Link(wa.store, net, { mapOf("amz" to aBuys, "av" to 10L) }) { wa.clock.t }
+            val lb = Link(wb.store, net, { mapOf("amz" to true, "av" to 10L) }) { wb.clock.t }
+            la.connect(code); lb.connect(code)
+            la.cycle(); lb.cycle(); la.cycle(); lb.cycle()
+            val one = la.otherPhoneBuys() != lb.otherPhoneBuys()
+            val noDesk = !la.desktopBuys() && !lb.desktopBuys() && la.state().second.contains("waiting for the desktop") && la.otherPhones() == 1
+            // the desktop buys: both stand by
+            val o = mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0, "amz" to true, "items" to emptyList<Any>())
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(o)))
+            la.cycle(); lb.cycle()
+            val bothStand = la.othersBuy() && lb.othersBuy()
+            // the first phone does not buy (Buy off there): the other one is the buyer when the desktop stops
+            val bye = mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0, "amz" to true, "bye" to true, "items" to emptyList<Any>())
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(bye)))
+            aBuys = false; la.touched(); la.cycle(); lb.cycle(); la.cycle()
+            one && noDesk && bothStand && !lb.othersBuy() }
         return results
     }
 

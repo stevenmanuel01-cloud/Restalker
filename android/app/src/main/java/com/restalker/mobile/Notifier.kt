@@ -55,7 +55,7 @@ class Notifier(private val ctx: Context) : Alerts {
         lastStatus = text
         onStatus?.invoke(text)
         val now = System.currentTimeMillis()
-        if (now - lastStatusPost < 5_000) return
+        if (now - lastStatusPost < 30_000 || hidden) return      // (2.0: every 30 s at most; never after you swiped it away)
         lastStatusPost = now
         if (WatchService.instance != null) post(ONGOING_ID, ongoing(ctx, text))
     }
@@ -105,11 +105,21 @@ class Notifier(private val ctx: Context) : Alerts {
         fun openMain(ctx: Context): PendingIntent = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        fun ongoing(ctx: Context, text: String): Notification =
-            NotificationCompat.Builder(ctx, if (RkApp.store().settings().runIcon) CH_WATCH else CH_QUIET).setSmallIcon(R.drawable.ic_note)
-                .setContentTitle("Restalker is watching").setPriority(if (RkApp.store().settings().runIcon) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
-                .setContentText(text).setOngoing(RkApp.store().settings().runIcon).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
+        /** 2.0 (owner: "The notification bar on my phone is still constant and cannot be silenced"): the notice can always be swiped away
+         *  (Android 13+; watching goes on) and is not shown again until watching is switched on again - 1.5-1.9 put it back every few
+         *  seconds. While the PC buys (this phone stands by) it has no icon either. */
+        @Volatile var hidden = false
+        @Volatile var standby = false
+
+        fun ongoing(ctx: Context, text: String): Notification {
+            val icon = RkApp.store().settings().runIcon && !standby
+            return NotificationCompat.Builder(ctx, if (icon) CH_WATCH else CH_QUIET).setSmallIcon(R.drawable.ic_note)
+                .setContentTitle(if (standby) "Restalker - standby (the PC buys)" else "Restalker is watching")
+                .setPriority(if (icon) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
+                .setContentText(text + " · swipe to hide").setOngoing(false).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
+                .setDeleteIntent(ActionReceiver.pending(ctx, ActionReceiver.HIDDEN, ""))
                 .addAction(0, "Stop watching", ActionReceiver.pending(ctx, ActionReceiver.STOP, ""))
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE).build()
+        }
     }
 }

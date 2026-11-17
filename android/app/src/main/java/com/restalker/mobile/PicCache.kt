@@ -24,7 +24,8 @@ object PicCache {
     @Volatile var fetch: (String) -> ByteArray = ::realFetch
 
     fun failures(u: String): Int = fails[u] ?: 0
-    fun cached(u: String): Bitmap? = mem.get(u)
+    fun cached(u: String, px: Int = 240): Bitmap? = mem.get(key(u, px))
+    private fun key(u: String, px: Int) = if (px == 240) u else "$u@$px"
 
     private fun file(u: String): File {
         val h = MessageDigest.getInstance("SHA-1").digest(u.toByteArray()).joinToString("") { "%02x".format(it) }
@@ -32,35 +33,36 @@ object PicCache {
     }
 
     /** The picture (call off the main thread). null = not available now (the reason is in [status]). */
-    fun get(u: String): Bitmap? {
-        mem.get(u)?.let { return it }
-        val f = file(u)
-        if (f.isFile) decode(f.readBytes())?.let { mem.put(u, it); status[u] = "ok"; return it } ?: f.delete()
-        if (System.currentTimeMillis() - (failedAt[u] ?: 0L) < retryMs) return null
+    fun get(u: String, px: Int = 240): Bitmap? {
+        val k = key(u, px)
+        mem.get(k)?.let { return it }
+        val f = file(k)
+        if (f.isFile) decode(f.readBytes(), px)?.let { mem.put(k, it); status[u] = "ok"; return it } ?: f.delete()
+        if (System.currentTimeMillis() - (failedAt[k] ?: 0L) < retryMs) return null
         var why = "?"
-        for (t in Pics.tries(u)) {
+        for (t in listOf(Pics.small(u, px), u).distinct()) {
             try {
                 val b = fetch(t)
-                val bm = decode(b)
+                val bm = decode(b, px)
                 if (bm == null) { why = "not a picture (${b.size} bytes${sniff(b)})"; continue }
                 if (bm.width < 16 || bm.height < 16) { why = "a placeholder, not the picture (${bm.width}x${bm.height})"; continue }
                 val tmp = File(f.path + ".tmp"); tmp.writeBytes(b); tmp.renameTo(f)
-                mem.put(u, bm); status[u] = "ok"; fails.remove(u); failedAt.remove(u)
+                mem.put(k, bm); status[u] = "ok"; fails.remove(u); failedAt.remove(k)
                 return bm
             } catch (e: Exception) { why = (e.message ?: e.javaClass.simpleName).take(120) }
         }
-        failedAt[u] = System.currentTimeMillis(); fails[u] = (fails[u] ?: 0) + 1
-        status[u] = "failed: $why"
+        failedAt[k] = System.currentTimeMillis()
+        if (px == 240) { fails[u] = (fails[u] ?: 0) + 1; status[u] = "failed: $why" }
         return null
     }
 
     private fun sniff(b: ByteArray): String = if (b.size > 20 && String(b, 0, 20, Charsets.ISO_8859_1).contains("<", true)) ", a web page" else ""
 
-    private fun decode(b: ByteArray): Bitmap? = try {
+    private fun decode(b: ByteArray, px: Int = 240): Bitmap? = try {
         val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(b, 0, b.size, o)
         if (o.outWidth <= 0) null else {
-            var s = 1; while (maxOf(o.outWidth, o.outHeight) / (s * 2) >= 320) s *= 2
+            var s = 1; while (maxOf(o.outWidth, o.outHeight) / (s * 2) >= px + px / 3) s *= 2
             BitmapFactory.decodeByteArray(b, 0, b.size, BitmapFactory.Options().apply { inSampleSize = s })
         }
     } catch (e: Throwable) { null }

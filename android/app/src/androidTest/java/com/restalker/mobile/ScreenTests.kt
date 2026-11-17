@@ -194,8 +194,14 @@ class ScreenTests {
         compose.onAllNodesWithText("Over cap · \$529.99", substring = true).onFirst().assertIsDisplayed()   // the desktop's newer look (also on top: in stock)
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("pic-B0TEST0301", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }   // the picture is shown
         compose.onNodeWithTag("product-B0TEST0301").performClick(); compose.waitForIdle(); Thread.sleep(800)
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("bigpic-img-B0TEST0301", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         shot("t13_product_desktop_view")
-        compose.onAllNodesWithTag("pic-B0TEST0301", useUnmergedTree = true).onFirst().assertIsDisplayed()
+        compose.onNodeWithTag("bigpic-img-B0TEST0301", useUnmergedTree = true).assertIsDisplayed()      // 2.0: the large picture, the title under it
+        compose.onNodeWithTag("ptitle-B0TEST0301").assertIsDisplayed()
+        // 2.0: the price bar - $529.99 (the desktop's) is over the $400 cap: red; every tick there
+        compose.onNodeWithTag("pricebar-B0TEST0301").assertIsDisplayed()
+        compose.onNodeWithTag("pricebar-red", useUnmergedTree = true).assertExists()
+        for (k in listOf("zero", "msrp", "tcg", "cap", "now")) compose.onNodeWithTag("tick-$k", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("ref-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("others-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Best Buy").assertIsDisplayed()
@@ -252,6 +258,26 @@ class ScreenTests {
             assertEquals("", p("B0TEST0403").image); assertEquals("", p("B0TEST0404").image)
             assertTrue((s.readFile(com.restalker.mobile.core.Engine.BAD_PICS) ?: "").contains("31uI7WnC0LL"))
         } finally { PicCache.retryMs = 10 * 60_000L; PicCache.fetch = PicCache::realFetch }
+    }
+
+    /** 2.0: under the cap the price bar is green; Settings has the practice with any Amazon item and the share code (download page). */
+    @Test fun t15_greenBar_practiceAny_share() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0501", "Star Trek Collector Booster Box", "2026", "Star Trek", buyable = true, price = 369.99).copy(msrp = 455.88, tcg = 410.0))
+        compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0501"))
+        compose.onNodeWithTag("product-B0TEST0501").performClick(); compose.waitForIdle(); Thread.sleep(600)
+        compose.onNodeWithTag("pricebar-green", useUnmergedTree = true).assertExists()
+        shot("t15_green_bar")
+        compose.onNodeWithTag("back").performClick(); compose.waitForIdle()
+        compose.onNodeWithText("Settings").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("practice-any").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("pa-link").performTextInput("https://www.ebay.com/itm/1")
+        compose.onNodeWithTag("pa-go").performClick()
+        compose.waitUntil(8_000) { compose.onAllNodesWithTag("pa-err").fetchSemanticsNodes().isNotEmpty() }      // not an Amazon link: said, nothing runs
+        compose.onNodeWithTag("share-qr").performScrollTo().assertIsDisplayed()
+        shot("t15_settings_share")
     }
 
     /** 1.4: a product's own screen - Buy, Watch, the cap, Remove (asks once), Back. */

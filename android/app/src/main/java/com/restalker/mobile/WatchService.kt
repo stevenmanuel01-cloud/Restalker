@@ -27,6 +27,7 @@ class WatchService : Service() {
     override fun onCreate() {
         super.onCreate()
         notifier = Notifier(this)
+        Notifier.hidden = false                              // (watching switched on: the notice is shown again)
         val n = Notifier.ongoing(this, "Starting...")
         ServiceCompat.startForeground(this, Notifier.ONGOING_ID, n,
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
@@ -34,7 +35,7 @@ class WatchService : Service() {
         web = AmazonWeb(this); web.create()
         val store = RkApp.store()
         startRx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); startAt = System.currentTimeMillis()
-        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() })
+        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().othersBuy() })        // (2.0: the desktop, or another phone first in line)
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
@@ -47,6 +48,7 @@ class WatchService : Service() {
         tick.postDelayed(object : Runnable {        // 1.7: the self-check (it sends a report by itself when something is wrong)
             override fun run() {
                 HealthRunner.tick(this@WatchService)
+                standbyCheck()
                 Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
                 tick.postDelayed(this, 60_000)
             }
@@ -67,6 +69,7 @@ class WatchService : Service() {
                     "check" -> engine.send(Engine.Cmd.CheckNow(id))
                     "buynow" -> engine.send(Engine.Cmd.BuyNow(id))
                     "practice" -> engine.send(Engine.Cmd.Practice(id))
+                    "practiceany" -> engine.send(Engine.Cmd.PracticeAny(id))
                     else -> engine.send(Engine.Cmd.Wake)
                 }
             }
@@ -82,6 +85,21 @@ class WatchService : Service() {
         web.destroy()
         try { wake?.release() } catch (e: Exception) {}
         super.onDestroy()
+    }
+
+    /** 2.0 (owner: "The app does seem to use the battery fairly quickly"): while the PC (or another phone) buys, this phone looks only
+     *  every 30 minutes - then the phone may sleep between looks (no wake lock) and the notice has no icon. When this phone is the buyer:
+     *  the wake lock (looks every minute or so even with the screen off). */
+    private fun standbyCheck() {
+        val sb = try { DeskLink.get().othersBuy() } catch (e: Exception) { false }
+        if (sb != Notifier.standby) {
+            Notifier.standby = sb
+            notifier.status(notifier.lastStatus)
+        }
+        try {
+            val w = wake ?: return
+            if (sb && w.isHeld) w.release() else if (!sb && !w.isHeld) w.acquire()
+        } catch (e: Exception) { }
     }
 
     private var startRx = 0L; private var startAt = 0L

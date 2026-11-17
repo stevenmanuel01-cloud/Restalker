@@ -1,3 +1,16 @@
+# Restalker Mobile 2.0 (2026-11-17; your notes of last night)
+- Pictures: the PC's picture first (the PC checks each picture against the product) - the phone shows the same pictures as the PC;
+  its own Amazon picture only when not linked or the PC has none. (1.9: the main picture first, a badge picture never kept.)
+- Product screen: the picture large, the name under it; the price bar has ticks for $0, MSRP, TCG, your cap and the price now - green
+  under the cap, red over it.
+- Practice checkout without the PC: Settings -> Practice checkout - paste ANY Amazon item that is in stock (a cheap one is fine); it
+  goes to "Place your order" and stops. Practice on a product of yours now also works when it is over the cap.
+- The watching notice can be swiped away (it stays away; watching goes on). While the PC buys, the phone is on standby: no icon, it
+  may sleep between looks, and the page is closed between looks - much less battery.
+- Several phones / tablets: link each one with the same desktop code - all stay the same and only one of them buys (the PC first).
+  1.4-1.9 could take a second phone for the desktop.
+- Share: Settings -> Share Restalker shows a QR code of the download page.
+
 # Restalker Mobile 1.9 (2026-11-17; from the app's own report)
 - Pictures: on some pages a small badge came before the product picture, and its picture (which Amazon's picture server does not
   even have) was kept for 7 products. The page's main picture is taken first now; a picture kept for two different products, or

@@ -27,7 +27,10 @@ object DeskLink {
     }
 
     @Volatile private var link: Link? = null
-    @Synchronized fun get(): Link = link ?: Link(RkApp.store(), net).also { link = it }
+    @Synchronized fun get(): Link = link ?: Link(RkApp.store(), net, me = {
+        val st = RkApp.store().settings()
+        mapOf("amz" to (st.buying && st.watching), "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (st.autoUpdate && Updater.allowed(RkApp.app)))
+    }).also { link = it }
 
     /** Tests: a fresh link object (after the store was reset). */
     @Synchronized fun reset() { link = null }

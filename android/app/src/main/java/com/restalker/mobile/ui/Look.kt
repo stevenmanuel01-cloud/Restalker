@@ -36,6 +36,7 @@ object Look {
     val GreySoft = Color(0xFFE2E8F0)
     val GreyText = Color(0xFF334155)
     val Red = Color(0xFFB91C1C)
+    val Green = Color(0xFF16A34A)          // 2.0: the price bar under the cap
 
     val scheme = lightColorScheme(
         primary = Teal, onPrimary = Color.White, primaryContainer = TealSoft, onPrimaryContainer = TealText,

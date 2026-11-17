@@ -138,8 +138,20 @@ class AmazonWeb(private val appCtx: Context) : Page {
     }
 
     // ------------------------------------------------------------------ Page (called from the engine's thread)
+    @Volatile private var resting = false
+
+    override fun rest() {
+        if (!available || resting || com.restalker.mobile.BrowserShown.on) return
+        resting = true
+        onMain { try { web.stopLoading(); nav++; web.loadUrl("about:blank"); web.onPause(); web.pauseTimers() } catch (e: Exception) { } }
+    }
+
+    /** (also when the browser is shown to you) */
+    fun wake() { if (resting) { resting = false; onMain { try { web.onResume(); web.resumeTimers() } catch (e: Exception) { } } } }
+
     override fun goto(url: String, timeoutMs: Long): Boolean {
         if (!available) return false
+        wake()
         val l = CountDownLatch(1)
         onMain { web.stopLoading(); nav++; loadDone = l; web.loadUrl(url) }
         val ok = l.await(timeoutMs, TimeUnit.MILLISECONDS)

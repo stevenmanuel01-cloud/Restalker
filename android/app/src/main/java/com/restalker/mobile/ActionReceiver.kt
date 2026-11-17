@@ -22,6 +22,10 @@ class ActionReceiver : BroadcastReceiver() {
                 store.log("Restock messages snoozed for 3 hours (purchases and problems are still sent).")
                 NotificationManagerCompat.from(ctx).cancel(Notifier.idFor("r", id))
             }
+            HIDDEN -> {
+                if (!Notifier.hidden) store.log("The watching notice was swiped away - watching goes on (the notice comes back when watching is switched on again).")
+                Notifier.hidden = true
+            }
             STOP -> {
                 store.setSettings { it.copy(watching = false) }
                 store.log("Watching switched off from the notification.")
@@ -34,6 +38,7 @@ class ActionReceiver : BroadcastReceiver() {
         const val BUY_NOW = "com.restalker.mobile.BUY_NOW"
         const val SNOOZE = "com.restalker.mobile.SNOOZE"
         const val STOP = "com.restalker.mobile.STOP"
+        const val HIDDEN = "com.restalker.mobile.HIDDEN"
         fun pending(ctx: Context, action: String, id: String): PendingIntent =
             PendingIntent.getBroadcast(ctx, (action + id).hashCode(), Intent(ctx, ActionReceiver::class.java).setAction(action).putExtra("id", id),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)

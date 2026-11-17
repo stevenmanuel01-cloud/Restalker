@@ -102,7 +102,10 @@ data class LinkRec(val a: String, val n: String, val c: Double, val b: Boolean, 
     }
 }
 
-class Link(private val store: Store, private val net: LinkNet, private val clockMs: () -> Long = System::currentTimeMillis) {
+class Link(private val store: Store, private val net: LinkNet,
+           /** 2.0: what this phone tells the others: amz = it may buy (buying + watching on), av = app version code, au = it updates itself */
+           private val me: () -> Map<String, Any?> = { emptyMap() },
+           private val clockMs: () -> Long = System::currentTimeMillis) {
     companion object {
         const val SERVER = "https://ntfy.sh"
         const val FILE = "link.json"
@@ -111,6 +114,7 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         const val INLINE_MAX = 3500
         const val TOMB_KEEP = 60 * 86400.0
         const val PEND_RETRY = 5 * 60.0
+        const val PHONE_ALIVE = BEAT + 15 * 60.0  // 2.0: another phone / tablet counts as there while heard within this (it posts every hour)
         private val ASIN = Regex("[A-Z0-9]{10}")
     }
 
@@ -118,21 +122,25 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
     private fun nowS() = clockMs() / 1000.0
     /** What the buy decision needs, kept outside the lock (a round can wait on the network; a checkout must never wait for it). */
     @Volatile private var snap: Triple<Boolean, Map<String, Any?>, Long>? = null     // (linked, peer, when read)
-    private fun remember(s: St) { snap = Triple(LinkCrypto.parse(s.code) != null, s.peer, clockMs()) }
+    @Volatile private var snapPhones: Pair<String, Map<String, Map<String, Any?>>> = "" to emptyMap()    // 2.0: (my device id, the other phones)
+    private fun remember(s: St) { snap = Triple(LinkCrypto.parse(s.code) != null, s.peer, clockMs()); snapPhones = s.dev to s.phones.toMap() }
 
     // ---- the saved state (link.json)
     private class St(var code: String = "", var dev: String = "", var since: String = "", val recs: LinkedHashMap<String, LinkRec> = LinkedHashMap(),
-                     var peer: Map<String, Any?> = emptyMap(), var linkedAt: Double = 0.0, var pubAt: Double = 0.0, var dirty: Boolean = false)
+                     var peer: Map<String, Any?> = emptyMap(), var linkedAt: Double = 0.0, var pubAt: Double = 0.0, var dirty: Boolean = false,
+                     val phones: LinkedHashMap<String, Map<String, Any?>> = LinkedHashMap())
 
     private fun load(): St {
         val m = MiniJson.obj(store.readFile(FILE)) ?: return St()
         val st = St(m["code"].asStr() ?: "", m["dev"].asStr() ?: "", m["since"].asStr() ?: "", LinkedHashMap(), m["peer"].asMap() ?: emptyMap(),
             m["linkedAt"].asDouble() ?: 0.0, m["pubAt"].asDouble() ?: 0.0, m["dirty"].asBool())
         m["recs"].asMap()?.values?.forEach { v -> v.asMap()?.let(LinkRec::fromMap)?.let { st.recs[it.a] = it } }
+        m["phones"].asMap()?.forEach { (k, v) -> v.asMap()?.let { st.phones[k] = it } }
         return st
     }
     private fun save(s: St) = store.writeFile(FILE, MiniJson.write(linkedMapOf("code" to s.code, "dev" to s.dev, "since" to s.since,
-        "recs" to s.recs.mapValues { it.value.toMap() }, "peer" to s.peer, "linkedAt" to s.linkedAt, "pubAt" to s.pubAt, "dirty" to s.dirty)))
+        "recs" to s.recs.mapValues { it.value.toMap() }, "peer" to s.peer, "linkedAt" to s.linkedAt, "pubAt" to s.pubAt, "dirty" to s.dirty,
+        "phones" to s.phones)))
 
     init {
         remember(load())
@@ -177,7 +185,7 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         for (pu in store.purchases()) if (pu.asin.isNotBlank()) bought[pu.asin] = maxOf(bought[pu.asin] ?: 0.0, pu.at / 1000.0)
         val out = LinkedHashMap<String, LinkRec>()
         for (p in store.products()) {
-            if (!ASIN.matches(p.asin) || p.cap <= 0 || out.containsKey(p.asin)) continue
+            if (!ASIN.matches(p.asin) || p.cap <= 0 || out.containsKey(p.asin) || p.id.startsWith(Engine.PRACTICE_ID)) continue   // (2.0: a practice item is not shared)
             // (a checkout running here, or a Place order pressed: not "Buy" for the desktop - the same product is never ordered twice)
             out[p.asin] = LinkRec(p.asin, p.label, p.cap, p.buy && !p.attempted && !p.inProgress, p.watch, p.kind, 0.0, false, bought[p.asin] ?: 0.0, here = true, q = p.qty)
         }
@@ -221,7 +229,14 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
     private fun merge(s: St, msg: Map<String, Any?>, srvTime: Double?, now: Double): List<Triple<String, LinkRec, LinkRec?>> {
         val out = ArrayList<Triple<String, LinkRec, LinkRec?>>()
         if (msg["d"].asStr() == s.dev) return out
-        s.peer = linkedMapOf("d" to (msg["d"].asStr() ?: "").take(20), "r" to (msg["r"].asStr() ?: "").take(10), "at" to (srvTime ?: now),
+        // 2.0 (owner: "Confirm i have the ability to link the app to multiple mobile devices"): the desktop is "the peer"; another phone
+        // or tablet on the same code is kept apart (1.4-1.9 took any other device as the peer - a second phone looked like a silent desktop)
+        if (msg["r"].asStr() == "phone") {
+            val d = (msg["d"].asStr() ?: "").take(20)
+            if (d.isNotEmpty()) s.phones[d] = linkedMapOf("at" to (srvTime ?: now), "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(),
+                "av" to (msg["av"].asLong() ?: 0L))
+            s.phones.keys.filter { (s.phones[it]?.get("at").asDouble() ?: 0.0) < now - 30 * 86400 }.forEach { s.phones.remove(it) }
+        } else s.peer = linkedMapOf("d" to (msg["d"].asStr() ?: "").take(20), "r" to (msg["r"].asStr() ?: "").take(10), "at" to (srvTime ?: now),
             "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(), "n" to (msg["items"].asList().size))
         if (msg["hi"].asBool()) s.dirty = true
         for (x in msg["items"].asList().take(500)) {
@@ -303,7 +318,9 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
     // ---- the channel
     private fun postNow(s: St, bye: Boolean = false, hi: Boolean = false, now: Double = nowS()) {
         val (ch, sec) = LinkCrypto.parse(s.code) ?: return
-        val o = linkedMapOf<String, Any?>("v" to 1, "d" to s.dev, "r" to "phone", "at" to now, "amz" to false, "items" to s.recs.values.map { it.post() })
+        val mine = try { me() } catch (e: Exception) { emptyMap() }
+        val o = linkedMapOf<String, Any?>("v" to 1, "d" to s.dev, "r" to "phone", "at" to now, "amz" to (mine["amz"] == true && !bye),
+            "av" to mine["av"], "au" to (mine["au"] == true), "items" to s.recs.values.map { it.post() })
         if (bye) o["bye"] = true
         if (hi) o["hi"] = true
         val body = LinkCrypto.seal(sec, MiniJson.write(o))
@@ -364,6 +381,21 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         return p["r"].asStr() == "desktop" && p["amz"].asBool() && !p["bye"].asBool() && nowS() - (p["at"].asDouble() ?: 0.0) < DESK_SILENT
     }
 
+    /** 2.0: another phone / tablet on this link is the buyer - one that may buy, heard within PHONE_ALIVE, not stopped, whose device id
+     *  comes first (the same rule on every phone: exactly one of them buys while the desktop does not). */
+    fun otherPhoneBuys(): Boolean {
+        if (snap?.first != true) return false
+        val (dev, ph) = snapPhones
+        val t = nowS()
+        return ph.any { (d, v) -> d != dev && v["amz"].asBool() && !v["bye"].asBool() && t - (v["at"].asDouble() ?: 0.0) < PHONE_ALIVE && d < dev }
+    }
+
+    /** 2.0: someone else buys (the desktop, or another phone first in line) - this phone stands by. */
+    fun othersBuy(): Boolean = desktopBuys() || otherPhoneBuys()
+
+    /** 2.0: the other phones / tablets heard within PHONE_ALIVE. */
+    fun otherPhones(): Int { val (dev, ph) = snapPhones; val t = nowS(); return ph.count { (d, v) -> d != dev && t - (v["at"].asDouble() ?: 0.0) < PHONE_ALIVE } }
+
     /** For the screen: (linked, a short line). */
     fun state(): Pair<Boolean, String> {
         val sn = snap ?: return false to "Not linked"
@@ -373,11 +405,14 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         if (at == null) return true to "Linked - waiting for the desktop (it must be running)"
         val min = ((nowS() - at) / 60).toInt()
         val heard = if (min <= 1) "just now" else "$min min ago"
+        val others = otherPhones()
+        val also = if (others > 0) " ($others other phone${if (others == 1) "" else "s"} / tablet linked)" else ""
+        val mine = if (otherPhoneBuys()) "Another phone / tablet buys; this one stands by." else "This phone buys."
         return true to when {
-            peer["bye"].asBool() -> "Linked - desktop stopped ($heard). This phone buys."
-            nowS() - at >= DESK_SILENT -> "Linked - desktop silent since $heard. This phone buys."
-            !peer["amz"].asBool() -> "Linked - desktop auto-buy is off. This phone buys."
-            else -> "Linked - desktop buys (heard $heard). This phone stands by."
+            peer["bye"].asBool() -> "Linked - desktop stopped ($heard). $mine$also"
+            nowS() - at >= DESK_SILENT -> "Linked - desktop silent since $heard. $mine$also"
+            !peer["amz"].asBool() -> "Linked - desktop auto-buy is off. $mine$also"
+            else -> "Linked - desktop buys (heard $heard). This phone stands by.$also"
         }
     }
 }

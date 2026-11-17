@@ -372,7 +372,7 @@ class PhoneTests {
         RkApp.store().setSettings { it.copy(runIcon = true) }
         WatchService.instance?.notifier?.status("check " + System.currentTimeMillis()); Thread.sleep(6_000)
         WatchService.instance?.notifier?.status("check again " + System.currentTimeMillis())
-        assertTrue("icon back", waitFor(15_000) { nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId == Notifier.CH_WATCH })
+        assertTrue("icon back", waitFor(45_000) { WatchService.instance?.notifier?.status("check " + System.currentTimeMillis()); nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId == Notifier.CH_WATCH })
     }
 
     /** 1.7 (owner: "The pictures aren't populating still"): on Amazon's PHONE page the picture is somewhere else and the page also has a
@@ -410,6 +410,20 @@ class PhoneTests {
         PicCache.evictMemory()
         assertTrue("kept on the phone", PicCache.get(again) != null)
         PicCache.fetch = PicCache::realFetch
+    }
+
+    /** 2.0 (owner: "the app still hasnt been tested for checkout. We need a way to verify this will work independently from a PC"):
+     *  a practice with ANY Amazon item in stock, at any price - the whole checkout, stopped before Place your order: never an order, the
+     *  item is not left in the list, and "Real purchases" on changes nothing about that. */
+    @Test fun t19_practice_with_any_item() {
+        RkApp.store().setSettings { it.copy(practice = false, buying = true) }
+        start(false, true)
+        WatchService.cmd(ctx, "practiceany", "B0TEST0001")
+        val done = waitFor(120_000) { RkApp.store().log().any { it.contains("Practice checkout reached Place your order") } }
+        dumpLog("t19")
+        assertTrue("the practice reached Place your order", done)
+        assertEquals("nothing was ordered", 0, site.places)
+        assertTrue("the item is not left in the list", RkApp.store().products().none { it.asin == "B0TEST0001" })
     }
 
     @Test fun t13_testMessage_andDiagnostics() {

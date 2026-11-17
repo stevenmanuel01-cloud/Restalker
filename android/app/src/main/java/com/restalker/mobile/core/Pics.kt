@@ -61,5 +61,7 @@ object Pics {
     }
 
     /** The picture to show: this phone's own (from Amazon's page), else the linked desktop's. */
-    fun shown(p: Product): List<String> = listOfNotNull(p.image.takeIf { valid(it) }, p.dImg.takeIf { validAny(it) && it != p.image })
+    // 2.0 (owner: "Some of the app pictures dont match the PC ones (The PC ones are correct)"): the linked PC's picture first - the
+    // exact picture its table shows (the PC checks the product's shape and page); this phone's own when not linked or the PC has none
+    fun shown(p: Product): List<String> = listOfNotNull(p.dImg.takeIf { validAny(it) }, p.image.takeIf { valid(it) && it != p.dImg })
 }

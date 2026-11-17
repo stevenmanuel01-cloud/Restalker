@@ -55,6 +55,7 @@ import com.restalker.mobile.core.Groups
 import com.restalker.mobile.core.MiniJson
 import com.restalker.mobile.core.Product
 import com.restalker.mobile.core.Pics
+import com.restalker.mobile.core.PriceMarks
 import com.restalker.mobile.core.Settings
 import com.restalker.mobile.core.asLong
 import com.restalker.mobile.core.asStr
@@ -150,6 +151,7 @@ class MainActivity : ComponentActivity() {
         store.setSettings { it.copy(watching = on) }
         store.log("Watching switched ${if (on) "ON" else "OFF"}.")
         try { if (on) WatchService.start(this) else WatchService.stop(this) } catch (e: Exception) { store.log("! Could not start watching: ${e.message}") }
+        Thread { try { DeskLink.get().touched() } catch (e: Exception) { } }.start()     // (2.0: the other phones / tablets learn whether this one may buy)
     }
 
     // =================================================================== the screen
@@ -236,7 +238,7 @@ class MainActivity : ComponentActivity() {
         val svc = WatchService.instance
         val now = System.currentTimeMillis()
         val (linked, linkLine) = remember(r) { DeskLink.get().state() }
-        val deskBuys = remember(r) { DeskLink.get().desktopBuys() }
+        val deskBuys = remember(r) { DeskLink.get().othersBuy() }
         LazyColumn(Modifier.fillMaxSize().testTag("list"), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
                 Column(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)) {
@@ -450,6 +452,54 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** 2.0: the product's picture, large (the product screen). */
+    @Composable
+    fun BigPicture(p: Product) {
+        val urls = Pics.shown(p)
+        var bm by remember(urls) { mutableStateOf(urls.firstNotNullOfOrNull { com.restalker.mobile.PicCache.cached(it, 640) }) }
+        if (urls.isNotEmpty()) LaunchedEffect(urls) {
+            while (bm == null) {
+                bm = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    urls.firstNotNullOfOrNull { com.restalker.mobile.PicCache.get(it, 640) } ?: urls.firstNotNullOfOrNull { com.restalker.mobile.PicCache.get(it) } }
+                if (bm == null) kotlinx.coroutines.delay(com.restalker.mobile.PicCache.retryMs.coerceAtLeast(5_000) + 1_000)
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(260.dp).clip(Look.card).background(Color.White).testTag("bigpic-${p.asin}"), contentAlignment = Alignment.Center) {
+            val b = bm
+            if (b == null) Text(p.label.split(Regex("[^A-Za-z0-9]+")).filter { it.length > 2 && it.lowercase() !in setOf("the", "magic", "gathering") }.take(2)
+                .joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }, color = Look.GreyText, fontWeight = FontWeight.Bold, fontSize = 64.sp)
+            else androidx.compose.foundation.Image(b.asImageBitmap(), contentDescription = p.label, contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(12.dp).testTag("bigpic-img-${p.asin}"))
+        }
+    }
+
+    /** 2.0 (owner: "tick marks on the line for $0, $MSRP, $TCG, $cap and current listing. The bar can remain red when its over the cap,
+     *  but should be green when its under"): where the price stands among the others. */
+    @Composable
+    fun PriceBar(p: Product, nowPr: Double?) {
+        val marks = PriceMarks.of(nowPr, p.cap, p.msrp, p.tcg)
+        val under = nowPr != null && nowPr <= p.cap
+        val barColor = if (nowPr == null) Look.GreyText else if (under) Look.Green else Look.Red
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp).height(96.dp).testTag("pricebar-${p.asin}")) {
+            val w = maxWidth
+            val lineY = 34.dp
+            Box(Modifier.offset(y = lineY).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Look.GreySoft))
+            if (nowPr != null) Box(Modifier.offset(y = lineY).width(w * marks.frac(nowPr)).height(8.dp).clip(RoundedCornerShape(4.dp)).background(barColor)
+                .testTag(if (under) "pricebar-green" else "pricebar-red"))
+            for (m in marks.items) {
+                val x = w * marks.frac(m.value)
+                val now = m.kind == PriceMarks.NOW
+                val c = when (m.kind) { PriceMarks.NOW -> barColor; PriceMarks.CAP -> Look.Ink; else -> Look.GreyText }
+                Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = lineY - (if (now) 8.dp else 4.dp)).width(2.dp).height(if (now) 24.dp else 16.dp).background(c))
+                val labelW = 84.dp
+                val y = if (now) 0.dp else lineY + 18.dp + (if (m.row == 1) 18.dp else 0.dp)
+                Text(m.label, fontSize = if (now) 13.sp else 11.sp, fontWeight = if (now || m.kind == PriceMarks.CAP) FontWeight.Bold else FontWeight.Normal, color = c,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
+                    modifier = Modifier.offset(x = (x - labelW / 2).coerceIn(0.dp, w - labelW), y = y).width(labelW).testTag("tick-${m.kind}"))
+            }
+        }
+    }
+
     @Composable
     fun ProductCard(p: Product, deskBuys: Boolean, tag: String = "product-${p.asin}", onClick: () -> Unit) {
         val (c, bg, fg) = chip(p)
@@ -474,7 +524,7 @@ class MainActivity : ComponentActivity() {
     fun ProductScreen(p: Product, r: Int, onBack: () -> Unit, onEdit: (Product) -> Unit) {
         val store = RkApp.store()
         var confirmRemove by remember(p.id) { mutableStateOf(false) }
-        val deskBuys = remember(r) { DeskLink.get().desktopBuys() }
+        val deskBuys = remember(r) { DeskLink.get().othersBuy() }
         val lines = remember(r) { store.log().filter { it.contains(p.label) }.takeLast(6).asReversed() }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("product-screen")) {
             Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -483,12 +533,11 @@ class MainActivity : ComponentActivity() {
                 TextButton(onClick = { openBrowser(p.url) }) { Text("Open on Amazon") }
             }
             Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Thumb(p, 76)
-                    Column(Modifier.padding(start = 14.dp)) {
-                        Text(p.label, fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 23.sp)
-                        Text("Amazon · ${p.asin} · ${p.kind}", color = Look.Muted, fontSize = 12.sp)
-                    }
+                // 2.0 (owner: "the picture to be much larger (you can place the product title underneath it instead of on the side)")
+                BigPicture(p)
+                Column {
+                    Text(p.label, fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 23.sp, modifier = Modifier.testTag("ptitle-${p.asin}"))
+                    Text("Amazon · ${p.asin} · ${p.kind}", color = Look.Muted, fontSize = 12.sp)
                 }
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp)) {
                     val (c, bg, fg) = chip(p)
@@ -498,9 +547,7 @@ class MainActivity : ComponentActivity() {
                         Text(nowPr?.let { "\$${Engine.money(it)}" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp)
                         Text("   your cap \$${Engine.money(p.cap)}", color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 5.dp))
                     }
-                    val frac = nowPr?.let { (it / p.cap).toFloat().coerceIn(0f, 1f) } ?: 0f
-                    LinearProgressIndicator(progress = { frac }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(8.dp).clip(RoundedCornerShape(4.dp)),
-                        color = if ((nowPr ?: 0.0) > p.cap) Look.OrangeText else Look.TealBright, trackColor = Look.GreySoft)
+                    PriceBar(p, nowPr)
                     Text(seenText(p).ifEmpty { "Not checked yet" }.replaceFirstChar { it.uppercase() } + if (p.lastCheck > 0 && p.lastCheck >= p.dAt) " · " + p.status else "",
                         color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                     val ref = listOfNotNull(p.msrp?.let { "MSRP \$${Engine.money(it)}" }, p.tcg?.let { "TCG market \$${Engine.money(it)}" })
@@ -792,11 +839,48 @@ class MainActivity : ComponentActivity() {
                         else "Off - you are told when there is a new version", st.autoUpdate, "autoupdate") { on ->
                         store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true) }
                     HorizontalDivider(color = Look.Line)
-                    SwitchRow("Running icon", if (st.runIcon) "An icon at the top while it watches" else "No icon - the notice is tucked away at the bottom of your notifications",
+                    SwitchRow("Running icon", (if (st.runIcon) "An icon at the top while it watches" else "No icon - the notice is tucked away at the bottom of your notifications") +
+                        ". Swipe the notice away to hide it; watching goes on.",
                         st.runIcon, "runicon") { on ->
                         store.setSettings { it.copy(runIcon = on) }; store.log("Running icon switched ${if (on) "ON" else "OFF"}.")
                         WatchService.instance?.notifier?.status(WatchService.instance?.notifier?.lastStatus ?: "")
                     }
+                }
+                // ---- 2.0: a practice checkout with ANY Amazon item in stock (nothing is bought)
+                var paLink by remember { mutableStateOf("") }
+                var paErr by remember { mutableStateOf("") }
+                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("practice-any")) {
+                    Text("Practice checkout", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text("Tests the whole checkout on this phone, without the PC: paste a link of ANY Amazon item that is in stock (a cheap one is fine). " +
+                        "It goes all the way to \"Place your order\" and stops there - nothing is bought, and the item is not added to your list.",
+                        fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
+                    OutlinedTextField(paLink, { paLink = it; paErr = "" }, label = { Text("Amazon link or product code") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("pa-link"))
+                    if (paErr.isNotEmpty()) Text(paErr, color = Look.Red, fontSize = 12.sp, modifier = Modifier.testTag("pa-err"))
+                    Button(onClick = {
+                        val t = paLink
+                        Thread {
+                            val a = Asin.resolve(t) { u -> followOnce(u) }
+                            runOnUiThread {
+                                if (a == null) paErr = "That is not an Amazon product link or code."
+                                else { paErr = ""; WatchService.cmd(this@MainActivity, "practiceany", a); store.log("Practice checkout asked for $a.") }
+                            }
+                        }.start()
+                    }, modifier = Modifier.padding(top = 8.dp).testTag("pa-go")) { Text("Run the practice") }
+                    if (!signed) Text("Sign in to Amazon first (above).", color = Look.AmberText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                }
+                // ---- 2.0: share the app (its download page)
+                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("share"), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Share Restalker", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.fillMaxWidth())
+                    Text("Another phone scans this code to download the app. (Your own tablet: install it there, then link it to the desktop the same way - all stay the same, and only one of them buys.)",
+                        fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    val qr = remember { qrBitmap(SHARE_URL, 480) }
+                    if (qr != null) androidx.compose.foundation.Image(qr.asImageBitmap(), contentDescription = "Download page QR code",
+                        modifier = Modifier.size(180.dp).testTag("share-qr"))
+                    TextButton(onClick = {
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                            .putExtra(Intent.EXTRA_TEXT, "Restalker for Android: $SHARE_URL"), "Share Restalker"))
+                    }, modifier = Modifier.testTag("share-link")) { Text("Share the link") }
                 }
                 // ---- problems
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
@@ -842,6 +926,15 @@ class MainActivity : ComponentActivity() {
             dismissButton = { TextButton(onClick = { confirmUnlink = false }) { Text("Cancel") } })
     }
 
+    /** 2.0: a QR code picture (ZXing, already in the app for scanning). */
+    private fun qrBitmap(text: String, px: Int): android.graphics.Bitmap? = try {
+        val m = com.google.zxing.qrcode.QRCodeWriter().encode(text, com.google.zxing.BarcodeFormat.QR_CODE, px, px, mapOf(com.google.zxing.EncodeHintType.MARGIN to 1))
+        android.graphics.Bitmap.createBitmap(px, px, android.graphics.Bitmap.Config.RGB_565).also { b ->
+            val row = IntArray(px)
+            for (y in 0 until px) { for (x in 0 until px) row[x] = if (m.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE; b.setPixels(row, 0, px, 0, y, px, 1) }
+        }
+    } catch (e: Exception) { null }
+
     private fun hm(t: Long) = SimpleDateFormat("h:mm a", Locale.US).format(Date(t))
     private fun ago(t: Long): String {
         val s = (System.currentTimeMillis() - t) / 1000
@@ -851,6 +944,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** 1.7: the app's screen is in front (an update's "Install" question can then be shown at once). */
         @Volatile var shown = false
+        const val SHARE_URL = "https://github.com/stevenmanuel01-cloud/Restalker/releases/latest"
         const val UPDATE_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/latest.json"
         const val RELEASES = "https://github.com/stevenmanuel01-cloud/Restalker/releases"
     }

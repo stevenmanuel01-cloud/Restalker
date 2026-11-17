@@ -74,6 +74,7 @@ class BrowserActivity : Activity() {
         val svc = WatchService.instance ?: return
         val aw = svc.web; shared = aw
         BrowserShown.on = true
+        aw.wake()                                          // (2.0: the page may have been resting between looks)
         val busy = svc.engine.busyWith != "idle"
         if (!busy) svc.engine.pausedFor = "you are using the browser"
         else note.text = "A checkout is running right now - please don't tap in the page."

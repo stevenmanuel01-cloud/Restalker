@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.9"
+const val APP_VERSION = "2.0"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed

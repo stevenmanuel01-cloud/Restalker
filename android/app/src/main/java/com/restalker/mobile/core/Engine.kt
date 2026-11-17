@@ -12,6 +12,9 @@ interface Page {
     fun images(on: Boolean)
     /** The pages opened since the last call (their paths), then forgotten. Used to see that Amazon showed its sign-in page. */
     fun visited(): List<String> = emptyList()
+    /** 2.0 (owner: "The app does seem to use the battery fairly quickly"): nothing to look at for a while - the page is closed and its
+     *  scripts stop (an Amazon page keeps running its own scripts while it is open). The next goto wakes it. */
+    fun rest() {}
 }
 
 /** Messages to you (the Android side shows them as notifications with buttons). */
@@ -42,6 +45,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
         data class Practice(val id: String) : Cmd()        // a practice checkout of this product now (stops before Place your order)
+        data class PracticeAny(val asin: String) : Cmd()   // 2.0: a practice checkout of ANY Amazon item that is in stock (nothing is bought)
         object Wake : Cmd()
         object Quit : Cmd()
     }
@@ -92,7 +96,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val wait = due.lastCheck + interval - now()
         offlineSince = 0
         if (wait > 0 && pictureOnce()) return
-        if (wait > 0) { status(if (desk) "Desktop is buying · this phone stands by (next look ${secs(wait)})" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
+        if (wait > 20_000) page.rest()                  // 2.0: the page closed and quiet until the next look (battery)
+        if (wait > 0) { status(if (desk) "The PC buys · this phone stands by · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
 
@@ -113,10 +118,17 @@ class Engine(private val store: Store, private val page: Page, private val alert
             is Cmd.Practice -> {
                 val p = store.product(c.id) ?: return
                 log("${p.label}: practice checkout started by you (it stops before Place your order).")
-                if (!openAndRead(p)) return
-                val p2 = store.product(p.id) ?: return
-                if (!p2.buyable) { alerts.practice(p2, "Practice not possible right now: ${p2.status}. A practice needs the product to be buyable at or under its cap."); return }
-                buy(p2, store.product(p2.id)?.price, forcePractice = true)
+                practice(p)
+            }
+            is Cmd.PracticeAny -> {
+                // 2.0 (owner: "the app still hasnt been tested for checkout ... I get an error message stating that the product must be in stock
+                // and under my cap. If this were the case, then the PC would have already bought it"): any Amazon item in stock, at any
+                // price - the practice stops before "Place your order", so nothing is ever bought. The item is not kept in your list.
+                store.products().firstOrNull { it.asin == c.asin }?.let { practice(it); return }
+                val tmp = Product(id = PRACTICE_ID + c.asin, asin = c.asin, cap = 1.0, kind = "other", watch = false, buy = false)
+                store.add(tmp)
+                try { log("Practice checkout with Amazon item ${c.asin} (not added to your list; it stops before Place your order)."); practice(tmp) }
+                finally { store.remove(tmp.id) }
             }
         }
     }
@@ -126,6 +138,22 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (clock !== RealClock) { clock.sleep(ms); return }       // (tests: their clock jumps ahead)
         val c = q.pollFirst(ms, TimeUnit.MILLISECONDS) ?: return
         q.offerFirst(c)        // (a command arrived: step() takes it next)
+    }
+
+    /** A practice checkout: the product must be in stock - at ANY price (2.0: over the cap too - a practice never orders). */
+    private fun practice(p: Product) {
+        if (!openAndRead(p)) { alerts.practice(p, "Practice not possible: Amazon's page did not open. Try again in a minute."); return }
+        val p2 = store.product(p.id) ?: return
+        val pr = p2.price
+        val inStock = p2.buyable || (p2.overCap && pr != null) || (p.id.startsWith(PRACTICE_ID) && pr != null && lastReply?.get("reason").asStr() == "price above cap")
+        if (!inStock) {
+            alerts.practice(p2, "Practice not possible with this one right now: ${p2.status}. A practice needs an item that is in stock (at any price) - " +
+                "use Settings -> Practice checkout with any Amazon item that is in stock (nothing is bought).")
+            return
+        }
+        // (over the cap: for this practice only, the cap is set just above the price - the real cap is not changed)
+        val run = if (p2.buyable) p2 else p2.copy(cap = (pr ?: p2.cap) + 1.0)
+        buy(run, pr, forcePractice = true)
     }
 
     // ------------------------------------------------------------------ looking at a product
@@ -477,6 +505,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val LOCK_AFTER = 3
         const val LOCK_MS = 10 * 60_000L
         val VERIFY_LOOKS = longArrayOf(5_000, 15_000, 40_000, 120_000)
+        /** 2.0: the id of a practice item (Settings -> Practice checkout with any item): never shared, removed after the practice. */
+        const val PRACTICE_ID = "practice-"
         const val STANDBY_MS = 30 * 60_000L     // 1.6: was 10 min (about 80 MB an hour on the owner's phone); the desktop's view shows meanwhile
         const val PIC_RETRY_MS = 24 * 3600_000L
         fun money(d: Double) = String.format(java.util.Locale.US, "%.2f", d)
