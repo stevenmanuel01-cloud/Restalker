@@ -1,8 +1,8 @@
 {
- "version": "v130",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v130_update.zip",
- "sha256": "072f00a264c0d669250e2fd5896eada2c3720210481381cab421eef4dda57278",
- "size": 738020,
- "notes": "Updates reach the PC even when a release ping is lost: the listener hears the last hour, the start look is fresh, a safety look every 6 hours.",
+ "version": "v131",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v131_update.zip",
+ "sha256": "e039fa6d523d65c1d8b4ed02f69f1a89674cf4358d7c27124c6ecbe6a4bb637e",
+ "size": 738351,
+ "notes": "Target / Walmart / GameStop: a greyed-out Add to cart gets up to 5 s to turn on (Target Hobbit at $539.99 was missed that way).",
  "files": 81
 }
