@@ -20,9 +20,13 @@
       const c = canon(u); seen.push(where + (c ? '+' : '-'));
       if (c) got.push(c); else if (bad.length < 3 && !/\/images\/G\/|grey-pixel|transparent-pixel/i.test(u)) bad.push(where + ':' + u.slice(0, 90));
     };
+    // 1.8.1: the main picture's own places first, in this order (document order put a small badge first on some pages)
     let els = [];
-    try { els = Array.from(document.querySelectorAll('#landingImage, #imgTagWrapperId img, #main-image, #imgBlkFront, #ebooksImgBlkFront, ' +
-      'img[data-old-hires], img[data-a-hires], #main-image-container img, #image-block img, img.a-dynamic-image')).slice(0, 12); } catch (x) {}
+    try { const seenEl = new Set();
+      for (const q of ['#landingImage', '#main-image', '#imgTagWrapperId img', '#imgBlkFront', '#ebooksImgBlkFront', '#main-image-container img',
+                       '#image-block img', 'img[data-old-hires]', 'img[data-a-hires]', 'img.a-dynamic-image'])
+        for (const e of document.querySelectorAll(q)) if (!seenEl.has(e) && els.length < 12) { seenEl.add(e); els.push(e); }
+    } catch (x) {}
     for (const e of els) {
       add(e.getAttribute('data-old-hires'), 'oldhires'); add(e.getAttribute('data-a-hires'), 'ahires');
       try { const d = JSON.parse(e.getAttribute('data-a-dynamic-image') || '{}');
@@ -43,11 +47,11 @@
         const m = document.querySelector(q); if (m) add(m.getAttribute('content') || m.getAttribute('href'), q.startsWith('link') ? 'imgsrc' : 'meta');
       }
     }
-    return {u: got[0] || null, info: 'els=' + els.length + ' ' + (seen.slice(0, 12).join(',') || 'none') + ' url=' + String(location.pathname).slice(0, 40) +
+    return {u: got[0] || null, us: Array.from(new Set(got)).slice(0, 6), info: 'els=' + els.length + ' ' + (seen.slice(0, 12).join(',') || 'none') + ' url=' + String(location.pathname).slice(0, 40) +
       (bad.length ? ' refused=' + bad.join(' | ') : '')};
   };
   const chrome = {runtime: {onMessage: {addListener(fn) { Object.defineProperty(window, '__rk___TOKEN__', {value: (m, s, send) => {
-                              if (m && m.bb === 'picture') { const r = picture(); send({picture: r.u, pinfo: r.info}); return false; }
+                              if (m && m.bb === 'picture') { const r = picture(); send({picture: r.u, pictures: r.us, pinfo: r.info}); return false; }
                               return fn(m, s, send); }}); }},
                             sendMessage: () => Promise.resolve()}};
 /*__RK_PART__*/

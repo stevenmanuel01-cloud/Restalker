@@ -414,9 +414,12 @@ class Engine(private val store: Store, private val page: Page, private val alert
      *  [picInfo] for the diagnostics and the self-check (when none was found). */
     private fun takePicture(p: Product) {
         val r = page.ask(mapOf("bb" to "picture"), 4_000)
-        val u = r?.get("picture").asStr()
+        val cands = (r?.get("pictures").asList().map { it.asStr() } + listOf(r?.get("picture").asStr())).filterNotNull()
         picInfo[p.asin] = (r?.get("pinfo").asStr() ?: if (r == null) "no answer from the page" else "-").take(300)
-        Pics.canon(u)?.let { c -> store.update(p.id) { it.copy(image = c) }; picInfo[p.asin] = "found" }
+        val bad = (store.readFile(BAD_PICS) ?: "").split(Regex("\\s+")).filter { it.isNotBlank() }.toSet()
+        val c = Pics.choose(cands, p.asin, store.products(), bad)
+        if (c != null) { store.update(p.id) { it.copy(image = c) }; picInfo[p.asin] = "found" }
+        else if (cands.isNotEmpty()) picInfo[p.asin] = "only pictures of other products / known bad: " + cands.mapNotNull { Pics.id(it) }.distinct().take(4).joinToString(",")
     }
 
     fun readOrders() {
@@ -466,6 +469,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
     companion object {
         /** 1.7: per product code - what its page showed when its picture was looked for ("found", or which picture fields it had). */
         val picInfo = java.util.concurrent.ConcurrentHashMap<String, String>()
+        /** 1.8.1: picture ids that are no product picture (one per line). */
+        const val BAD_PICS = "badpics.txt"
         const val ORDERS_URL = "https://www.amazon.com/gp/css/order-history"
         const val ORDERS_EVERY = 30 * 60_000L
         const val CHECKOUT_MS = 150_000L

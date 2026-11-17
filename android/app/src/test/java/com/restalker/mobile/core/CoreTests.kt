@@ -352,7 +352,7 @@ object CoreTests {
             val w = LinkCrypto.seal(sec, "{\"a\":\"B0TEST0001\",\"x\":\"é ✓\"}")
             ch.startsWith("rkl-") && LinkCrypto.parse("RK1.abc") == null && LinkCrypto.parse(c + "x") == null && LinkCrypto.parse(null) == null &&
                 LinkCrypto.unseal(sec, w) == "{\"a\":\"B0TEST0001\",\"x\":\"é ✓\"}" && LinkCrypto.unseal(ByteArray(32), w) == null &&
-                LinkCrypto.unseal(sec, w.dropLast(2) + "AA") == null && LinkCrypto.unseal(sec, "hello") == null && !w.contains("B0TEST0001")
+                LinkCrypto.unseal(sec, w.substring(0, 12) + (if (w[12] == 'A') 'B' else 'A') + w.substring(13)) == null && LinkCrypto.unseal(sec, "hello") == null && !w.contains("B0TEST0001")
         }
         t("41 a wrong link code is explained, nothing changes") {
             val w = World(); val l = Link(w.store, object : LinkNet { override fun post(url: String, body: String, asFile: Boolean) = 200; override fun get(url: String) = "" })
@@ -565,6 +565,19 @@ object CoreTests {
             .map { it.first } == listOf("update") }
         t("97_settings_update_by_itself_on_by_default_and_kept") { Settings.fromMap(null).autoUpdate && Settings.fromMap(emptyMap()).autoUpdate &&
             !Settings.fromMap(Settings(autoUpdate = false).toMap()).autoUpdate }
+        // ---------------- 1.9 (the 1.8 report: one picture id - a 404 on Amazon's picture server - was taken for 7 different products)
+        val B = "https://m.media-amazon.com/images/I/31uI7WnC0LL.jpg"
+        t("98_picture_of_another_product_or_bad_never_taken") {
+            val ps = listOf(Product("a", "B0TEST0098", image = B), Product("b", "B0TEST0099"))
+            Pics.choose(listOf(B, RAW), "B0TEST0099", ps, emptySet()) == I && Pics.choose(listOf(B), "B0TEST0099", ps, emptySet()) == null &&
+                Pics.choose(listOf(B), "B0TEST0098", ps, emptySet()) == B && Pics.choose(listOf(RAW, B), "B0TEST0099", ps, setOf("81Xk2+abcL")) == null &&
+                Pics.choose(listOf(null, "junk", RAW), "B0TEST0099", ps, emptySet()) == I && Pics.id(RAW) == "81Xk2+abcL" }
+        t("99_repair_drops_shared_and_404_pictures") {
+            val ps = listOf(Product("a", "B0TEST0101", image = B), Product("b", "B0TEST0102", image = B), Product("c", "B0TEST0103", image = I),
+                Product("d", "B0TEST0104", image = "https://m.media-amazon.com/images/I/41goodPicL.jpg"))
+            val (bad, ids) = Pics.repair(ps, { u -> if (u == I) "failed: the picture server answered 404" else "ok" }, { u -> if (u == I) 2 else 0 })
+            val (bad2, ids2) = Pics.repair(ps.drop(2), { u -> if (u == I) "failed: no internet" else "ok" }, { 5 })
+            bad == setOf("31uI7WnC0LL", "81Xk2+abcL") && ids.toSet() == setOf("a", "b", "c") && bad2.isEmpty() && ids2.isEmpty() }
         return results
     }
 

@@ -37,6 +37,29 @@ object Pics {
     /** The short name of a picture for the diagnostics (the part after /images/I/, or the host). */
     fun short(u: String): String = u.substringAfter("/images/I/", "").ifEmpty { u.substringAfter("://").substringBefore('/') }.take(60)
 
+    /** 1.8.1: the picture id (the part after /images/I/ of the plain form). */
+    fun id(u: String?): String? = canon(u)?.substringAfter("/images/I/")?.removeSuffix(".jpg")
+
+    /** 1.8.1 (the 1.8 report: one picture id, a 404 on Amazon's picture server, was taken for 7 different products): the first of a
+     *  page's candidates that is not a known bad id and not already another product's picture. */
+    fun choose(cands: List<String?>, asin: String, products: List<Product>, bad: Set<String>): String? {
+        val others = products.filter { it.asin != asin }.mapNotNull { id(it.image) }.toSet()
+        return cands.mapNotNull { canon(it) }.firstOrNull { c -> id(c).let { it != null && it !in bad && it !in others } }
+    }
+
+    /** 1.8.1: ids that are no product picture: kept for 2+ different products, or answered "404" twice by the picture server.
+     *  -> (bad ids, the products whose picture must be dropped and looked for again). */
+    fun repair(products: List<Product>, status: (String) -> String?, fails: (String) -> Int): Pair<Set<String>, List<String>> {
+        val byId = products.filter { valid(it.image) }.groupBy { id(it.image)!! }
+        val bad = HashSet<String>()
+        for ((k, ps) in byId) {
+            if (ps.map { it.asin }.distinct().size >= 2) bad += k
+            val u = ps.first().image
+            if (fails(u) >= 2 && (status(u) ?: "").contains("404")) bad += k
+        }
+        return bad to products.filter { id(it.image) in bad }.map { it.id }
+    }
+
     /** The picture to show: this phone's own (from Amazon's page), else the linked desktop's. */
     fun shown(p: Product): List<String> = listOfNotNull(p.image.takeIf { valid(it) }, p.dImg.takeIf { validAny(it) && it != p.image })
 }

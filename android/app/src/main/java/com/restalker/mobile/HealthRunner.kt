@@ -41,8 +41,20 @@ object HealthRunner {
         Thread({ try { run(ctx, now) } catch (e: Exception) { } }, "self-check").start()
     }
 
+    /** 1.8.1: pictures that are no product picture are dropped (and looked for again on the product's page). */
+    fun repairPictures() {
+        val store = RkApp.store()
+        val (bad, ids) = com.restalker.mobile.core.Pics.repair(store.products(), { PicCache.status[it] }, { PicCache.failures(it) })
+        if (bad.isEmpty()) return
+        val old = (store.readFile(Engine.BAD_PICS) ?: "").split(Regex("\\s+")).filter { it.isNotBlank() }.toSet()
+        if (!old.containsAll(bad)) store.writeFile(Engine.BAD_PICS, (old + bad).takeLast(500).joinToString("\n"))
+        for (id in ids) store.update(id) { it.copy(image = "", picTriedAt = 0) }
+        if (ids.isNotEmpty()) store.log("Pictures: ${ids.size} product(s) had a picture that is not theirs (${bad.joinToString(",")}) - looked for again.")
+    }
+
     @Synchronized fun run(ctx: Context, now: Long = System.currentTimeMillis()): List<Pair<String, String>> {
         val store = RkApp.store()
+        try { repairPictures() } catch (e: Exception) { }
         val probs = Health.check(input(ctx, now))
         last = probs
         val reported = HashMap<String, Long>()

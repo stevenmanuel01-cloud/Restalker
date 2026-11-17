@@ -240,6 +240,13 @@ class ScreenTests {
             compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0402"))
             compose.waitUntil(5_000) { compose.onAllNodesWithTag("pic-B0TEST0402", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             shot("t14_pictures")
+            // 1.9: one picture kept for two different products is no product picture: dropped for both, never taken again
+            val shared = "https://m.media-amazon.com/images/I/31uI7WnC0LL.jpg"
+            s.add(prod("B0TEST0403", "Nauctis Collector Booster Box", "2026", "Nauctis").copy(image = shared))
+            s.add(prod("B0TEST0404", "Nauctis Secret Lair Bundle", "2026", "Nauctis").copy(image = shared))
+            HealthRunner.repairPictures()
+            assertEquals("", p("B0TEST0403").image); assertEquals("", p("B0TEST0404").image)
+            assertTrue((s.readFile(com.restalker.mobile.core.Engine.BAD_PICS) ?: "").contains("31uI7WnC0LL"))
         } finally { PicCache.retryMs = 10 * 60_000L; PicCache.fetch = PicCache::realFetch }
     }
 

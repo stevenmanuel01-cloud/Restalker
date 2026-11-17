@@ -1,3 +1,8 @@
+# Restalker Mobile 1.9 (2026-11-17; from the app's own report)
+- Pictures: on some pages a small badge came before the product picture, and its picture (which Amazon's picture server does not
+  even have) was kept for 7 products. The page's main picture is taken first now; a picture kept for two different products, or
+  missing on Amazon's picture server, is dropped by itself and the right one looked for again.
+
 # Restalker Mobile 1.8 (2026-11-16; from the app's own report)
 - Pictures: the 1.7 report showed Amazon's pages give their pictures in forms 1.7 did not accept (28 products without one). Every
   form of an Amazon product picture is taken now, kept in one plain form, and downloaded small.
