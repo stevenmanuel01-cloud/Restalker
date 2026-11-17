@@ -1,8 +1,8 @@
 {
- "version": "v124",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v124_update.zip",
- "sha256": "37f1472add4d653be07095f92dffaabe34fc74697069ee1e1df2777dc626a814",
- "size": 730122,
- "notes": "Link phone: scan the QR code with the phone app (1.4) - products the same on both, one buyer; fixes v123's buying engine version mark",
+ "version": "v125",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v125_update.zip",
+ "sha256": "91bb8d8018784fde34a022d2730f36dd056ddde36b1c0a1eda26eefac089a8fb",
+ "size": 733382,
+ "notes": "No second page tab after an update; rename products (Nauctis Secret Lair corrected); phone link: Buy 1/2/3, live stock and other stores for the app",
  "files": 81
 }
