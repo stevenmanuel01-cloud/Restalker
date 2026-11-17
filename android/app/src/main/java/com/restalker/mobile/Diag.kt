@@ -37,6 +37,19 @@ object Diag {
         sb.append("\nProducts (${s.products().size}):\n")
         for (p in s.products()) sb.append("- ${p.asin} cap \$${Engine.money(p.cap)} ${p.kind} watch=${p.watch} buy=${p.buy} qty=${p.qty} pic=${p.image.isNotBlank()} desk=${p.dSt} bought=${p.purchased} attempted=${p.attempted}" +
             " fails=${p.fails} | ${p.status}" + (if (p.lastCheck > 0) " (${t.format(Date(p.lastCheck))})" else "") + " | ${p.label.take(80)}\n")
+        // 1.7: the pictures (which one is shown, whether it loads; what the page had when none was found) and the self-check
+        sb.append("\nPictures:\n")
+        for (p in s.products()) {
+            val u = com.restalker.mobile.core.Pics.shown(p)
+            sb.append("- ${p.asin} own=${if (p.image.isBlank()) "-" else com.restalker.mobile.core.Pics.short(p.image)} desk=${if (p.dImg.isBlank()) "-" else com.restalker.mobile.core.Pics.short(p.dImg)}" +
+                " load=${u.firstOrNull()?.let { PicCache.status[it] ?: "not tried" } ?: "-"} fails=${u.sumOf { PicCache.failures(it) }} page=${Engine.picInfo[p.asin] ?: "-"}\n")
+        }
+        val hp = try { com.restalker.mobile.core.Health.check(HealthRunner.input(ctx)) } catch (e: Exception) { listOf("?" to "self-check failed: ${e.message}") }
+        sb.append("\nSelf-check: ${if (hp.isEmpty()) "nothing wrong found" else hp.joinToString("\n  ", "\n  ") { "${it.first}: ${it.second}" }}\n")
+        sb.append("Desktop link rounds failed in a row: ${DeskLink.failsInRow}\n")
+        for (f in listOf(HealthRunner.crashFile(ctx), HealthRunner.crashSentFile(ctx))) try {
+            if (f.isFile) sb.append("\n${if (f.name.contains("sent")) "Earlier crash (already reported)" else "Crash"}:\n${f.readText().take(3000)}\n")
+        } catch (e: Exception) { }
         sb.append("\nPurchases (${s.purchases().size}):\n")
         for (x in s.purchases().take(20)) sb.append("- ${t.format(Date(x.at))} ${x.asin} ${x.price?.let { "\$" + Engine.money(it) } ?: ""} order ${x.order ?: "-"} verified=${x.verified} ${x.note}\n")
         sb.append("\nLog (newest last):\n")
@@ -68,10 +81,12 @@ object Reporter {
         }.start()
     }
 
-    fun auto(ctx: android.content.Context, why: String) {
+    /** -> true when a report is being sent (automatic reports: switched on, at most one every 30 minutes). */
+    fun auto(ctx: android.content.Context, why: String): Boolean {
         val s = RkApp.store().settings()
-        if (!com.restalker.mobile.core.Report.autoDue(s, System.currentTimeMillis())) return
+        if (!com.restalker.mobile.core.Report.autoDue(s, System.currentTimeMillis())) return false
         RkApp.store().setSettings { it.copy(reportAt = System.currentTimeMillis()) }     // (one at a time)
         send(ctx, "automatic: $why")
+        return true
     }
 }

@@ -1,0 +1,32 @@
+package com.restalker.mobile.core
+
+/** 1.7 (owner 2026-11-16: "The pictures aren't populating still"): which picture addresses are real product pictures, and the small
+ *  version to download. An Amazon product picture always lives under /images/I/ - anything else on an Amazon page (/images/G/ = the
+ *  site's own graphics: logos, share images, grey placeholder pixels) is never a product picture. */
+object Pics {
+    private val AMZ = Regex("^https://([a-z0-9.-]*\\.)?(media-amazon\\.com|ssl-images-amazon\\.com|images-amazon\\.com)/images/I/[^/?#\\s\"'<>]+\\.(jpe?g|png|webp)$",
+        RegexOption.IGNORE_CASE)
+    /** Other stores' picture servers (the linked desktop's picture of a product can come from them). */
+    private val OTHER = Regex("^https://(target\\.scene7\\.com|pisces\\.bbystatic\\.com|i5\\.walmartimages\\.com|media\\.gamestop\\.com)/[^\\s\"'<>]+$",
+        RegexOption.IGNORE_CASE)
+
+    /** A picture this phone read from an Amazon page. */
+    fun valid(u: String?): Boolean = u != null && u.length < 400 && AMZ.matches(u)
+    /** A picture the linked desktop gave (Amazon's or another store's). */
+    fun validAny(u: String?): Boolean = u != null && u.length < 500 && (AMZ.matches(u) || OTHER.matches(u))
+
+    /** Amazon: ..../images/I/81abc._AC_SL1500_.jpg -> ..../images/I/81abc._AC_SL<px>_.jpg (less to download). Others: as given. */
+    fun small(u: String, px: Int = 240): String {
+        val m = Regex("^(https://[^/]+/images/I/[^./]+)(\\._[^/]*_)?(\\.[a-zA-Z]+)$").find(u) ?: return u
+        return m.groupValues[1] + "._AC_SL${px}_" + m.groupValues[3]
+    }
+
+    /** What to try, in order: the small version, then the picture as given. */
+    fun tries(u: String): List<String> = listOf(small(u), u).distinct()
+
+    /** The short name of a picture for the diagnostics (the part after /images/I/, or the host). */
+    fun short(u: String): String = u.substringAfter("/images/I/", "").ifEmpty { u.substringAfter("://").substringBefore('/') }.take(60)
+
+    /** The picture to show: this phone's own (from Amazon's page), else the linked desktop's. */
+    fun shown(p: Product): List<String> = listOfNotNull(p.image.takeIf { valid(it) }, p.dImg.takeIf { validAny(it) && it != p.image })
+}

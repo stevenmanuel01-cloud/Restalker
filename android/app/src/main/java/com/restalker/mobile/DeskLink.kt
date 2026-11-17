@@ -33,6 +33,8 @@ object DeskLink {
     @Synchronized fun reset() { link = null }
 
     @Volatile var lastResult: String = ""; private set
+    /** 1.7: rounds in a row that failed (the self-check reports 10 in a row). */
+    @Volatile var failsInRow = 0; private set
     @Volatile private var running = false
 
     /** One round in the background (skipped when one is running). [done] on the main thread. */
@@ -42,6 +44,7 @@ object DeskLink {
         Thread({
             val r = try { get().cycle() } catch (e: Exception) { "failed: ${e.message?.take(80)}" } finally { running = false }
             lastResult = r
+            failsInRow = if (r == "ok" || r == "not linked") 0 else failsInRow + 1
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post { done(r) }
         }, "desk-link").start()
     }

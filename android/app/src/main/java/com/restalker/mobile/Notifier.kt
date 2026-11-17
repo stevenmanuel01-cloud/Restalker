@@ -47,7 +47,7 @@ class Notifier(private val ctx: Context) : Alerts {
         Reporter.auto(ctx, "$title - $text")
     }
 
-    override fun problem(what: String) = Reporter.auto(ctx, what)
+    override fun problem(what: String) { Reporter.auto(ctx, what) }
 
     override fun practice(p: Product, text: String) = post(idFor("p", p.id), base(CH_BUY, "PRACTICE: ${p.label}", text).build())
 

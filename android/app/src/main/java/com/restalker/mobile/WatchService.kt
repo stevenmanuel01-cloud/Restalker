@@ -44,6 +44,12 @@ class WatchService : Service() {
                 tick.postDelayed(this, 60_000)
             }
         }, 5_000)
+        tick.postDelayed(object : Runnable {        // 1.7: the self-check (it sends a report by itself when something is wrong)
+            override fun run() {
+                HealthRunner.tick(this@WatchService)
+                tick.postDelayed(this, 60_000)
+            }
+        }, 30_000)
         tick.postDelayed(object : Runnable {        // watching off and nothing left to do (a Check now / practice was done): close
             override fun run() {
                 if (!RkApp.store().settings().watching && engine.idle() && !BrowserShown.on) { stopSelf(); return }
@@ -78,6 +84,13 @@ class WatchService : Service() {
     }
 
     private var startRx = 0L; private var startAt = 0L
+    val since: Long get() = startAt
+    fun hours(): Double = (System.currentTimeMillis() - startAt) / 3_600_000.0
+    fun mbPerHour(): Double? {
+        val rx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid())
+        if (rx < 0 || startRx < 0 || hours() < 0.25) return null
+        return (rx - startRx) / 1_048_576.0 / hours()
+    }
     /** Data this app has downloaded since watching started, and per hour (shown on the screen). */
     fun dataText(): String {
         val rx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid())

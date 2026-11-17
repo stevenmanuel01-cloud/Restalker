@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.6"
+const val APP_VERSION = "1.7"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -48,6 +48,7 @@ data class Product(
     val tcg: Double? = null,
     val others: List<Map<String, Any?>> = emptyList(),
     val picTriedAt: Long = 0,             // 1.6: when its page was last opened only for its picture
+    val dImg: String = "",                // 1.7: the linked desktop's picture of the product (its table's)
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -65,7 +66,7 @@ data class Product(
         "submittedAt" to submittedAt, "orderNumber" to orderNumber, "fails" to fails, "failEpisode" to failEpisode,
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
         "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
-        "msrp" to msrp, "tcg" to tcg, "others" to others, "picTriedAt" to picTriedAt,
+        "msrp" to msrp, "tcg" to tcg, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg,
     )
 
     /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
@@ -89,10 +90,13 @@ data class Product(
                 submittedAt = m["submittedAt"].asLong() ?: 0, orderNumber = m["orderNumber"].asStr(), fails = (m["fails"].asLong() ?: 0).toInt(),
                 failEpisode = m["failEpisode"].asLong() ?: 0, lockedUntil = m["lockedUntil"].asLong() ?: 0, practiceOkAt = m["practiceOkAt"].asLong() ?: 0,
                 year = m["year"].asStr() ?: "", set = m["set"].asStr() ?: "",
-                image = m["image"].asStr() ?: "", qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
+                // 1.7: a kept address that is not a product picture (an Amazon logo / placeholder from 1.5-1.6) is dropped and looked for again
+                image = (m["image"].asStr() ?: "").takeIf { Pics.valid(it) } ?: "", qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
                 overCap = m["overCap"].asBool(), dSt = m["dSt"].asStr() ?: "", dPr = m["dPr"].asDouble(), dAt = m["dAt"].asLong() ?: 0,
                 msrp = m["msrp"].asDouble(), tcg = m["tcg"].asDouble(),
-                others = m["others"].asList().mapNotNull { it.asMap() }.take(8), picTriedAt = m["picTriedAt"].asLong() ?: 0,
+                others = m["others"].asList().mapNotNull { it.asMap() }.take(8),
+                picTriedAt = if (Pics.valid(m["image"].asStr()) || m["image"].asStr().isNullOrBlank()) m["picTriedAt"].asLong() ?: 0 else 0,
+                dImg = (m["dImg"].asStr() ?: "").takeIf { Pics.validAny(it) } ?: "",
             )
         }
     }

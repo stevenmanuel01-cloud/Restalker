@@ -269,8 +269,10 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
                         linkedMapOf("s" to (o["s"].asStr() ?: "").take(20), "st" to (o["st"].asStr() ?: "").take(5), "pr" to o["pr"].asDouble(),
                             "at" to ((o["at"].asDouble() ?: 0.0) * 1000).toLong()) })
             }
+            // 1.7: the desktop table's picture of the product
+            if (m.containsKey("im")) q = q.copy(dImg = m["im"].asStr()?.takeIf { Pics.validAny(it) } ?: "")
             if (q != p) store.update(p.id) { cur -> cur.copy(year = q.year, set = q.set, name = q.name, dSt = q.dSt, dPr = q.dPr, dAt = q.dAt,
-                msrp = q.msrp, tcg = q.tcg, others = q.others) }
+                msrp = q.msrp, tcg = q.tcg, others = q.others, dImg = q.dImg) }
         }
     }
 

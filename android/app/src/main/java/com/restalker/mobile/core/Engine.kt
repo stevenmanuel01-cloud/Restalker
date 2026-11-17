@@ -163,9 +163,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val over = reason == "price above cap"
         if (over != (store.product(p.id)?.overCap ?: false)) store.update(p.id) { it.copy(overCap = over) }
         // 1.5: the product's picture (Amazon's own, from this page) - once
-        if ((store.product(p.id)?.image ?: "").isBlank()) page.ask(mapOf("bb" to "picture"), 4_000)?.get("picture").asStr()
-            ?.takeIf { Regex("^https://(m\\.media-amazon\\.com|images-na\\.ssl-images-amazon\\.com|images-amazon\\.com)/").containsMatchIn(it) && it.length < 400 }
-            ?.let { u -> store.update(p.id) { it.copy(image = u) } }
+        if ((store.product(p.id)?.image ?: "").isBlank()) takePicture(p)
         return true
     }
 
@@ -401,16 +399,24 @@ class Engine(private val store: Store, private val page: Page, private val alert
     /** 1.6 (owner: pictures): a product without its picture (one that is not watched is never looked at) gets ONE look for it when there
      *  is time - Wi-Fi only, at most once a day per product, nothing else is done on that page. -> true when a page was opened. */
     private fun pictureOnce(): Boolean {
+        // (1.7) also for a product whose picture was dropped as not a product picture
         val p = store.products().firstOrNull { it.image.isBlank() && now() - it.picTriedAt > PIC_RETRY_MS && Asin.parse(it.asin) != null } ?: return false
         if (network() != "wifi") return false
         store.update(p.id) { it.copy(picTriedAt = now()) }
         status("Getting the picture of ${p.label}")
         page.images(false)
         if (!page.goto(p.url)) return true
-        page.ask(mapOf("bb" to "picture"), 4_000)?.get("picture").asStr()
-            ?.takeIf { Regex("^https://(m\\.media-amazon\\.com|images-na\\.ssl-images-amazon\\.com|images-amazon\\.com)/").containsMatchIn(it) && it.length < 400 }
-            ?.let { u -> store.update(p.id) { it.copy(image = u) } }
+        takePicture(p)
         return true
+    }
+
+    /** 1.7: reads the product's picture from the open page (only a real product picture - Pics.valid). What the page had is kept in
+     *  [picInfo] for the diagnostics and the self-check (when none was found). */
+    private fun takePicture(p: Product) {
+        val r = page.ask(mapOf("bb" to "picture"), 4_000)
+        val u = r?.get("picture").asStr()
+        picInfo[p.asin] = (r?.get("pinfo").asStr() ?: if (r == null) "no answer from the page" else "-").take(300)
+        if (Pics.valid(u)) { store.update(p.id) { it.copy(image = u!!) }; picInfo[p.asin] = "found" }
     }
 
     fun readOrders() {
@@ -458,6 +464,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun status(t: String) = alerts.status(t)
 
     companion object {
+        /** 1.7: per product code - what its page showed when its picture was looked for ("found", or which picture fields it had). */
+        val picInfo = java.util.concurrent.ConcurrentHashMap<String, String>()
         const val ORDERS_URL = "https://www.amazon.com/gp/css/order-history"
         const val ORDERS_EVERY = 30 * 60_000L
         const val CHECKOUT_MS = 150_000L

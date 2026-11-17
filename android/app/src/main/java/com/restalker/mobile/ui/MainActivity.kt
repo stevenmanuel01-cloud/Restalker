@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -52,6 +53,7 @@ import com.restalker.mobile.core.Engine
 import com.restalker.mobile.core.Groups
 import com.restalker.mobile.core.MiniJson
 import com.restalker.mobile.core.Product
+import com.restalker.mobile.core.Pics
 import com.restalker.mobile.core.Settings
 import com.restalker.mobile.core.asLong
 import com.restalker.mobile.core.asStr
@@ -117,6 +119,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume(); bump(); ticker.post(tick)
         if (DeskLink.get().linked()) DeskLink.cycleAsync { bump() }          // (opening the app: the desktop's latest at once)
+        com.restalker.mobile.HealthRunner.tick(this)                          // 1.7: the self-check (a report by itself when something is wrong)
     }
     override fun onPause() { ticker.removeCallbacks(tick); super.onPause() }
     override fun onDestroy() { RkApp.listeners.remove(bump); super.onDestroy() }
@@ -417,16 +420,25 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun Thumb(p: Product, size: Int) {
-        // 1.5 (owner: "does not display any product pictures"): Amazon's own picture of the product (read from its page when it is first
-        // looked at); the initials while there is none yet or it does not load
-        Box(Modifier.size(size.dp).clip(RoundedCornerShape(12.dp)).background(if (p.image.isNotBlank()) Color.White else Look.GreySoft)
+        // 1.5 (owner: "does not display any product pictures"): Amazon's own picture of the product; the initials while there is none.
+        // 1.7 (owner: "The pictures aren't populating still"): only a real product picture (Pics), downloaded by the app itself (PicCache);
+        // this phone's own picture first, then the linked desktop's
+        val urls = Pics.shown(p)
+        var bm by remember(urls) { mutableStateOf(urls.firstNotNullOfOrNull { com.restalker.mobile.PicCache.cached(it) }) }
+        if (urls.isNotEmpty()) LaunchedEffect(urls) {
+            while (bm == null) {                       // (no internet / the picture server refused: tried again later while on screen)
+                bm = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { urls.firstNotNullOfOrNull { com.restalker.mobile.PicCache.get(it) } }
+                if (bm == null) kotlinx.coroutines.delay(com.restalker.mobile.PicCache.retryMs.coerceAtLeast(5_000) + 1_000)
+            }
+        }
+        Box(Modifier.size(size.dp).clip(RoundedCornerShape(12.dp)).background(if (bm != null) Color.White else Look.GreySoft)
             .testTag("thumb-${p.asin}"), contentAlignment = Alignment.Center) {
-            var failed by remember(p.image) { mutableStateOf(false) }
-            if (p.image.isBlank() || failed)
+            val b = bm
+            if (b == null)
                 Text(p.label.split(Regex("[^A-Za-z0-9]+")).filter { it.length > 2 && it.lowercase() !in setOf("the", "magic", "gathering") }.take(2)
                     .joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }, color = Look.GreyText, fontWeight = FontWeight.Bold, fontSize = (size / 3).sp)
-            else coil.compose.AsyncImage(model = p.image, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().padding(4.dp), onError = { failed = true })
+            else androidx.compose.foundation.Image(b.asImageBitmap(), contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(4.dp).testTag("pic-${p.asin}"))
         }
     }
 

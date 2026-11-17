@@ -176,14 +176,18 @@ class ScreenTests {
         s.products().forEach { s.remove(it.id) }
         val f = File(ctx.cacheDir, "pic.png"); val bm = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888); bm.eraseColor(android.graphics.Color.rgb(200, 30, 30))
         f.outputStream().use { bm.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        s.add(prod("B0TEST0301", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(image = "file://" + f.absolutePath,
+        // 1.7: the app downloads the picture itself (here: given by the test instead of Amazon's picture server)
+        PicCache.clear(); val png = f.readBytes(); PicCache.fetch = { u -> if (u.contains("/images/I/T13pic")) png else throw java.io.IOException("unexpected $u") }
+        s.add(prod("B0TEST0301", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(image = "https://m.media-amazon.com/images/I/T13pic._AC_SL1500_.jpg",
             dSt = "over", dPr = 529.99, dAt = System.currentTimeMillis(), msrp = 455.88, tcg = 610.25,
             others = listOf(mapOf("s" to "Best Buy", "st" to "in", "pr" to 449.99, "at" to System.currentTimeMillis()), mapOf("s" to "Target", "st" to "out", "pr" to null, "at" to 0L))))
         compose.waitForIdle()
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0301"))
         compose.onAllNodesWithText("Over cap · \$529.99", substring = true).onFirst().assertIsDisplayed()   // the desktop's newer look (also on top: in stock)
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("pic-B0TEST0301", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }   // the picture is shown
         compose.onNodeWithTag("product-B0TEST0301").performClick(); compose.waitForIdle(); Thread.sleep(800)
         shot("t13_product_desktop_view")
+        compose.onAllNodesWithTag("pic-B0TEST0301", useUnmergedTree = true).onFirst().assertIsDisplayed()
         compose.onNodeWithTag("ref-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("others-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Best Buy").assertIsDisplayed()
@@ -191,6 +195,48 @@ class ScreenTests {
         compose.waitUntil(3_000) { p("B0TEST0301").qty == 2 && p("B0TEST0301").qtySince > 0 }
         compose.onNodeWithTag("qty-B0TEST0301-1").performClick()
         compose.waitUntil(3_000) { p("B0TEST0301").qty == 1 }
+        PicCache.fetch = PicCache::realFetch
+    }
+
+    /** 1.7: a picture that does not load - the initials stay (no blank box, no crash); the reason is in the diagnostics and the self-check
+     *  finds it (it sends a report by itself). A grey placeholder pixel is never shown as the picture. The desktop's picture is used when
+     *  this phone has none. */
+    @Test fun t14_picture_failure_selfcheck_desktop_picture() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.setSettings { it.copy(autoReport = false) }
+        PicCache.clear(); PicCache.retryMs = 0
+        try {
+            PicCache.fetch = { throw java.io.IOException("the picture server answered 403") }
+            s.add(prod("B0TEST0401", "Star Trek Collector Booster Box", "2026", "Star Trek", price = 399.99).copy(image = "https://m.media-amazon.com/images/I/T14bad._AC_SL1500_.jpg"))
+            compose.waitForIdle()
+            compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0401"))
+            compose.waitUntil(5_000) { PicCache.failures("https://m.media-amazon.com/images/I/T14bad._AC_SL1500_.jpg") >= 1 }
+            compose.onNodeWithText("ST", useUnmergedTree = true).assertIsDisplayed()                 // the initials
+            PicCache.get("https://m.media-amazon.com/images/I/T14bad._AC_SL1500_.jpg")              // (a second failure)
+            val hp = com.restalker.mobile.core.Health.check(HealthRunner.input(ctx))
+            assertTrue("self-check finds it: $hp", hp.any { it.first == "pics-load" && it.second.contains("403") })
+            val d = Diag.text(ctx)
+            assertTrue("diagnostics tell why", d.contains("T14bad") && d.contains("failed: the picture server answered 403") && d.contains("pics-load"))
+            // a 1x1 grey pixel served as the picture is refused (it was the blank box of 1.5/1.6)
+            val px = java.io.ByteArrayOutputStream().also { Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            PicCache.fetch = { px }
+            assertEquals(null, PicCache.get("https://m.media-amazon.com/images/I/T14px.jpg"))
+            assertTrue(PicCache.status["https://m.media-amazon.com/images/I/T14px.jpg"]!!.contains("placeholder"))
+            // a web page instead of a picture
+            PicCache.fetch = { "<html>Robot check</html>".toByteArray() }
+            assertEquals(null, PicCache.get("https://m.media-amazon.com/images/I/T14html.jpg"))
+            assertTrue(PicCache.status["https://m.media-amazon.com/images/I/T14html.jpg"]!!.contains("web page"))
+            // the desktop's picture when this phone has none
+            val good = java.io.ByteArrayOutputStream().also { Bitmap.createBitmap(60, 60, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.BLUE) }
+                .compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            PicCache.fetch = { u -> if (u.contains("bbystatic")) good else throw java.io.IOException("no") }
+            s.add(prod("B0TEST0402", "Star Trek Beam Me Up Bundle", "2026", "Star Trek", price = 99.99).copy(dImg = "https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6686/6686924_sd.jpg"))
+            compose.waitForIdle()
+            compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0402"))
+            compose.waitUntil(5_000) { compose.onAllNodesWithTag("pic-B0TEST0402", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            shot("t14_pictures")
+        } finally { PicCache.retryMs = 10 * 60_000L; PicCache.fetch = PicCache::realFetch }
     }
 
     /** 1.4: a product's own screen - Buy, Watch, the cap, Remove (asks once), Back. */

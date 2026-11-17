@@ -26,6 +26,10 @@ if [ -z "$code" ]; then echo "no report code from the test"; fail=1; else
   else echo "REPORTS NOT FOUND ON THE REPORT SERVER"; echo "$got" | cut -c1-300; fail=1; fi
 fi
 
+echo "=== Amazon's real picture server, from the phone (t18)"
+adb exec-out run-as $P cat files/shots/t18_amazon_pictures.txt 2>/dev/null || echo "(no t18 result)"
+echo
+
 echo "=== big text, small screen"
 adb shell settings put system font_scale 1.3; adb shell wm size 720x1280; adb shell wm density 320; sleep 3
 adb shell am instrument -w -r -e debug false -e class $P.ScreenTests -e shotTag _big $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_big.txt 2>&1
@@ -46,6 +50,7 @@ else
 fi
 adb shell cmd connectivity airplane-mode disable 2>/dev/null || true; adb shell svc wifi enable; adb shell svc data enable
 
+if adb exec-out run-as $P cat files/crash.txt 2>/dev/null | grep -q .; then echo "THE APP WROTE A CRASH:"; adb exec-out run-as $P cat files/crash.txt | head -30; fail=1; fi
 adb logcat -d > logcat.txt || true
 grep -E "FATAL EXCEPTION|AndroidRuntime" -A12 logcat.txt | head -60
 bash android/ci/evidence.sh || true

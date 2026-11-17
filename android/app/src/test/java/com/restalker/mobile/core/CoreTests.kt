@@ -437,6 +437,104 @@ object CoreTests {
             val p2 = w.p("B0TEST0005")
             !p1.purchased && p1.buy && !p2.purchased && !p2.buy
         }
+        // ---------------- 1.7: pictures (owner: "The pictures aren't populating still") and the self-check (owner: "The error report didn't automatically send")
+        val I = "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL1500_.jpg"
+        val GREY = "https://images-na.ssl-images-amazon.com/images/G/01/x-locale/common/grey-pixel.gif"
+        val LOGO = "https://m.media-amazon.com/images/G/01/social_share/amazon_logo._CB633267191_.png"
+        t("70_pics_product_picture_valid") { Pics.valid(I) && Pics.valid("https://images-na.ssl-images-amazon.com/images/I/51abc.png") }
+        t("71_pics_grey_pixel_logo_never_valid") { !Pics.valid(GREY) && !Pics.valid(LOGO) && !Pics.validAny(GREY) && !Pics.validAny(LOGO) }
+        t("72_pics_lookalike_http_query_refused") { listOf("http://m.media-amazon.com/images/I/81x.jpg", "https://m.media-amazon.com.evil.example/images/I/81x.jpg",
+            "https://evil.example/images/I/81x.jpg", "https://m.media-amazon.com/images/I/81x.jpg?x=1", "https://m.media-amazon.com/images/I/" + "x".repeat(450) + ".jpg",
+            "", "javascript:alert(1)").none { Pics.valid(it) } && !Pics.valid(null) }
+        t("73_pics_small_version") { Pics.small(I) == "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL240_.jpg" &&
+            Pics.small("https://m.media-amazon.com/images/I/51abc.png") == "https://m.media-amazon.com/images/I/51abc._AC_SL240_.png" &&
+            Pics.tries(I).size == 2 && Pics.tries(I)[1] == I && Pics.small("https://target.scene7.com/is/image/Target/x") == "https://target.scene7.com/is/image/Target/x" }
+        t("74_pics_other_stores_only_from_desktop") { Pics.validAny("https://target.scene7.com/is/image/Target/GUEST_1?wid=200") && !Pics.valid("https://target.scene7.com/is/image/Target/GUEST_1")
+            && Pics.validAny("https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6686/6686924_sd.jpg") && !Pics.validAny("https://evil.example/x.jpg") }
+        t("75_kept_placeholder_dropped_and_looked_for_again") {
+            val p = Product.fromMap(Product("a", "B0TEST0070", image = GREY, picTriedAt = 99).toMap())!!
+            val q = Product.fromMap(Product("a", "B0TEST0070", image = I, picTriedAt = 99).toMap())!!
+            val r = Product.fromMap(Product("a", "B0TEST0070", dImg = "https://evil.example/x.jpg").toMap())!!
+            p.image == "" && p.picTriedAt == 0L && q.image == I && q.picTriedAt == 99L && r.dImg == "" }
+        t("76_shown_own_first_then_desktop") {
+            val d = "https://target.scene7.com/is/image/Target/GUEST_1"
+            Pics.shown(Product("a", "B0TEST0071", image = I, dImg = d)) == listOf(I, d) && Pics.shown(Product("a", "B0TEST0071", dImg = d)) == listOf(d) &&
+                Pics.shown(Product("a", "B0TEST0071", image = GREY)).isEmpty() && Pics.shown(Product("a", "B0TEST0071", image = I, dImg = I)) == listOf(I) }
+        t("77_short_name_for_diagnostics") { Pics.short(I) == "81Xk2+abcL._AC_SL1500_.jpg" && Pics.short("https://target.scene7.com/is/x") == "target.scene7.com" }
+        val now0 = 1_800_000_000_000L
+        fun hin(vararg ps: Product, f: (HealthIn) -> HealthIn = { it }) = f(HealthIn(now = now0, products = ps.toList(), purchases = emptyList(), settings = Settings()))
+        t("78_health_nothing_wrong") { Health.check(hin(Product("a", "B0TEST0072", image = I))).isEmpty() }
+        t("79_health_pictures_do_not_load") {
+            val r = Health.check(hin(Product("a", "B0TEST0072", image = I)) { it.copy(picFails = { 2 }, picStatus = { "failed: the picture server answered 403" }) })
+            r.size == 1 && r[0].first == "pics-load" && r[0].second.contains("403") && r[0].second.contains("B0TEST0072") }
+        t("80_health_one_failure_is_not_a_problem_yet") { Health.check(hin(Product("a", "B0TEST0072", image = I)) { it.copy(picFails = { 1 }) }).isEmpty() }
+        t("81_health_desktop_picture_that_loads_is_fine") {
+            val d = "https://target.scene7.com/is/image/Target/GUEST_1"
+            Health.check(hin(Product("a", "B0TEST0072", image = I, dImg = d)) { it.copy(picFails = { u -> if (u == I) 3 else 0 }) }).isEmpty() }
+        t("82_health_no_picture_on_page") {
+            val r = Health.check(hin(Product("a", "B0TEST0073", lastCheck = 5)) { it.copy(picInfo = { "els=1 src-,meta- url=/dp/B0TEST0073" }) })
+            r.map { it.first } == listOf("pics-missing") && r[0].second.contains("src-") }
+        t("83_health_not_looked_yet_or_found_is_fine") { Health.check(hin(Product("a", "B0TEST0073"))).isEmpty() &&
+            Health.check(hin(Product("a", "B0TEST0073", image = I)) { it.copy(picInfo = { "found" }) }).isEmpty() }
+        val wOn = Settings(watching = true, intervalSec = 90)
+        t("84_health_service_stopped") { Health.check(hin(Product("a", "B0TEST0074", image = I)) { it.copy(settings = wOn) }).map { it.first } == listOf("service") }
+        t("85_health_stalled_and_its_exceptions") {
+            val p = Product("a", "B0TEST0074", image = I, lastCheck = now0 - 20 * 60_000)
+            val base = { x: HealthIn -> x.copy(settings = wOn, serviceRunning = true, serviceSince = now0 - 3_600_000) }
+            Health.check(hin(p, f = base)).map { it.first } == listOf("stalled") &&
+                Health.check(hin(p) { base(it).copy(deskBuys = true) }).isEmpty() &&            // (the desktop buys: a look every 30 min)
+                Health.check(hin(p) { base(it).copy(net = null) }).isEmpty() &&
+                Health.check(hin(p) { base(it).copy(net = "mobile", settings = wOn.copy(wifiOnly = true)) }).isEmpty() &&
+                Health.check(hin(p) { base(it).copy(busy = true) }).isEmpty() &&
+                Health.check(hin(p) { base(it).copy(settings = wOn.copy(cooldownUntil = now0 + 1)) }).isEmpty() &&
+                Health.check(hin(p) { base(it).copy(serviceSince = now0 - 60_000) }).isEmpty() &&      // (just started)
+                Health.check(hin(p.copy(lastCheck = now0 - 60_000), f = base)).isEmpty() &&
+                Health.check(hin(p.copy(watch = false), f = base)).isEmpty() }
+        t("86_health_link_data_latch_crash") {
+            val r = Health.check(hin(Product("a", "B0TEST0075", image = I, purchased = true)) {
+                it.copy(linked = true, linkFailsInRow = 12, linkLast = "read failed: timeout", mbPerHour = 79.0, hoursWatching = 2.0, crash = "java.lang.IllegalStateException: x\n at y") })
+            r.map { it.first } == listOf("crash", "link", "data", "latch") && r[0].second.contains("IllegalStateException") }
+        t("87_health_bought_with_record_and_low_data_fine") {
+            Health.check(hin(Product("a", "B0TEST0075", image = I, purchased = true)) {
+                it.copy(purchases = listOf(Purchase(1, "B0TEST0075", "x", 1.0, "111-1", true)), mbPerHour = 79.0, hoursWatching = 0.5, linked = true, linkFailsInRow = 9) }).isEmpty() }
+        t("88_due_waits_10_min_then_once_a_day_crash_at_once") {
+            val seen = HashMap<String, Long>(); val rep = HashMap<String, Long>()
+            val pr = listOf("stalled" to "x", "crash" to "c")
+            val a = Health.due(pr, seen, rep, now0)                                   // crash at once, stalled not yet
+            val b = Health.due(pr, seen, rep, now0 + 9 * 60_000)
+            val c = Health.due(pr, seen, rep, now0 + 10 * 60_000)
+            rep["stalled"] = now0 + 10 * 60_000; rep["crash"] = now0
+            val d = Health.due(pr, seen, rep, now0 + 3_600_000)                       // reported: not again within a day
+            val e = Health.due(listOf(), seen, rep, now0 + 3_700_000)                 // gone: forgotten
+            val forgot = seen.isEmpty()
+            val f = Health.due(listOf("stalled" to "x"), seen, rep, now0 + 25 * 3_600_000)   // back a day later: waits 10 min again
+            val g = Health.due(listOf("stalled" to "x"), seen, rep, now0 + 25 * 3_600_000 + 10 * 60_000)
+            a.map { it.first } == listOf("crash") && b.map { it.first } == listOf("crash") && c.map { it.first } == listOf("stalled", "crash") &&
+                d.isEmpty() && e.isEmpty() && forgot && f.isEmpty() && g.map { it.first } == listOf("stalled") }
+        t("89_link_takes_the_desktop_picture") {
+            val w = World()
+            w.store.add(Product("p1", "B0TEST0076", name = "Pic Test", cap = 50.0))
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val inbox = ArrayList<String>()
+            val net = object : LinkNet {
+                override fun post(url: String, body: String, asFile: Boolean): Int = 200
+                override fun get(url: String): String = inbox.joinToString("\n")
+            }
+            val l = Link(w.store, net) { w.clock.t }
+            l.connect(code)
+            fun desk(im: String?, t: Double) {
+                val it = linkedMapOf<String, Any?>("a" to "B0TEST0076", "n" to "Pic Test", "c" to 50.0, "b" to false, "w" to true, "k" to "box", "t" to 1.0, "g" to false, "ba" to 0,
+                    "st" to "out", "pr" to null, "ss" to t)
+                if (im != null) it["im"] = im
+                val o = mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to t, "amz" to true, "items" to listOf(it))
+                inbox.add(MiniJson.write(mapOf("event" to "message", "id" to "m${inbox.size + 1}", "time" to t, "message" to LinkCrypto.seal(sec, MiniJson.write(o)))))
+            }
+            val d = "https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6686/6686924_sd.jpg"
+            desk(d, w.clock.t / 1000.0); l.cycle(); val a = w.p("B0TEST0076").dImg
+            w.clock.t += 60_000; desk("https://evil.example/x.jpg", w.clock.t / 1000.0); l.cycle(); val b = w.p("B0TEST0076").dImg
+            w.clock.t += 60_000; desk(d, w.clock.t / 1000.0); l.cycle()
+            w.clock.t += 60_000; desk(null, w.clock.t / 1000.0); l.cycle(); val c = w.p("B0TEST0076").dImg      // (an older desktop: kept)
+            a == d && b == "" && c == d }
         return results
     }
 

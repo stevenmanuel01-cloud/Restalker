@@ -368,6 +368,43 @@ class PhoneTests {
         assertTrue("icon back", waitFor(15_000) { nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId == Notifier.CH_WATCH })
     }
 
+    /** 1.7 (owner: "The pictures aren't populating still"): on Amazon's PHONE page the picture is somewhere else and the page also has a
+     *  grey placeholder pixel and Amazon's logo - 1.5/1.6 kept the grey pixel. The real picture must be taken, and the self-check must
+     *  have nothing to say about it. */
+    @Test fun t17_picture_from_amazons_phone_page() {
+        site.phoneLayout = true
+        start(true, false, Product(id = "pp", asin = "B0TEST0001", cap = 120.0, buy = false, watch = true))
+        val ok = waitFor(90_000) { p("B0TEST0001").image.isNotBlank() }
+        dumpLog("t17")
+        assertTrue("a picture was taken", ok)
+        assertEquals("the real picture, not the grey pixel / logo", "https://m.media-amazon.com/images/I/B0TEST0001P._AC_SX679_.jpg", p("B0TEST0001").image)
+        assertEquals("found", com.restalker.mobile.core.Engine.picInfo["B0TEST0001"])
+        // a picture kept by 1.5/1.6 that is not a product picture is dropped when the app reads its products
+        WatchService.stop(ctx); waitFor(10_000) { WatchService.instance == null }
+        val s = RkApp.store()
+        s.add(Product(id = "old", asin = "B0TEST0002", cap = 99.0, watch = false, image = "https://images-na.ssl-images-amazon.com/images/G/01/x-locale/common/grey-pixel.gif"))
+        RkApp.resetStoreKeepFiles()
+        assertEquals("placeholder dropped", "", RkApp.store().products().first { it.asin == "B0TEST0002" }.image)
+    }
+
+    /** 1.7: Amazon's real picture server, from this phone, the way the app downloads (internet needed - CI has it). Which addresses
+     *  answer and how is written to the log for the report; at least one real Amazon product picture must load. */
+    @Test fun t18_real_amazon_picture_server() {
+        PicCache.clear(); PicCache.fetch = PicCache::realFetch
+        val urls = listOf("https://m.media-amazon.com/images/I/41FYkVPzrIL.jpg", "https://m.media-amazon.com/images/I/51CjYz4iQHL.jpg",
+            "https://m.media-amazon.com/images/I/41FYkVPzrIL._SL160_.jpg")
+        val got = urls.map { u -> u to (PicCache.get(u)?.let { "${it.width}x${it.height}" } ?: PicCache.status[u]) }
+        File(File(ctx.filesDir, "shots").also { it.mkdirs() }, "t18_amazon_pictures.txt").writeText(got.joinToString("\n") { "${it.first} -> ${it.second}" })
+        android.util.Log.i("RK-T18", got.toString())
+        assertTrue("a real Amazon picture loads: $got", got.any { it.second?.contains("x") == true && !it.second!!.startsWith("failed") })
+        // kept: the second time comes from the phone (no download)
+        PicCache.fetch = { throw java.io.IOException("no network in this check") }
+        val again = urls.firstNotNullOfOrNull { u -> if (got.first { it.first == u }.second?.startsWith("failed") == false) u else null }!!
+        PicCache.evictMemory()
+        assertTrue("kept on the phone", PicCache.get(again) != null)
+        PicCache.fetch = PicCache::realFetch
+    }
+
     @Test fun t13_testMessage_andDiagnostics() {
         Notifier.test(ctx)
         Thread.sleep(1_500)
