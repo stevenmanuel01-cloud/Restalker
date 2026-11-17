@@ -285,7 +285,7 @@ class MainActivity : ComponentActivity() {
         "both" -> "Buys too, alongside the PC - never two orders."
         else -> "Watches only, does not buy" + if (fo) " - unless the PC stops." else "."
     }
-    private fun ago(sec: Long) = when {
+    private fun agoS(sec: Long) = when {
         sec < 90 -> "just now"; sec < 3600 -> "${sec / 60} min ago"; sec < 2 * 86400 -> "${sec / 3600} h ago"; else -> "${sec / 86400} days ago" }
 
     /** 2.3: Settings - the PC, this device and every other linked phone / tablet; each one's buying choice can be changed here. */
@@ -309,7 +309,7 @@ class MainActivity : ComponentActivity() {
                     val alive = d.agoS < 20 * 60
                     Text(when {
                         d.me -> "Version ${com.restalker.mobile.core.APP_VERSION}"
-                        else -> listOfNotNull(d.vn.takeIf { it.isNotBlank() }?.let { "Version $it" }, "heard ${ago(d.agoS)}").joinToString(" · ")
+                        else -> listOfNotNull(d.vn.takeIf { it.isNotBlank() }?.let { "Version $it" }, "heard ${agoS(d.agoS)}").joinToString(" · ")
                     }, fontSize = 12.sp, color = if (d.me || alive) Look.Muted else Look.AmberText)
                     if (d.pc) {
                         val handed = try { DeskLink.get().pcHanded() } catch (e: Exception) { false }
