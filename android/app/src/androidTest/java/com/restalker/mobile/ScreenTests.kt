@@ -300,7 +300,7 @@ class ScreenTests {
 
     /** 2.2: the cap right at the price bar - - / + in $5 steps, dragging the cap mark (only from the mark itself); a product without a
      *  cap asks for one before Buy goes on; Get all products brings the central list in without caps. */
-    @Test fun t16_cap_at_the_bar_and_all_products() {
+    @Test fun t16_cap_at_the_bar() {
         val s = RkApp.store()
         s.products().forEach { s.remove(it.id) }
         s.add(prod("B0TEST0601", "Reality Fracture Collector Booster Box", "2026", "Reality Fracture", price = 420.0).copy(msrp = 323.88))
@@ -332,17 +332,26 @@ class ScreenTests {
         compose.onNodeWithTag("e-cap").performTextClearance(); compose.onNodeWithTag("e-cap").performTextInput("350")
         compose.onNodeWithTag("e-save").performClick()
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 350.0 }
-        compose.onNodeWithTag("back").performClick(); compose.waitForIdle()
-        // Get all products (the central list on the release home): added without caps, nothing watched or set to Buy
-        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()        // (by its tag: with big text the tab's word may not show)
-        val before = s.products().size
+    }
+
+    /** 2.2: Get all products (the central list on the release home): added without caps, nothing watched or set to Buy; a product of
+     *  your own is kept as it is. */
+    @Test fun t17_get_all_products() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0GXC89N66", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0))
+        compose.waitForIdle()
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("catalog-go").performScrollTo().performClick()
-        compose.waitUntil(40_000) { compose.onAllNodesWithTag("catalog-msg").fetchSemanticsNodes().isNotEmpty() && s.products().size > before }
-        val added = s.products().filter { it.asin != "B0TEST0601" }
-        shot("t16_all_products")
-        assertTrue("products came in", added.size >= 10)
+        // (the products come in one by one: wait for the end of it - the message says how many)
+        compose.waitUntil(45_000) { compose.onAllNodesWithText("products added", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitForIdle()
+        val added = s.products().filter { it.asin != "B0GXC89N66" }
+        shot("t17_all_products")
+        assertTrue("products came in (${added.size})", added.size >= 10)
         assertTrue("no caps, not watched, not Buy", added.all { it.cap == 0.0 && !it.watch && !it.buy })
-        assertEquals("the own product kept", 350.0, p("B0TEST0601").cap, 0.001)
+        assertEquals("the own product kept", 400.0, p("B0GXC89N66").cap, 0.001)
+        assertTrue("the own product is not doubled", s.products().count { it.asin == "B0GXC89N66" } == 1)
     }
 
     /** 1.4: a product's own screen - Buy, Watch, the cap, Remove (asks once), Back. */
