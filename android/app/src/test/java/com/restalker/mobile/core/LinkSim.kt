@@ -34,7 +34,7 @@ object LinkSim {
             "bought" -> { val p = prod(a[0]); store.addPurchase(Purchase(clock(), p.asin, p.label, p.cap, "111-0000000-0000000", true)); store.update(p.id) { it.copy(purchased = true, buy = false) }; println("ok") }
             "cycle" -> println(link.cycle())
             "unlink" -> { link.unlink(); println("ok") }
-            "dump" -> println(MiniJson.write(linkedMapOf("products" to store.products().associate { it.asin to linkedMapOf("n" to it.name, "c" to it.cap, "b" to it.buy, "w" to it.watch, "k" to it.kind, "purchased" to it.purchased, "year" to it.year, "set" to it.set, "q" to it.qty, "dSt" to it.dSt, "dPr" to it.dPr, "dAt" to it.dAt, "msrp" to it.msrp, "others" to it.others, "stock" to it.stock().first) },
+            "dump" -> println(MiniJson.write(linkedMapOf("products" to store.products().associate { it.asin to linkedMapOf("n" to it.name, "c" to it.cap, "b" to it.buy, "w" to it.watch, "k" to it.kind, "purchased" to it.purchased, "year" to it.year, "set" to it.set, "q" to it.qty, "dSt" to it.dSt, "dPr" to it.dPr, "dAt" to it.dAt, "msrp" to it.msrp, "others" to it.others, "stock" to it.stock().first, "dImg" to it.dImg, "image" to it.image) },
                 "desktopBuys" to link.desktopBuys(), "state" to link.state().second, "linked" to link.linked(), "log" to store.log().takeLast(12))))
             else -> println("unknown command")
         }
