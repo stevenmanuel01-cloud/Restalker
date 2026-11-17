@@ -347,6 +347,27 @@ class PhoneTests {
         assertTrue("unlinked", !DeskLink.get().linked())
     }
 
+    /** 1.5: the product's picture is read from its page (Amazon's own image address); Buy 2 buys twice in separate orders; the running
+     *  notice goes to the no-icon channel when "Running icon" is off (and back). */
+    @Test fun t16_picture_buy2_runningIcon() {
+        val pr = Product(id = "q2", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true, qty = 2, qtySince = System.currentTimeMillis() - 1000)
+        RkApp.store().setSettings { it.copy(runIcon = false) }
+        start(false, true, pr)
+        val two = waitFor(240_000) { RkApp.store().purchases().count { it.asin == "B0TEST0001" } >= 2 }
+        dumpLog("t16")
+        assertEquals("the picture was read from the page", "https://m.media-amazon.com/images/I/B0TEST0001._AC_SL1500_.jpg", p("B0TEST0001").image)
+        assertTrue("Buy 2: two separate orders", two)
+        Thread.sleep(20_000)
+        assertEquals("no third order", 2, RkApp.store().purchases().count { it.asin == "B0TEST0001" })
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+        val ch = nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId
+        assertEquals("no icon: the quiet channel", Notifier.CH_QUIET, ch)
+        RkApp.store().setSettings { it.copy(runIcon = true) }
+        WatchService.instance?.notifier?.status("check " + System.currentTimeMillis()); Thread.sleep(6_000)
+        WatchService.instance?.notifier?.status("check again " + System.currentTimeMillis())
+        assertTrue("icon back", waitFor(15_000) { nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId == Notifier.CH_WATCH })
+    }
+
     @Test fun t13_testMessage_andDiagnostics() {
         Notifier.test(ctx)
         Thread.sleep(1_500)

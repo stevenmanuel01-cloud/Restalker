@@ -88,15 +88,16 @@ interface LinkNet {
 
 /** One shared product as posted. */
 data class LinkRec(val a: String, val n: String, val c: Double, val b: Boolean, val w: Boolean, val k: String, val t: Double, val g: Boolean,
-                   val ba: Double, val here: Boolean = false, val pend: Double = 0.0) {
-    fun same(o: LinkRec?) = o != null && b == o.b && w == o.w && Math.abs(c - o.c) < 0.005
-    fun post(): Map<String, Any?> = linkedMapOf("a" to a, "n" to n, "c" to c, "b" to b, "w" to w, "k" to k, "t" to t, "g" to g, "ba" to ba)
+                   val ba: Double, val here: Boolean = false, val pend: Double = 0.0, val q: Int = 1) {
+    fun same(o: LinkRec?) = o != null && b == o.b && w == o.w && q == o.q && Math.abs(c - o.c) < 0.005
+    fun post(): Map<String, Any?> = linkedMapOf("a" to a, "n" to n, "c" to c, "b" to b, "w" to w, "k" to k, "t" to t, "g" to g, "ba" to ba, "q" to q)
     fun toMap(): Map<String, Any?> = post() + mapOf("here" to here, "pend" to pend)
     companion object {
         fun fromMap(m: Map<String, Any?>): LinkRec? {
             val a = m["a"].asStr() ?: return null
             return LinkRec(a, m["n"].asStr() ?: a, m["c"].asDouble() ?: 0.0, m["b"].asBool(), m["w"] != false, m["k"].asStr() ?: "other",
-                m["t"].asDouble() ?: 0.0, m["g"].asBool(), m["ba"].asDouble() ?: 0.0, m["here"].asBool(), m["pend"].asDouble() ?: 0.0)
+                m["t"].asDouble() ?: 0.0, m["g"].asBool(), m["ba"].asDouble() ?: 0.0, m["here"].asBool(), m["pend"].asDouble() ?: 0.0,
+                ((m["q"].asLong() ?: 1).toInt()).coerceIn(1, 3))
         }
     }
 }
@@ -164,7 +165,7 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         for (p in store.products()) {
             if (!ASIN.matches(p.asin) || p.cap <= 0 || out.containsKey(p.asin)) continue
             // (a checkout running here, or a Place order pressed: not "Buy" for the desktop - the same product is never ordered twice)
-            out[p.asin] = LinkRec(p.asin, p.label, p.cap, p.buy && !p.purchased && !p.attempted && !p.inProgress, p.watch, p.kind, 0.0, false, bought[p.asin] ?: 0.0, here = true)
+            out[p.asin] = LinkRec(p.asin, p.label, p.cap, p.buy && !p.purchased && !p.attempted && !p.inProgress, p.watch, p.kind, 0.0, false, bought[p.asin] ?: 0.0, here = true, q = p.qty)
         }
         return out
     }
@@ -180,7 +181,7 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         val boughtThere = n.ba > (old?.ba ?: 0.0) && n.ba > ((localItems()[n.a]?.ba ?: 0.0) + 1)
         if (p == null) {
             store.add(Product(id = store.newId(), asin = n.a, name = n.n, cap = n.c, kind = kind, watch = n.w, buy = n.b && !boughtThere,
-                tokens = Tokens.fromTitle(n.n), purchased = boughtThere))
+                tokens = Tokens.fromTitle(n.n), purchased = boughtThere, qty = n.q, qtySince = clockMs()))
             store.log("From the desktop: ${n.n} added (cap \$${Engine.money(n.c)}${if (n.b) ", Buy on" else ""}).")
             return
         }
@@ -189,8 +190,10 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         if (p.watch != n.w) what.add("Watch " + if (n.w) "on" else "off")
         if (p.buy != n.b && !boughtThere) what.add("Buy " + if (n.b) "on" else "off")
         if (boughtThere) what.add("BOUGHT by the desktop - not bought here again")
+        if (p.qty != n.q) what.add("Buy ${n.q}")
         store.update(p.id) {
             var q = it.copy(cap = n.c, watch = n.w, buy = if (boughtThere) false else n.b)
+            if (it.qty != n.q) q = q.copy(qty = n.q, qtySince = clockMs())
             if (boughtThere) q = q.copy(purchased = true)
             if (n.b && !it.buy && !boughtThere) q = q.copy(fails = 0, lockedUntil = 0)
             q
@@ -215,13 +218,14 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
             if (!g && (c == null || c <= 0 || c >= 100000)) continue
             val old = s.recs[a]
             val n = LinkRec(a, (m["n"].asStr() ?: a).take(200), c ?: old?.c ?: 0.0, m["b"].asBool(), m["w"] != false, (m["k"].asStr() ?: "other").take(20),
-                t, g, maxOf(m["ba"].asDouble() ?: 0.0, old?.ba ?: 0.0), here = old?.here ?: false, pend = now)
+                t, g, maxOf(m["ba"].asDouble() ?: 0.0, old?.ba ?: 0.0), here = old?.here ?: false, pend = now,
+                q = ((m["q"].asLong() ?: old?.q?.toLong() ?: 1L).toInt()).coerceIn(1, 3))
             if (old == null || t > old.t) {
                 if (old != null && old.g && g) { s.recs[a] = old.copy(t = t); continue }
                 s.recs[a] = n
                 if (!(old == null && g)) out.add(Triple(a, n, old))
             } else if ((m["ba"].asDouble() ?: 0.0) > old.ba) {
-                val o2 = old.copy(ba = m["ba"].asDouble() ?: 0.0, pend = now)
+                val o2 = old.copy(ba = m["ba"].asDouble() ?: 0.0)
                 s.recs[a] = o2
                 out.add(Triple(a, o2, old))
             }
@@ -229,14 +233,28 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         return out
     }
 
-    /** The desktop's groups (year / set) for the home screen: always taken (they are not a change of the product). After the adds. */
+    /** What only the desktop knows, shown here (not a change of the product): its groups (year / set), its name for the product, what its
+     *  table shows now (stock / price / when), the MSRP, the TCG price and the product's other stores. After the adds. */
     private fun takeGroups(msg: Map<String, Any?>) {
+        if (msg["r"].asStr() != "desktop") return
         for (x in msg["items"].asList().take(500)) {
             val m = x.asMap() ?: continue
-            val a = m["a"].asStr() ?: continue; val gy = m["gy"].asStr() ?: continue; val gs = m["gs"].asStr() ?: ""
+            val a = m["a"].asStr() ?: continue
             if (m["g"].asBool()) continue
-            store.products().firstOrNull { it.asin == a && (it.year != gy.take(40) || it.set != gs.take(80)) }
-                ?.let { p -> store.update(p.id) { it.copy(year = gy.take(40), set = gs.take(80)) } }
+            val p = store.products().firstOrNull { it.asin == a } ?: continue
+            var q = p
+            m["gy"].asStr()?.let { gy -> q = q.copy(year = gy.take(40), set = (m["gs"].asStr() ?: "").take(80)) }
+            m["n"].asStr()?.takeIf { it.isNotBlank() && it != a }?.let { q = q.copy(name = it.take(160)) }
+            if (m.containsKey("st")) {
+                val at = ((m["ss"].asDouble() ?: 0.0) * 1000).toLong()
+                q = q.copy(dSt = (m["st"].asStr() ?: "").take(5), dPr = m["pr"].asDouble(), dAt = minOf(at, clockMs()),
+                    msrp = m["ms"].asDouble(), tcg = m["tc"].asDouble(),
+                    others = m["sx"].asList().mapNotNull { it.asMap() }.take(8).map { o ->
+                        linkedMapOf("s" to (o["s"].asStr() ?: "").take(20), "st" to (o["st"].asStr() ?: "").take(5), "pr" to o["pr"].asDouble(),
+                            "at" to ((o["at"].asDouble() ?: 0.0) * 1000).toLong()) })
+            }
+            if (q != p) store.update(p.id) { cur -> cur.copy(year = q.year, set = q.set, name = q.name, dSt = q.dSt, dPr = q.dPr, dAt = q.dAt,
+                msrp = q.msrp, tcg = q.tcg, others = q.others) }
         }
     }
 

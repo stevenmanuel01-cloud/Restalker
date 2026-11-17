@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -271,8 +272,8 @@ class MainActivity : ComponentActivity() {
                 if (products.isEmpty()) Text("No products yet. Tap Add, or open a product in the Amazon app, tap Share and choose Restalker." +
                     if (!linked) " Or link the desktop (Settings) to get its products." else "",
                     color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-                else Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("All", "In stock", "Set to buy").forEachIndexed { i, l ->
+                else Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "In stock", "Set to buy", "Watched").forEachIndexed { i, l ->
                         FilterChip(filter.intValue == i, { filter.intValue = i }, { Text(l) }, modifier = Modifier.testTag("filter$i"),
                             colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.TealSoft, selectedLabelColor = Look.TealText))
                     }
@@ -280,18 +281,21 @@ class MainActivity : ComponentActivity() {
             }
             // 1.4 (owner: "The desktop version had several collapsible groups, and can easily be scrolled"): the desktop's groups -
             // release year, then set - each folds with a tap (remembered); what is in stock now stays on top
-            val shown = products.filter { when (filter.intValue) { 1 -> it.buyable && !it.purchased; 2 -> it.buy; else -> true } }
-            val hot = shown.filter { it.buyable && !it.purchased }
+            // 1.5 (owner: "the app does not show anything in stock when sorted. There are several items in stock, just above the cap" -
+            // and: "an additional filter in the app for watched (separate from armed)"): In stock = for sale at ANY price (the phone's own
+            // look or the linked desktop's, whichever is newer); Watched = watched, whether set to buy or not
+            val shown = products.filter { when (filter.intValue) { 1 -> it.inStock && !it.purchased; 2 -> it.buy; 3 -> it.watch; else -> true } }
+            val hot = shown.filter { it.inStock && !it.purchased }
             if (filter.intValue == 0 && hot.isNotEmpty()) {
                 item(key = "hdr-hot") { GroupHeader("In stock now", hot.size, null, false, "grp-hot") {} }
                 items(hot, key = { "hot-" + it.id }) { p -> ProductCard(p, deskBuys, "top-${p.asin}") { onOpen(p) } }
             }
-            if (products.isNotEmpty() && shown.isEmpty()) item { Text(if (filter.intValue == 1) "Nothing is in stock right now." else "No product is set to buy.",
+            if (products.isNotEmpty() && shown.isEmpty()) item { Text(when (filter.intValue) { 1 -> "Nothing is in stock right now."; 2 -> "No product is set to buy."; else -> "No product is watched." },
                 color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) }
             val years = shown.groupBy { Groups.of(it).first }.toList().sortedBy { Groups.yearRank(it.first) }
             for ((year, inYear) in years) {
                 val yKey = "y:$year"
-                item(key = yKey) { GroupHeader(year, inYear.size, inYear.count { it.buyable && !it.purchased }, yKey in folded, "grp-$year") { fold(yKey) } }
+                item(key = yKey) { GroupHeader(year, inYear.size, inYear.count { it.inStock && !it.purchased }, yKey in folded, "grp-$year") { fold(yKey) } }
                 if (yKey in folded) continue
                 for ((set, inSet) in inYear.groupBy { Groups.of(it).second }.toList().sortedBy { it.first.lowercase() }) {
                     val sKey = "s:$year|$set"
@@ -362,13 +366,27 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The product's state in one chip: (text, background, text color). */
-    private fun chip(p: Product): Triple<String, Color, Color> = when {
-        p.purchased -> Triple("Bought", Look.TealSoft, Look.TealText)
-        p.lastCheck == 0L -> Triple("Not checked yet", Look.GreySoft, Look.GreyText)
-        p.buyable -> Triple("In stock" + (p.price?.let { " · \$${Engine.money(it)}" } ?: ""), Look.TealSoft, Look.TealText)
-        p.price != null && p.price > p.cap -> Triple("Over cap · \$${Engine.money(p.price)}", Look.OrangeSoft, Look.OrangeText)
-        p.status.contains("stock", true) || p.status.contains("unavailable", true) -> Triple("Out of stock", Look.GreySoft, Look.GreyText)
-        else -> Triple(p.status.take(28), Look.GreySoft, Look.GreyText)
+    private fun chip(p: Product): Triple<String, Color, Color> {
+        val (st, pr, _) = p.stock()
+        val money = pr?.let { " · \$${Engine.money(it)}" } ?: ""
+        return when {
+            p.purchased && p.qty <= 1 -> Triple("Bought", Look.TealSoft, Look.TealText)
+            st == "in" -> Triple("In stock$money", Look.TealSoft, Look.TealText)
+            st == "over" -> Triple("Over cap$money", Look.OrangeSoft, Look.OrangeText)
+            st == "out" -> Triple("Out of stock", Look.GreySoft, Look.GreyText)
+            p.lastCheck == 0L -> Triple("Not checked yet", Look.GreySoft, Look.GreyText)
+            else -> Triple(p.status.take(28), Look.GreySoft, Look.GreyText)
+        }
+    }
+    /** "checked 30s ago" - by this phone, or "seen by the desktop 2 min ago" when the desktop's look is the newer one. */
+    private fun seenText(p: Product): String {
+        val (st, _, at) = p.stock()
+        if (at == 0L || st.isEmpty()) return ""
+        return if (at == p.dAt && p.dAt > p.lastCheck) "desktop saw it ${ago(at)}" else "checked ${ago(at)}"
+    }
+    private fun qtyText(p: Product): String = if (p.qty <= 1) "" else {
+        val n = RkApp.store().purchases().count { it.asin == p.asin && it.at >= p.qtySince && it.order != null }
+        "Buy ${p.qty} ($n bought)"
     }
 
     private fun buyLine(p: Product, deskBuys: Boolean): String = when {
@@ -377,16 +395,23 @@ class MainActivity : ComponentActivity() {
         p.attempted -> "An order may have been placed - check Amazon"
         p.lockedUntil > System.currentTimeMillis() -> "Paused after failed tries until ${hm(p.lockedUntil)}"
         !p.watch -> "Off (not watched)"
-        p.buy && deskBuys -> "Buy on · the desktop buys it"
-        p.buy -> "Buy on" + if (p.lastCheck > 0) " · checked ${ago(p.lastCheck)}" else ""
-        else -> "Alerts only" + if (p.lastCheck > 0) " · checked ${ago(p.lastCheck)}" else ""
+        p.buy && deskBuys -> listOf(qtyText(p).ifEmpty { "Buy on" }, "the desktop buys it", seenText(p)).filter { it.isNotEmpty() }.joinToString(" · ")
+        p.buy -> listOf(qtyText(p).ifEmpty { "Buy on" }, seenText(p)).filter { it.isNotEmpty() }.joinToString(" · ")
+        else -> listOf("Alerts only", seenText(p)).filter { it.isNotEmpty() }.joinToString(" · ")
     }
 
     @Composable
     fun Thumb(p: Product, size: Int) {
-        Box(Modifier.size(size.dp).clip(RoundedCornerShape(12.dp)).background(Look.GreySoft), contentAlignment = Alignment.Center) {
-            Text(p.label.split(Regex("[^A-Za-z0-9]+")).filter { it.length > 2 && it.lowercase() !in setOf("the", "magic", "gathering") }.take(2)
-                .joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }, color = Look.GreyText, fontWeight = FontWeight.Bold, fontSize = (size / 3).sp)
+        // 1.5 (owner: "does not display any product pictures"): Amazon's own picture of the product (read from its page when it is first
+        // looked at); the initials while there is none yet or it does not load
+        Box(Modifier.size(size.dp).clip(RoundedCornerShape(12.dp)).background(if (p.image.isNotBlank()) Color.White else Look.GreySoft)
+            .testTag("thumb-${p.asin}"), contentAlignment = Alignment.Center) {
+            var failed by remember(p.image) { mutableStateOf(false) }
+            if (p.image.isBlank() || failed)
+                Text(p.label.split(Regex("[^A-Za-z0-9]+")).filter { it.length > 2 && it.lowercase() !in setOf("the", "magic", "gathering") }.take(2)
+                    .joinToString("") { it.take(1).uppercase() }.ifBlank { "?" }, color = Look.GreyText, fontWeight = FontWeight.Bold, fontSize = (size / 3).sp)
+            else coil.compose.AsyncImage(model = p.image, contentDescription = null, contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(4.dp), onError = { failed = true })
         }
     }
 
@@ -394,7 +419,7 @@ class MainActivity : ComponentActivity() {
     fun ProductCard(p: Product, deskBuys: Boolean, tag: String = "product-${p.asin}", onClick: () -> Unit) {
         val (c, bg, fg) = chip(p)
         Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(Look.card).background(Color.White)
-            .then(if (p.inProgress || (p.buyable && p.buy)) Modifier.border(2.dp, Look.TealBright, Look.card) else Modifier)
+            .then(if (p.inProgress || (p.stock().first == "in" && p.buy)) Modifier.border(2.dp, Look.TealBright, Look.card) else Modifier)
             .clickable(onClick = onClick).padding(14.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
             Thumb(p, 56)
             Column(Modifier.padding(start = 12.dp).weight(1f)) {
@@ -433,21 +458,53 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp)) {
                     val (c, bg, fg) = chip(p)
                     Row(verticalAlignment = Alignment.CenterVertically) { Text("Now", color = Look.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f)); Chip(c, bg, fg) }
+                    val nowPr = p.stock().second
                     Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 8.dp)) {
-                        Text(p.price?.let { "\$${Engine.money(it)}" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp)
+                        Text(nowPr?.let { "\$${Engine.money(it)}" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp)
                         Text("   your cap \$${Engine.money(p.cap)}", color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 5.dp))
                     }
-                    val frac = p.price?.let { (it / p.cap).toFloat().coerceIn(0f, 1f) } ?: 0f
+                    val frac = nowPr?.let { (it / p.cap).toFloat().coerceIn(0f, 1f) } ?: 0f
                     LinearProgressIndicator(progress = { frac }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(8.dp).clip(RoundedCornerShape(4.dp)),
-                        color = if ((p.price ?: 0.0) > p.cap) Look.OrangeText else Look.TealBright, trackColor = Look.GreySoft)
-                    Text((if (p.lastCheck > 0) "Checked ${ago(p.lastCheck)}" else "Not checked yet") + " · " + p.status, color = Look.Muted, fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 6.dp))
+                        color = if ((nowPr ?: 0.0) > p.cap) Look.OrangeText else Look.TealBright, trackColor = Look.GreySoft)
+                    Text(seenText(p).ifEmpty { "Not checked yet" }.replaceFirstChar { it.uppercase() } + if (p.lastCheck > 0 && p.lastCheck >= p.dAt) " · " + p.status else "",
+                        color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                    val ref = listOfNotNull(p.msrp?.let { "MSRP \$${Engine.money(it)}" }, p.tcg?.let { "TCG market \$${Engine.money(it)}" })
+                    if (ref.isNotEmpty()) Text(ref.joinToString(" · "), color = Look.GreyText, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp).testTag("ref-${p.asin}"))
+                }
+                // 1.5: the product's other stores, as the linked desktop sees them (it watches and buys there)
+                if (p.others.isNotEmpty()) Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("others-${p.asin}"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Other stores (from the desktop)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    p.others.forEach { o ->
+                        val st = o["st"] as? String ?: ""; val pr = (o["pr"] as? Number)?.toDouble(); val at = (o["at"] as? Number)?.toLong() ?: 0L
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(o["s"] as? String ?: "?", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            val (t, bg, fg) = when (st) { "in" -> Triple("In stock", Look.TealSoft, Look.TealText); "over" -> Triple("Over cap", Look.OrangeSoft, Look.OrangeText)
+                                "out" -> Triple("Out of stock", Look.GreySoft, Look.GreyText); else -> Triple("Not read yet", Look.GreySoft, Look.GreyText) }
+                            Chip(t + (pr?.let { " · \$${Engine.money(it)}" } ?: ""), bg, fg)
+                        }
+                        if (at > 0) Text("seen ${ago(at)}", color = Look.Muted, fontSize = 11.sp)
+                    }
                 }
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
                     SwitchRow("Buy when in stock", if (deskBuys && p.buy) "The linked desktop buys it; this phone takes over if the desktop stops" else "One order, at or under your cap",
                         p.buy, "buy-${p.asin}") { v -> store.update(p.id) { it.copy(buy = v, watch = it.watch || v) }; store.log("${p.label}: Buy ${if (v) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
                     SwitchRow("Watch", "Looked at all day; a phone message when it comes back", p.watch, "watch-${p.asin}") { v -> store.update(p.id) { it.copy(watch = v) } }
+                    HorizontalDivider(color = Look.Line)
+                    // 1.5 (owner: "there is no option to set the app to buy multiple instances of a product"): Buy 1 / 2 / 3 - separate
+                    // orders (as on the desktop); the count starts when you choose it
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("How many", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text(qtyText(p).ifEmpty { "One order" } + " · separate orders", fontSize = 12.sp, color = Look.Muted)
+                        }
+                        (1..3).forEach { n ->
+                            FilterChip(p.qty == n, {
+                                if (p.qty != n) { store.update(p.id) { it.copy(qty = n, qtySince = System.currentTimeMillis()) }; store.log("${p.label}: Buy $n.") }
+                            }, { Text("$n") }, Modifier.padding(start = 6.dp).testTag("qty-${p.asin}-$n"))
+                        }
+                    }
                 }
                 if (p.purchased || p.attempted || p.lockedUntil > System.currentTimeMillis()) {
                     Column(Modifier.fillMaxWidth().background(Look.AmberSoft, Look.card).padding(14.dp)) {
@@ -693,6 +750,13 @@ class MainActivity : ComponentActivity() {
                     }
                     HorizontalDivider(color = Look.Line)
                     SwitchRow("Wi-Fi only", "Saves mobile data", st.wifiOnly, "wifionly") { on -> store.setSettings { it.copy(wifiOnly = on) }; store.log("Wi-Fi only switched ${if (on) "ON" else "OFF"}.") }
+                    HorizontalDivider(color = Look.Line)
+                    // 1.5 (owner: "We can keep a single icon at the top to indicate that its running, but it should be clearable by user option")
+                    SwitchRow("Running icon", if (st.runIcon) "An icon at the top while it watches" else "No icon - the notice is tucked away at the bottom of your notifications",
+                        st.runIcon, "runicon") { on ->
+                        store.setSettings { it.copy(runIcon = on) }; store.log("Running icon switched ${if (on) "ON" else "OFF"}.")
+                        WatchService.instance?.notifier?.status(WatchService.instance?.notifier?.lastStatus ?: "")
+                    }
                 }
                 // ---- problems
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {

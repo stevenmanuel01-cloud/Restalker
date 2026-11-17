@@ -159,6 +159,12 @@ class Engine(private val store: Store, private val page: Page, private val alert
             else -> reason.ifBlank { "not buyable" }
         }
         setSeen(store.product(p.id) ?: p, text, price, eligible)
+        val over = reason == "price above cap"
+        if (over != (store.product(p.id)?.overCap ?: false)) store.update(p.id) { it.copy(overCap = over) }
+        // 1.5: the product's picture (Amazon's own, from this page) - once
+        if ((store.product(p.id)?.image ?: "").isBlank()) page.ask(mapOf("bb" to "picture"), 4_000)?.get("picture").asStr()
+            ?.takeIf { Regex("^https://(m\\.media-amazon\\.com|images-na\\.ssl-images-amazon\\.com|images-amazon\\.com)/").containsMatchIn(it) && it.length < 400 }
+            ?.let { u -> store.update(p.id) { it.copy(image = u) } }
         return true
     }
 
@@ -326,6 +332,15 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 store.update(p.id) { it.copy(status = if (ok != null) "BOUGHT - order ${ok} (in your Amazon orders)" else "BOUGHT - order ${order ?: "?"} (not in your order list yet - check Amazon)", orderNumber = ok ?: order) }
                 store.addPurchase(Purchase(now(), p.asin, p.label, paid, ok ?: order, ok != null))
                 alerts.bought(store.product(p.id) ?: p, paid, ok ?: order, ok != null)
+                // 1.5: Buy 2 / 3 - separate orders: until that many were bought (counted from when you chose it), it is bought again
+                val q = store.product(p.id)
+                if (q != null && q.qty > 1) {
+                    val n = store.purchases().count { it.asin == q.asin && it.at >= q.qtySince && it.order != null }
+                    if (n < q.qty) {
+                        store.update(p.id) { it.copy(purchased = false, attempted = false, buy = true, orderNumber = null, status = "BOUGHT $n of ${q.qty} - the next one is bought too") }
+                        log("${p.label}: $n of ${q.qty} bought - the next order follows (Buy ${q.qty}).")
+                    } else log("${p.label}: all ${q.qty} bought.")
+                }
             }
             End.PRACTICE_OK -> {
                 val f = fees

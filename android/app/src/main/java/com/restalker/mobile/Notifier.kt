@@ -77,7 +77,7 @@ class Notifier(private val ctx: Context) : Alerts {
     }
 
     companion object {
-        const val CH_WATCH = "watching"; const val CH_RESTOCK = "restocks"; const val CH_BUY = "purchases"; const val CH_NEED = "needyou"
+        const val CH_WATCH = "watching"; const val CH_QUIET = "watching_quiet"; const val CH_RESTOCK = "restocks"; const val CH_BUY = "purchases"; const val CH_NEED = "needyou"
         const val ONGOING_ID = 1
         fun idFor(kind: String, key: String) = (kind + key).hashCode() and 0x7fffffff or 0x100
 
@@ -85,6 +85,10 @@ class Notifier(private val ctx: Context) : Alerts {
             if (Build.VERSION.SDK_INT < 26) return
             val nm = ctx.getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(NotificationChannel(CH_WATCH, "Watching (always shown while watching)", NotificationManager.IMPORTANCE_LOW))
+            // 1.5 (owner: "We can keep a single icon at the top to indicate that its running, but it should be clearable by user option"):
+            // the same notice without an icon in the status bar (Android requires a notice while an app watches all day; this one is tucked
+            // away at the bottom of the notifications - and you may switch this channel off in the phone's settings: watching goes on)
+            nm.createNotificationChannel(NotificationChannel(CH_QUIET, "Watching - no icon", NotificationManager.IMPORTANCE_MIN))
             nm.createNotificationChannel(NotificationChannel(CH_RESTOCK, "Restocks", NotificationManager.IMPORTANCE_HIGH))
             nm.createNotificationChannel(NotificationChannel(CH_BUY, "Purchases and practice runs", NotificationManager.IMPORTANCE_HIGH))
             nm.createNotificationChannel(NotificationChannel(CH_NEED, "Restalker needs you", NotificationManager.IMPORTANCE_HIGH))
@@ -102,8 +106,9 @@ class Notifier(private val ctx: Context) : Alerts {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
         fun ongoing(ctx: Context, text: String): Notification =
-            NotificationCompat.Builder(ctx, CH_WATCH).setSmallIcon(R.drawable.ic_note).setContentTitle("Restalker is watching")
-                .setContentText(text).setOngoing(true).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
+            NotificationCompat.Builder(ctx, if (RkApp.store().settings().runIcon) CH_WATCH else CH_QUIET).setSmallIcon(R.drawable.ic_note)
+                .setContentTitle("Restalker is watching").setPriority(if (RkApp.store().settings().runIcon) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
+                .setContentText(text).setOngoing(RkApp.store().settings().runIcon).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
                 .addAction(0, "Stop watching", ActionReceiver.pending(ctx, ActionReceiver.STOP, ""))
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE).build()
     }

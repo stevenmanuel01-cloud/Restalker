@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.4"
+const val APP_VERSION = "1.5"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -34,6 +34,19 @@ data class Product(
     // 1.4: the desktop's groups for the home screen (release year, then set) - empty until a linked desktop says
     val year: String = "",
     val set: String = "",
+    // 1.5: the product's picture (Amazon's own, read from its page), Buy 1 / 2 / 3 (separate orders, counted from qtySince), for sale over
+    // the cap (seen here), and what the linked desktop shows now: its stock ("in" / "over" / "out"), price and when it saw it, the MSRP,
+    // the TCG price and the product's other stores (each: s = store, st, pr, at)
+    val image: String = "",
+    val qty: Int = 1,
+    val qtySince: Long = 0,
+    val overCap: Boolean = false,
+    val dSt: String = "",
+    val dPr: Double? = null,
+    val dAt: Long = 0,
+    val msrp: Double? = null,
+    val tcg: Double? = null,
+    val others: List<Map<String, Any?>> = emptyList(),
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -50,7 +63,16 @@ data class Product(
         "alertedEpisode" to alertedEpisode, "inProgress" to inProgress, "attempted" to attempted, "purchased" to purchased,
         "submittedAt" to submittedAt, "orderNumber" to orderNumber, "fails" to fails, "failEpisode" to failEpisode,
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
+        "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
+        "msrp" to msrp, "tcg" to tcg, "others" to others,
     )
+
+    /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
+    fun stock(): Triple<String, Double?, Long> {
+        val mine = when { lastCheck == 0L -> ""; buyable -> "in"; overCap -> "over"; else -> "out" }
+        return if (dAt > lastCheck && dSt.isNotEmpty()) Triple(dSt, dPr, dAt) else Triple(mine, price, lastCheck)
+    }
+    val inStock: Boolean get() = stock().first.let { it == "in" || it == "over" }
 
     companion object {
         val SHAPES = setOf("box", "bundle", "pack")
@@ -66,6 +88,10 @@ data class Product(
                 submittedAt = m["submittedAt"].asLong() ?: 0, orderNumber = m["orderNumber"].asStr(), fails = (m["fails"].asLong() ?: 0).toInt(),
                 failEpisode = m["failEpisode"].asLong() ?: 0, lockedUntil = m["lockedUntil"].asLong() ?: 0, practiceOkAt = m["practiceOkAt"].asLong() ?: 0,
                 year = m["year"].asStr() ?: "", set = m["set"].asStr() ?: "",
+                image = m["image"].asStr() ?: "", qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
+                overCap = m["overCap"].asBool(), dSt = m["dSt"].asStr() ?: "", dPr = m["dPr"].asDouble(), dAt = m["dAt"].asLong() ?: 0,
+                msrp = m["msrp"].asDouble(), tcg = m["tcg"].asDouble(),
+                others = m["others"].asList().mapNotNull { it.asMap() }.take(8),
             )
         }
     }
@@ -95,10 +121,11 @@ data class Settings(
     val needYouAt: Long = 0,              // last "Amazon needs you" message (at most one an hour)
     val ordersReadAt: Long = 0,
     val ordersKnown: Map<String, List<String>> = emptyMap(),   // ASIN -> order numbers already in your Amazon orders (before a checkout)
+    val runIcon: Boolean = true,          // 1.5: the "watching" notice shows its icon in the status bar (off = tucked away, no icon)
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
         "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
-        "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown)
+        "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown, "runIcon" to runIcon)
     companion object {
         const val MIN_INTERVAL = 60
         fun fromMap(m: Map<String, Any?>?): Settings {
@@ -106,7 +133,7 @@ data class Settings(
             return Settings(m["watching"].asBool(), m["buying"].asBool(), m["practice"] != false,
                 ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["signinNeededAt"].asLong() ?: 0, m["reportTopic"].asStr() ?: "", m["autoReport"] != false, m["reportAt"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
-                (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } })
+                (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } }, m["runIcon"] != false)
         }
     }
 }

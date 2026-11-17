@@ -1,3 +1,10 @@
+# Restalker Mobile 1.5 (2026-11-16; owner's notes on 1.4)
+- Product pictures: Amazon's own picture, read from the product's page the first time it is looked at.
+- "In stock" = for sale at any price (also just over the cap); new "Watched" filter.
+- Buy 1 / 2 / 3 on the product screen (separate orders, as on the desktop) - the same on both when linked.
+- Running icon: Settings -> Running icon off = no icon in the status bar (the notice is tucked away; Android requires one while watching).
+- Linked: what the desktop sees now (stock, price, when), the MSRP, the TCG price and the product's other stores; the desktop's names.
+
 # Restalker Mobile 1.4 (2026-11-16)
 - New look: four tabs (Watch, Bought, Activity, Settings), a screen for each product, an "Add a product" sheet.
 - Home screen grouped like the desktop: release year, then set; each folds with a tap (and stays folded). "In stock now" on top.

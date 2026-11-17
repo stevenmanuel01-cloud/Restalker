@@ -13,7 +13,7 @@ object CoreTests {
         val items = HashMap<String, Item>()
         val orders = ArrayList<Pair<String, String>>()      // order number -> ASIN
         var url = ""; var places = 0; var placeFail = 0; var noConfirm = false; var signinOrders = false; var silent = false; var signinCheckout = false; var loadFails = false
-        var gotoCount = 0; var begins = 0
+        var gotoCount = 0; var begins = 0; var pictureUrl: String? = null
         var lockSeenAtReply: Boolean? = null; var store: Store? = null; var replyOk: Boolean? = null
         private val msgs = ArrayList<Map<String, Any?>>(); private var n = 0L; private var waitingAsin: String? = null
         private fun push(m: Map<String, Any?>): Long { n++; msgs.add(m + ("n" to n)); return n }
@@ -27,6 +27,7 @@ object CoreTests {
             clock.sleep(20)
             when (msg["bb"]) {
                 "reset" -> { msgs.clear(); waitingAsin = null; return mapOf("ok" to true) }
+                "picture" -> return mapOf("picture" to (pictureUrl ?: "https://m.media-amazon.com/images/I/${asinHere()}._AC_SL1500_.jpg"))
                 "eligible" -> {
                     val p = msg["product"].asMap()!!; val a = asinHere(); val it = items[a] ?: return mapOf("ok" to true, "eligible" to false, "reason" to "product identity changed", "title" to "Amazon.com")
                     if (it.captcha) return mapOf("ok" to true, "eligible" to false, "reason" to "Amazon challenge/throttle", "title" to "Amazon.com")
@@ -380,6 +381,28 @@ object CoreTests {
             Groups.of(Product(id = "x", asin = "B0TEST0001", name = "MTG Star Trek Collector Booster Box")) == (Groups.MINE to "Star Trek") &&
             Groups.of(Product(id = "x", asin = "B0TEST0001", name = "n", year = "2026", set = "Star Trek")) == ("2026" to "Star Trek") &&
             listOf("2025", Groups.MINE, "2026", "Other products").sortedBy { Groups.yearRank(it) } == listOf("2026", "2025", "Other products", Groups.MINE)
+        }
+        t("46 the product's picture is taken from its page once (Amazon's own image server only)") {
+            val w = World(); w.add("B0TEST0001", 120.0, false); w.check("B0TEST0001")
+            val ok1 = w.p("B0TEST0001").image == "https://m.media-amazon.com/images/I/B0TEST0001._AC_SL1500_.jpg"
+            val w2 = World(); w2.amz.pictureUrl = "https://evil.example/x.jpg"; w2.add("B0TEST0002", 120.0, false); w2.check("B0TEST0002")
+            ok1 && w2.p("B0TEST0002").image.isEmpty()
+        }
+        t("47 Buy 2: bought twice in separate orders, then stops; Buy 1 stays one order") {
+            val w = World(); w.add("B0TEST0001", 120.0, true)
+            w.store.update("idB0TEST0001") { it.copy(qty = 2, qtySince = w.clock.t - 1) }
+            w.check("B0TEST0001"); val after1 = w.p("B0TEST0001")
+            w.clock.t += 60_000; w.check("B0TEST0001")
+            w.clock.t += 60_000; w.check("B0TEST0001")
+            after1.buy && !after1.purchased && w.amz.places == 2 && w.p("B0TEST0001").purchased && !w.p("B0TEST0001").buy
+        }
+        t("48 in stock over the cap counts as in stock; the linked desktop's newer look wins") {
+            val w = World(); w.add("B0TEST0001", 50.0, false, price = 99.99); w.check("B0TEST0001")
+            val p = w.p("B0TEST0001")
+            val over = p.overCap && p.inStock && p.stock().first == "over"
+            val d = p.copy(dSt = "out", dPr = null, dAt = p.lastCheck + 1000)
+            val older = p.copy(dSt = "in", dAt = p.lastCheck - 1000)
+            over && d.stock().first == "out" && !d.inStock && older.stock().first == "over"
         }
         return results
     }

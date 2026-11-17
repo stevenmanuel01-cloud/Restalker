@@ -152,6 +152,42 @@ class ScreenTests {
         compose.onNodeWithTag("product-B0TEST0104").assertDoesNotExist()
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter0"))
         compose.onNodeWithTag("filter0").performClick(); compose.waitForIdle()
+        // 1.5: In stock = for sale at ANY price (also over the cap); Watched = watched, set to buy or not
+        s.add(prod("B0TEST0105", "MTG Star Trek Collector Booster Box (over)", "2025", "Star Trek", price = 499.0).copy(overCap = true, cap = 460.0, status = "for sale over your cap"))
+        s.update("idB0TEST0102") { it.copy(watch = false) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter1"))
+        compose.onNodeWithTag("filter1").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0105"))         // over the cap: in stock
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter3"))
+        compose.onNodeWithTag("filter3").performClick(); compose.waitForIdle()                     // Watched
+        compose.onNodeWithTag("product-B0TEST0102").assertDoesNotExist()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0104"))
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter0"))
+        compose.onNodeWithTag("filter0").performClick(); compose.waitForIdle()
+    }
+
+    /** 1.5: Buy 1 / 2 / 3 on the product screen; the desktop's view (other stores, MSRP, TCG) shown; a picture shown. */
+    @Test fun t13_productScreen_quantity_desktopView_picture() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        val f = File(ctx.cacheDir, "pic.png"); val bm = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888); bm.eraseColor(android.graphics.Color.rgb(200, 30, 30))
+        f.outputStream().use { bm.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        s.add(prod("B0TEST0301", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(image = "file://" + f.absolutePath,
+            dSt = "over", dPr = 529.99, dAt = System.currentTimeMillis(), msrp = 455.88, tcg = 610.25,
+            others = listOf(mapOf("s" to "Best Buy", "st" to "in", "pr" to 449.99, "at" to System.currentTimeMillis()), mapOf("s" to "Target", "st" to "out", "pr" to null, "at" to 0L))))
+        compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0301"))
+        compose.onNodeWithText("Over cap · \$529.99", substring = true).assertIsDisplayed()          // the desktop's newer look
+        compose.onNodeWithTag("product-B0TEST0301").performClick(); compose.waitForIdle(); Thread.sleep(800)
+        shot("t13_product_desktop_view")
+        compose.onNodeWithTag("ref-B0TEST0301").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("others-B0TEST0301").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Best Buy").assertIsDisplayed()
+        compose.onNodeWithTag("qty-B0TEST0301-2").performScrollTo().performClick()
+        compose.waitUntil(3_000) { p("B0TEST0301").qty == 2 && p("B0TEST0301").qtySince > 0 }
+        compose.onNodeWithTag("qty-B0TEST0301-1").performClick()
+        compose.waitUntil(3_000) { p("B0TEST0301").qty == 1 }
     }
 
     /** 1.4: a product's own screen - Buy, Watch, the cap, Remove (asks once), Back. */
@@ -194,6 +230,10 @@ class ScreenTests {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Linked with the desktop", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("OK").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("link-title").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("runicon").performScrollTo().performClick()
+        compose.waitUntil(3_000) { !RkApp.store().settings().runIcon }
+        compose.onNodeWithTag("runicon").performClick()
+        compose.waitUntil(3_000) { RkApp.store().settings().runIcon }
         Thread.sleep(500); shot("t12_linked")
         compose.onNodeWithTag("unlink").performScrollTo().performClick()
         compose.onNodeWithTag("unlink-yes").performClick()

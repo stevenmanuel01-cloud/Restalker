@@ -35,7 +35,7 @@ object Diag {
             " ordersRead=${if (st.ordersReadAt > 0) t.format(Date(st.ordersReadAt)) else "never"}\n")
         sb.append("Desktop link: ${DeskLink.get().state().second}; desktop buys now: ${DeskLink.get().desktopBuys()}; last round: ${DeskLink.lastResult.ifBlank { "-" }}\n")
         sb.append("\nProducts (${s.products().size}):\n")
-        for (p in s.products()) sb.append("- ${p.asin} cap \$${Engine.money(p.cap)} ${p.kind} watch=${p.watch} buy=${p.buy} bought=${p.purchased} attempted=${p.attempted}" +
+        for (p in s.products()) sb.append("- ${p.asin} cap \$${Engine.money(p.cap)} ${p.kind} watch=${p.watch} buy=${p.buy} qty=${p.qty} pic=${p.image.isNotBlank()} desk=${p.dSt} bought=${p.purchased} attempted=${p.attempted}" +
             " fails=${p.fails} | ${p.status}" + (if (p.lastCheck > 0) " (${t.format(Date(p.lastCheck))})" else "") + " | ${p.label.take(80)}\n")
         sb.append("\nPurchases (${s.purchases().size}):\n")
         for (x in s.purchases().take(20)) sb.append("- ${t.format(Date(x.at))} ${x.asin} ${x.price?.let { "\$" + Engine.money(it) } ?: ""} order ${x.order ?: "-"} verified=${x.verified} ${x.note}\n")

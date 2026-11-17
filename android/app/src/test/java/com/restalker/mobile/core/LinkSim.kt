@@ -28,12 +28,13 @@ object LinkSim {
             "add" -> { store.add(Product(id = store.newId(), asin = a[0], name = a[1], cap = a[2].toDouble(), buy = a[3] == "1", kind = a.getOrElse(4) { "box" })); println("added") }
             "cap" -> { store.update(prod(a[0]).id) { it.copy(cap = a[1].toDouble()) }; println("ok") }
             "buy" -> { store.update(prod(a[0]).id) { it.copy(buy = a[1] == "1") }; println("ok") }
+            "qty" -> { store.update(prod(a[0]).id) { it.copy(qty = a[1].toInt(), qtySince = clock()) }; println("ok") }
             "watch" -> { store.update(prod(a[0]).id) { it.copy(watch = a[1] == "1") }; println("ok") }
             "remove" -> { store.remove(prod(a[0]).id); println("ok") }
             "bought" -> { val p = prod(a[0]); store.addPurchase(Purchase(clock(), p.asin, p.label, p.cap, "111-0000000-0000000", true)); store.update(p.id) { it.copy(purchased = true, buy = false) }; println("ok") }
             "cycle" -> println(link.cycle())
             "unlink" -> { link.unlink(); println("ok") }
-            "dump" -> println(MiniJson.write(linkedMapOf("products" to store.products().associate { it.asin to linkedMapOf("n" to it.name, "c" to it.cap, "b" to it.buy, "w" to it.watch, "k" to it.kind, "purchased" to it.purchased, "year" to it.year, "set" to it.set) },
+            "dump" -> println(MiniJson.write(linkedMapOf("products" to store.products().associate { it.asin to linkedMapOf("n" to it.name, "c" to it.cap, "b" to it.buy, "w" to it.watch, "k" to it.kind, "purchased" to it.purchased, "year" to it.year, "set" to it.set, "q" to it.qty, "dSt" to it.dSt, "dPr" to it.dPr, "dAt" to it.dAt, "msrp" to it.msrp, "others" to it.others, "stock" to it.stock().first) },
                 "desktopBuys" to link.desktopBuys(), "state" to link.state().second, "linked" to link.linked(), "log" to store.log().takeLast(12))))
             else -> println("unknown command")
         }

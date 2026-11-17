@@ -34,6 +34,7 @@ class FakeAmazonSite {
             "onclick=\"location.href='${if (signinAtCheckout) "/ap/signin?openid.return_to=checkout" else "/checkout/p/p-106-1234567-7654321/itemselect?asin=$asin"}';return false\"></span>" +
             "<input id=\"add-to-cart-button\" name=\"submit.add-to-cart\" type=\"submit\" value=\"Add to Cart\"></div>" else "<div id=\"availability\">Currently unavailable.</div>"
         return page("<input type=\"hidden\" id=\"ASIN\" value=\"$asin\"><span id=\"productTitle\">${esc(it.title)}</span>" +
+            "<div id=\"imgTagWrapperId\"><img id=\"landingImage\" src=\"data:image/gif;base64,R0lGODlhAQABAAAAACw=\" data-old-hires=\"https://m.media-amazon.com/images/I/$asin._AC_SL1500_.jpg\"></div>" +
             (if (it.stock) "<div id=\"corePriceDisplay_desktop_feature_div\"><span class=\"priceToPay\"><span class=\"a-offscreen\">\$${"%.2f".format(it.price)}</span></span></div>" else "") +
             "<div id=\"merchant-info\">Ships from and sold by Amazon.com</div>$buy" +
             "<div id=\"ads\"></div><script>setInterval(()=>{document.getElementById(\"ads\").textContent=Math.random()},50)</script>", "Amazon.com: ${it.title}")
