@@ -1,8 +1,8 @@
 {
- "version": "v128",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v128_update.zip",
- "sha256": "369cbf0c642989f9501c18e1599b521d0523b2a5702a1a3fccdb6003a9ecd9b6",
- "size": 737548,
+ "version": "v129",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v129_update.zip",
+ "sha256": "ddcbeed99e6d33c4cced7ed3d2e9066ee3878255451a1be6fac96ad7596f0be0",
+ "size": 737667,
  "notes": "Regular reports every 4 h; phone pictures exactly as on the PC; no 'app ready' message when the phone updates itself; several phones; share QR; checkout history; top row on one line",
  "files": 81
 }
