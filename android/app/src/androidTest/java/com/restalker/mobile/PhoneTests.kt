@@ -51,6 +51,13 @@ class PhoneTests {
         AmazonWeb.testSite = null
     }
 
+    /** For checks that read the real channel: one round every 4 s (the free channel refuses a flood of reads), up to [ms]. */
+    private fun waitCycle(ms: Long, f: () -> Boolean): Boolean {
+        val end = System.currentTimeMillis() + ms
+        while (System.currentTimeMillis() < end) { if (f()) return true; Thread.sleep(4_000) }
+        return f()
+    }
+
     private fun waitFor(ms: Long, f: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + ms
         while (System.currentTimeMillis() < end) { if (f()) return true; Thread.sleep(250) }
@@ -324,7 +331,7 @@ class PhoneTests {
         }
         desk(amz = true)
         var r = ""
-        val got = waitFor(60_000) { r = DeskLink.get().cycle(); RkApp.store().products().any { it.asin == "B0TEST0001" } }
+        val got = waitCycle(90_000) { r = DeskLink.get().cycle(); RkApp.store().products().any { it.asin == "B0TEST0001" } }
         val p1 = RkApp.store().products().firstOrNull { it.asin == "B0TEST0001" }
         File(File(ctx.filesDir, "shots").also { it.mkdirs() }, "t15_link.txt").writeText("cycle: $r\nstate: ${DeskLink.get().state()}\n" + RkApp.store().log().joinToString("\n"))
         assertTrue("the desktop's product arrived ($r)", got)
@@ -337,7 +344,7 @@ class PhoneTests {
         assertEquals("no checkout while the desktop buys", 0, site.requests.count { it.contains("/checkout") })
         // the desktop stops -> this phone buys again
         desk(amz = true, bye = true)
-        assertTrue("stopped heard", waitFor(60_000) { DeskLink.get().cycle(); !DeskLink.get().desktopBuys() })
+        assertTrue("stopped heard", waitCycle(90_000) { DeskLink.get().cycle(); !DeskLink.get().desktopBuys() })
         // our product reached the channel (read from outside, as the desktop does)
         val lines = java.net.URL("https://ntfy.sh/$ch/json?poll=1&since=all").readText().lines().mapNotNull { com.restalker.mobile.core.MiniJson.obj(it) }
         val mine = lines.mapNotNull { com.restalker.mobile.core.LinkCrypto.unseal(sec, it["message"] as? String) }.map { com.restalker.mobile.core.MiniJson.obj(it)!! }
