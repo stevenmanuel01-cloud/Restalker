@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
@@ -178,7 +179,7 @@ class ScreenTests {
             others = listOf(mapOf("s" to "Best Buy", "st" to "in", "pr" to 449.99, "at" to System.currentTimeMillis()), mapOf("s" to "Target", "st" to "out", "pr" to null, "at" to 0L))))
         compose.waitForIdle()
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0301"))
-        compose.onNodeWithText("Over cap · \$529.99", substring = true).assertIsDisplayed()          // the desktop's newer look
+        compose.onAllNodesWithText("Over cap · \$529.99", substring = true).onFirst().assertIsDisplayed()   // the desktop's newer look (also on top: in stock)
         compose.onNodeWithTag("product-B0TEST0301").performClick(); compose.waitForIdle(); Thread.sleep(800)
         shot("t13_product_desktop_view")
         compose.onNodeWithTag("ref-B0TEST0301").performScrollTo().assertIsDisplayed()
