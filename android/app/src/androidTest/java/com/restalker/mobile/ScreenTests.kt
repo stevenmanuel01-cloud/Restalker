@@ -182,7 +182,7 @@ class ScreenTests {
         f.outputStream().use { bm.compress(Bitmap.CompressFormat.PNG, 100, it) }
         // 1.7: the app downloads the picture itself (here: given by the test instead of Amazon's picture server)
         PicCache.clear(); val png = f.readBytes(); PicCache.fetch = { u -> if (u.contains("/images/I/T13pic")) png else throw java.io.IOException("unexpected $u") }
-        s.add(prod("B0TEST0301", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(image = "https://m.media-amazon.com/images/I/T13pic._AC_SL1500_.jpg",
+        s.add(prod("B0TEST0301", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(image = "https://m.media-amazon.com/images/I/T13pic.jpg",
             dSt = "over", dPr = 529.99, dAt = System.currentTimeMillis(), msrp = 455.88, tcg = 610.25,
             others = listOf(mapOf("s" to "Best Buy", "st" to "in", "pr" to 449.99, "at" to System.currentTimeMillis()), mapOf("s" to "Target", "st" to "out", "pr" to null, "at" to 0L))))
         compose.waitForIdle()
@@ -212,12 +212,12 @@ class ScreenTests {
         PicCache.clear(); PicCache.retryMs = 0
         try {
             PicCache.fetch = { throw java.io.IOException("the picture server answered 403") }
-            s.add(prod("B0TEST0401", "Star Trek Collector Booster Box", "2026", "Star Trek", price = 399.99).copy(image = "https://m.media-amazon.com/images/I/T14bad._AC_SL1500_.jpg"))
+            s.add(prod("B0TEST0401", "Star Trek Collector Booster Box", "2026", "Star Trek", price = 399.99).copy(image = "https://m.media-amazon.com/images/I/T14bad.jpg"))
             compose.waitForIdle()
             compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0401"))
-            compose.waitUntil(5_000) { PicCache.failures("https://m.media-amazon.com/images/I/T14bad._AC_SL1500_.jpg") >= 1 }
+            compose.waitUntil(5_000) { PicCache.failures("https://m.media-amazon.com/images/I/T14bad.jpg") >= 1 }
             compose.onNodeWithText("ST", useUnmergedTree = true).assertIsDisplayed()                 // the initials
-            PicCache.get("https://m.media-amazon.com/images/I/T14bad._AC_SL1500_.jpg")              // (a second failure)
+            PicCache.get("https://m.media-amazon.com/images/I/T14bad.jpg")              // (a second failure)
             val hp = com.restalker.mobile.core.Health.check(HealthRunner.input(ctx))
             assertTrue("self-check finds it: $hp", hp.any { it.first == "pics-load" && it.second.contains("403") })
             val d = Diag.text(ctx)

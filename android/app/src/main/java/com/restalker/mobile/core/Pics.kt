@@ -4,21 +4,31 @@ package com.restalker.mobile.core
  *  version to download. An Amazon product picture always lives under /images/I/ - anything else on an Amazon page (/images/G/ = the
  *  site's own graphics: logos, share images, grey placeholder pixels) is never a product picture. */
 object Pics {
-    private val AMZ = Regex("^https://([a-z0-9.-]*\\.)?(media-amazon\\.com|ssl-images-amazon\\.com|images-amazon\\.com)/images/I/[^/?#\\s\"'<>]+\\.(jpe?g|png|webp)$",
+    /** 1.8: any address of an Amazon product picture (http/https, any size or kind) -> its plain form .../images/I/<id>.jpg; null = not one. */
+    private val AMZ_ANY = Regex("^(?:https?:)?//([a-z0-9.-]*\\.)?(media-amazon\\.com|ssl-images-amazon\\.com|images-amazon\\.com)/images/I/([A-Za-z0-9+%-]{5,40})(?:\\.[^/?#]*)?\\.(jpe?g|png|webp|avif|gif)(?:[?#].*)?$",
         RegexOption.IGNORE_CASE)
+    fun canon(u: String?): String? {
+        val t = u?.trim() ?: return null
+        if (t.length > 600) return null
+        val m = AMZ_ANY.find(t) ?: return null
+        return "https://m.media-amazon.com/images/I/" + m.groupValues[3] + ".jpg"
+    }
+    private val AMZ = Regex("^https://m\\.media-amazon\\.com/images/I/[A-Za-z0-9+%-]{5,40}\\.jpg$")
     /** Other stores' picture servers (the linked desktop's picture of a product can come from them). */
     private val OTHER = Regex("^https://(target\\.scene7\\.com|pisces\\.bbystatic\\.com|i5\\.walmartimages\\.com|media\\.gamestop\\.com)/[^\\s\"'<>]+$",
         RegexOption.IGNORE_CASE)
 
-    /** A picture this phone read from an Amazon page. */
-    fun valid(u: String?): Boolean = u != null && u.length < 400 && AMZ.matches(u)
+    /** A picture this phone read from an Amazon page (kept in its plain form). */
+    fun valid(u: String?): Boolean = u != null && AMZ.matches(u)
     /** A picture the linked desktop gave (Amazon's or another store's). */
     fun validAny(u: String?): Boolean = u != null && u.length < 500 && (AMZ.matches(u) || OTHER.matches(u))
+    /** A desktop's picture address as kept here (Amazon's in its plain form), or null. */
+    fun desk(u: String?): String? = canon(u) ?: u?.takeIf { validAny(it) }
 
     /** Amazon: ..../images/I/81abc._AC_SL1500_.jpg -> ..../images/I/81abc._AC_SL<px>_.jpg (less to download). Others: as given. */
     fun small(u: String, px: Int = 240): String {
-        val m = Regex("^(https://[^/]+/images/I/[^./]+)(\\._[^/]*_)?(\\.[a-zA-Z]+)$").find(u) ?: return u
-        return m.groupValues[1] + "._AC_SL${px}_" + m.groupValues[3]
+        val c = canon(u) ?: return u
+        return c.removeSuffix(".jpg") + "._AC_SL${px}_.jpg"
     }
 
     /** What to try, in order: the small version, then the picture as given. */

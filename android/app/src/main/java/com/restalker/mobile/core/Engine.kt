@@ -416,7 +416,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val r = page.ask(mapOf("bb" to "picture"), 4_000)
         val u = r?.get("picture").asStr()
         picInfo[p.asin] = (r?.get("pinfo").asStr() ?: if (r == null) "no answer from the page" else "-").take(300)
-        if (Pics.valid(u)) { store.update(p.id) { it.copy(image = u!!) }; picInfo[p.asin] = "found" }
+        Pics.canon(u)?.let { c -> store.update(p.id) { it.copy(image = c) }; picInfo[p.asin] = "found" }
     }
 
     fun readOrders() {

@@ -1,3 +1,7 @@
+# Restalker Mobile 1.8 (2026-11-16; from the app's own report)
+- Pictures: the 1.7 report showed Amazon's pages give their pictures in forms 1.7 did not accept (28 products without one). Every
+  form of an Amazon product picture is taken now, kept in one plain form, and downloaded small.
+
 # Restalker Mobile 1.7 (2026-11-16; includes 1.6)
 - Updates by itself: new versions download, are checked, and install on their own (never during a purchase). Android asks you once
   to allow it (Allow) - after that, no more downloading. (Android 11 and older: also a tap on Install for each update.)

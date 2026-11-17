@@ -384,7 +384,7 @@ object CoreTests {
         }
         t("46 the product's picture is taken from its page once (Amazon's own image server only)") {
             val w = World(); w.add("B0TEST0001", 120.0, false); w.check("B0TEST0001")
-            val ok1 = w.p("B0TEST0001").image == "https://m.media-amazon.com/images/I/B0TEST0001._AC_SL1500_.jpg"
+            val ok1 = w.p("B0TEST0001").image == "https://m.media-amazon.com/images/I/B0TEST0001.jpg"      // (1.8: kept in its plain form)
             val w2 = World(); w2.amz.pictureUrl = "https://evil.example/x.jpg"; w2.add("B0TEST0002", 120.0, false); w2.check("B0TEST0002")
             ok1 && w2.p("B0TEST0002").image.isEmpty()
         }
@@ -438,29 +438,38 @@ object CoreTests {
             !p1.purchased && p1.buy && !p2.purchased && !p2.buy
         }
         // ---------------- 1.7: pictures (owner: "The pictures aren't populating still") and the self-check (owner: "The error report didn't automatically send")
-        val I = "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL1500_.jpg"
+        val RAW = "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL1500_.jpg"
+        val I = "https://m.media-amazon.com/images/I/81Xk2+abcL.jpg"           // (1.8: the plain form a picture is kept in)
         val GREY = "https://images-na.ssl-images-amazon.com/images/G/01/x-locale/common/grey-pixel.gif"
         val LOGO = "https://m.media-amazon.com/images/G/01/social_share/amazon_logo._CB633267191_.png"
-        t("70_pics_product_picture_valid") { Pics.valid(I) && Pics.valid("https://images-na.ssl-images-amazon.com/images/I/51abc.png") }
-        t("71_pics_grey_pixel_logo_never_valid") { !Pics.valid(GREY) && !Pics.valid(LOGO) && !Pics.validAny(GREY) && !Pics.validAny(LOGO) }
-        t("72_pics_lookalike_http_query_refused") { listOf("http://m.media-amazon.com/images/I/81x.jpg", "https://m.media-amazon.com.evil.example/images/I/81x.jpg",
-            "https://evil.example/images/I/81x.jpg", "https://m.media-amazon.com/images/I/81x.jpg?x=1", "https://m.media-amazon.com/images/I/" + "x".repeat(450) + ".jpg",
-            "", "javascript:alert(1)").none { Pics.valid(it) } && !Pics.valid(null) }
-        t("73_pics_small_version") { Pics.small(I) == "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL240_.jpg" &&
-            Pics.small("https://m.media-amazon.com/images/I/51abc.png") == "https://m.media-amazon.com/images/I/51abc._AC_SL240_.png" &&
-            Pics.tries(I).size == 2 && Pics.tries(I)[1] == I && Pics.small("https://target.scene7.com/is/image/Target/x") == "https://target.scene7.com/is/image/Target/x" }
+        t("70_pics_every_form_of_a_product_picture_becomes_its_plain_form") { listOf(RAW, I, "http://m.media-amazon.com/images/I/81Xk2+abcL._AC_SX679_.jpg",
+            "//m.media-amazon.com/images/I/81Xk2+abcL._AC_UL495_SR495,495_.jpg", "https://images-na.ssl-images-amazon.com/images/I/81Xk2+abcL.png",
+            "https://ecx.images-amazon.com/images/I/81Xk2+abcL._SL500_.webp", "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SX300_SY300_QL70_FMwebp_.avif",
+            "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL1500_.jpg?crop=1", " $RAW ", "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL1500_.JPG").all { Pics.canon(it) == I } &&
+            Pics.valid(I) && !Pics.valid(RAW) }
+        t("71_pics_grey_pixel_logo_css_js_never") { listOf(GREY, LOGO, "https://m.media-amazon.com/images/I/61+btpCHNOL.css?AUIClients/VSEComponentAssets",
+            "https://m.media-amazon.com/images/I/61xJcNKKLXL.js?AUIClients/AmazonUIjQuery", "https://m.media-amazon.com/images/I/21-lHLRbUgL._RC|51fSDNsfwdL.css_.css?AUIClients/AmazonUI")
+            .none { Pics.canon(it) != null || Pics.valid(it) || Pics.validAny(it) } }
+        t("72_pics_lookalike_hosts_refused") { listOf("https://m.media-amazon.com.evil.example/images/I/81Xk2abc.jpg", "https://evil.example/images/I/81Xk2abc.jpg",
+            "https://evil.example/x?u=https://m.media-amazon.com/images/I/81Xk2abc.jpg", "https://m.media-amazon.com/images/I/" + "x".repeat(450) + ".jpg",
+            "https://m.media-amazon.com/images/I/ab.jpg", "", "javascript:alert(1)", "ftp://m.media-amazon.com/images/I/81Xk2abc.jpg").none { Pics.canon(it) != null } && Pics.canon(null) == null }
+        t("73_pics_small_version") { Pics.small(I) == "https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL240_.jpg" && Pics.small(RAW) == Pics.small(I) &&
+            Pics.tries(I) == listOf("https://m.media-amazon.com/images/I/81Xk2+abcL._AC_SL240_.jpg", I) &&
+            Pics.small("https://target.scene7.com/is/image/Target/x") == "https://target.scene7.com/is/image/Target/x" }
         t("74_pics_other_stores_only_from_desktop") { Pics.validAny("https://target.scene7.com/is/image/Target/GUEST_1?wid=200") && !Pics.valid("https://target.scene7.com/is/image/Target/GUEST_1")
-            && Pics.validAny("https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6686/6686924_sd.jpg") && !Pics.validAny("https://evil.example/x.jpg") }
-        t("75_kept_placeholder_dropped_and_looked_for_again") {
+            && Pics.validAny("https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6686/6686924_sd.jpg") && !Pics.validAny("https://evil.example/x.jpg")
+            && Pics.desk(RAW) == I && Pics.desk("https://evil.example/x.jpg") == null }
+        t("75_kept_pictures_put_in_plain_form_placeholder_dropped") {
             val p = Product.fromMap(Product("a", "B0TEST0070", image = GREY, picTriedAt = 99).toMap())!!
-            val q = Product.fromMap(Product("a", "B0TEST0070", image = I, picTriedAt = 99).toMap())!!
+            val q = Product.fromMap(Product("a", "B0TEST0070", image = "https://m.media-amazon.com/images/I/810ZB7WLddL._AC_UL495_SR495,495_.jpg", picTriedAt = 99).toMap())!!
             val r = Product.fromMap(Product("a", "B0TEST0070", dImg = "https://evil.example/x.jpg").toMap())!!
-            p.image == "" && p.picTriedAt == 0L && q.image == I && q.picTriedAt == 99L && r.dImg == "" }
+            val d = Product.fromMap(Product("a", "B0TEST0070", dImg = RAW).toMap())!!
+            p.image == "" && p.picTriedAt == 0L && q.image == "https://m.media-amazon.com/images/I/810ZB7WLddL.jpg" && q.picTriedAt == 99L && r.dImg == "" && d.dImg == I }
         t("76_shown_own_first_then_desktop") {
             val d = "https://target.scene7.com/is/image/Target/GUEST_1"
             Pics.shown(Product("a", "B0TEST0071", image = I, dImg = d)) == listOf(I, d) && Pics.shown(Product("a", "B0TEST0071", dImg = d)) == listOf(d) &&
                 Pics.shown(Product("a", "B0TEST0071", image = GREY)).isEmpty() && Pics.shown(Product("a", "B0TEST0071", image = I, dImg = I)) == listOf(I) }
-        t("77_short_name_for_diagnostics") { Pics.short(I) == "81Xk2+abcL._AC_SL1500_.jpg" && Pics.short("https://target.scene7.com/is/x") == "target.scene7.com" }
+        t("77_short_name_for_diagnostics") { Pics.short(I) == "81Xk2+abcL.jpg" && Pics.short("https://target.scene7.com/is/x") == "target.scene7.com" }
         val now0 = 1_800_000_000_000L
         fun hin(vararg ps: Product, f: (HealthIn) -> HealthIn = { it }) = f(HealthIn(now = now0, products = ps.toList(), purchases = emptyList(), settings = Settings()))
         t("78_health_nothing_wrong") { Health.check(hin(Product("a", "B0TEST0072", image = I))).isEmpty() }

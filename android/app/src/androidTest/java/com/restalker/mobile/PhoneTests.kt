@@ -355,7 +355,7 @@ class PhoneTests {
         start(false, true, pr)
         val two = waitFor(240_000) { RkApp.store().purchases().count { it.asin == "B0TEST0001" } >= 2 }
         dumpLog("t16")
-        assertEquals("the picture was read from the page", "https://m.media-amazon.com/images/I/B0TEST0001._AC_SL1500_.jpg", p("B0TEST0001").image)
+        assertEquals("the picture was read from the page", "https://m.media-amazon.com/images/I/B0TEST0001.jpg", p("B0TEST0001").image)
         assertTrue("Buy 2: two separate orders", two)
         Thread.sleep(20_000)
         assertEquals("no third order", 2, RkApp.store().purchases().count { it.asin == "B0TEST0001" })
@@ -377,7 +377,7 @@ class PhoneTests {
         val ok = waitFor(90_000) { p("B0TEST0001").image.isNotBlank() }
         dumpLog("t17")
         assertTrue("a picture was taken", ok)
-        assertEquals("the real picture, not the grey pixel / logo", "https://m.media-amazon.com/images/I/B0TEST0001P._AC_SX679_.jpg", p("B0TEST0001").image)
+        assertEquals("the real picture, not the grey pixel / logo", "https://m.media-amazon.com/images/I/B0TEST0001P.jpg", p("B0TEST0001").image)
         assertEquals("found", com.restalker.mobile.core.Engine.picInfo["B0TEST0001"])
         // a picture kept by 1.5/1.6 that is not a product picture is dropped when the app reads its products
         WatchService.stop(ctx); waitFor(10_000) { WatchService.instance == null }

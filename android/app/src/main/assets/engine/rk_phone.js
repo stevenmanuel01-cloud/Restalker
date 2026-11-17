@@ -7,10 +7,19 @@
   // every known place is read, and only a real product picture (/images/I/) is taken - never the site's logo / share image / grey pixel.
   // pinfo = which places the page had (for the report when none is found).
   const picture = () => {
-    const ok = (u) => typeof u === 'string' && u.length < 400 &&
-      /^https:\/\/([a-z0-9.-]*\.)?(media-amazon\.com|ssl-images-amazon\.com|images-amazon\.com)\/images\/I\/[^\/?#\s"'<>]+\.(jpe?g|png|webp)$/i.test(u);
-    const got = [], seen = [];
-    const add = (u, where) => { u = (u || '').trim(); if (!u || u.startsWith('data:')) return; seen.push(where + (ok(u) ? '+' : '-')); if (ok(u)) got.push(u); };
+    // 1.8 (the 1.7 report: real pages gave picture addresses in forms 1.7 refused): any address of an Amazon product picture is
+    // turned into its plain form https://m.media-amazon.com/images/I/<picture id>.jpg (Amazon's picture server makes any size / kind
+    // from the id). Site graphics (/images/G/), style sheets and scripts are never taken. The first refused addresses go into pinfo.
+    const canon = (u) => {
+      const m = /^(?:https?:)?\/\/([a-z0-9.-]*\.)?(media-amazon\.com|ssl-images-amazon\.com|images-amazon\.com)\/images\/I\/([A-Za-z0-9+%-]{5,40})(?:\.[^\/?#]*)?\.(jpe?g|png|webp|avif|gif)(?:[?#].*)?$/i.exec(u);
+      return m ? 'https://m.media-amazon.com/images/I/' + m[3] + '.jpg' : null;
+    };
+    const got = [], seen = [], bad = [];
+    const add = (u, where) => {
+      u = (u || '').trim(); if (!u || u.startsWith('data:') || u.length > 600) return;
+      const c = canon(u); seen.push(where + (c ? '+' : '-'));
+      if (c) got.push(c); else if (bad.length < 3 && !/\/images\/G\/|grey-pixel|transparent-pixel/i.test(u)) bad.push(where + ':' + u.slice(0, 90));
+    };
     let els = [];
     try { els = Array.from(document.querySelectorAll('#landingImage, #imgTagWrapperId img, #main-image, #imgBlkFront, #ebooksImgBlkFront, ' +
       'img[data-old-hires], img[data-a-hires], #main-image-container img, #image-block img, img.a-dynamic-image')).slice(0, 12); } catch (x) {}
@@ -34,7 +43,8 @@
         const m = document.querySelector(q); if (m) add(m.getAttribute('content') || m.getAttribute('href'), q.startsWith('link') ? 'imgsrc' : 'meta');
       }
     }
-    return {u: got[0] || null, info: 'els=' + els.length + ' ' + (seen.slice(0, 12).join(',') || 'none') + ' url=' + String(location.pathname).slice(0, 40)};
+    return {u: got[0] || null, info: 'els=' + els.length + ' ' + (seen.slice(0, 12).join(',') || 'none') + ' url=' + String(location.pathname).slice(0, 40) +
+      (bad.length ? ' refused=' + bad.join(' | ') : '')};
   };
   const chrome = {runtime: {onMessage: {addListener(fn) { Object.defineProperty(window, '__rk___TOKEN__', {value: (m, s, send) => {
                               if (m && m.bb === 'picture') { const r = picture(); send({picture: r.u, pinfo: r.info}); return false; }

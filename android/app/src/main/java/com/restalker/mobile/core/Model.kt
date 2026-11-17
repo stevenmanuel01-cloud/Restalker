@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.7"
+const val APP_VERSION = "1.8"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -91,12 +91,12 @@ data class Product(
                 failEpisode = m["failEpisode"].asLong() ?: 0, lockedUntil = m["lockedUntil"].asLong() ?: 0, practiceOkAt = m["practiceOkAt"].asLong() ?: 0,
                 year = m["year"].asStr() ?: "", set = m["set"].asStr() ?: "",
                 // 1.7: a kept address that is not a product picture (an Amazon logo / placeholder from 1.5-1.6) is dropped and looked for again
-                image = (m["image"].asStr() ?: "").takeIf { Pics.valid(it) } ?: "", qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
+                image = Pics.canon(m["image"].asStr()) ?: "",            // (1.8: kept in its plain form) qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
                 overCap = m["overCap"].asBool(), dSt = m["dSt"].asStr() ?: "", dPr = m["dPr"].asDouble(), dAt = m["dAt"].asLong() ?: 0,
                 msrp = m["msrp"].asDouble(), tcg = m["tcg"].asDouble(),
                 others = m["others"].asList().mapNotNull { it.asMap() }.take(8),
-                picTriedAt = if (Pics.valid(m["image"].asStr()) || m["image"].asStr().isNullOrBlank()) m["picTriedAt"].asLong() ?: 0 else 0,
-                dImg = (m["dImg"].asStr() ?: "").takeIf { Pics.validAny(it) } ?: "",
+                picTriedAt = if (Pics.canon(m["image"].asStr()) != null || m["image"].asStr().isNullOrBlank()) m["picTriedAt"].asLong() ?: 0 else 0,
+                dImg = Pics.desk(m["dImg"].asStr()) ?: "",
             )
         }
     }
