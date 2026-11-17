@@ -334,7 +334,7 @@ class ScreenTests {
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 350.0 }
         compose.onNodeWithTag("back").performClick(); compose.waitForIdle()
         // Get all products (the central list on the release home): added without caps, nothing watched or set to Buy
-        compose.onNodeWithText("Settings").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()        // (by its tag: with big text the tab's word may not show)
         val before = s.products().size
         compose.onNodeWithTag("catalog-go").performScrollTo().performClick()
         compose.waitUntil(40_000) { compose.onAllNodesWithTag("catalog-msg").fetchSemanticsNodes().isNotEmpty() && s.products().size > before }
