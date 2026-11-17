@@ -1,8 +1,8 @@
 {
- "version": "v131",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v131_update.zip",
- "sha256": "e039fa6d523d65c1d8b4ed02f69f1a89674cf4358d7c27124c6ecbe6a4bb637e",
- "size": 738351,
- "notes": "Target / Walmart / GameStop: a greyed-out Add to cart gets up to 5 s to turn on (Target Hobbit at $539.99 was missed that way).",
+ "version": "v132",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v132_update.zip",
+ "sha256": "a6b828cec541cfdaff383bcb3e07524c9e1779ca8695aa8dd6eafb20fe1b4fb4",
+ "size": 741193,
+ "notes": "Who buys on Amazon (chosen in the phone app): PC, phone (the PC signals it within seconds) or both. The phone-app message opens the download page. Store links reach the phone.",
  "files": 81
 }
