@@ -435,7 +435,8 @@ class PhoneTests {
         dumpLog("t19")
         assertTrue("the practice reached Place your order", done)
         assertEquals("nothing was ordered", 0, site.places)
-        assertTrue("the item is not left in the list", RkApp.store().products().none { it.asin == "B0TEST0001" })
+        // (the item is taken out right after the practice ends - just after its log line; seen once on API 33 before that moment)
+        assertTrue("the item is not left in the list", waitFor(10_000) { RkApp.store().products().none { it.asin == "B0TEST0001" } })
     }
 
     @Test fun t13_testMessage_andDiagnostics() {

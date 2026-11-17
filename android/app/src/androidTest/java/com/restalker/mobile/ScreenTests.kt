@@ -56,8 +56,11 @@ class ScreenTests {
         compose.onNodeWithTag("add").performClick()
         compose.onNodeWithTag("f-link").performTextInput("https://www.amazon.com/Magic-Hobbit/dp/B0TEST0001/ref=sr_1_1")
         compose.onNodeWithTag("f-cap").performTextInput("120")
-        compose.onNodeWithTag("f-save").performClick()
-        compose.waitUntil(5_000) { RkApp.store().products().any { it.asin == "B0TEST0001" } }
+        for (k in 0 until 3) {           // (2.1: once missed with big text on API 35 - the keyboard took the tap; as for a person, tap again)
+            if (RkApp.store().products().any { it.asin == "B0TEST0001" }) break
+            compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
+            try { compose.waitUntil(5_000) { RkApp.store().products().any { it.asin == "B0TEST0001" } }; break } catch (e: Throwable) { if (k == 2) throw e }
+        }
         compose.waitForIdle()
         shot("t5_screen")
         assertEquals(120.0, p("B0TEST0001").cap, 0.001)

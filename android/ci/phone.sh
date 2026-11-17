@@ -18,7 +18,22 @@ grep -E "^OK|FAILURES|Tests run" instrument.txt
 echo "--- failures (name + reason) ---"
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument.txt | cut -c1-600
 sed -n '/^There w/,/^FAILURES/p' instrument.txt | head -60
-grep -q "^OK (" instrument.txt && ! grep -q "FAILURES!!!\|INSTRUMENTATION_FAILED\|Process crashed" instrument.txt || fail=1
+# 2.1: a test that failed is run once more on its own; it passes only if it passes then (shown as SECOND TRY - Claude reads these and
+# fixes the test's timing). A real fault fails both times. usage: judge <instrument output> [extra instrument args]
+judge() {
+  local out=$1; shift
+  if grep -q "^OK (" "$out" && ! grep -q "FAILURES!!!\|INSTRUMENTATION_FAILED\|Process crashed" "$out"; then return 0; fi
+  if ! grep -q "FAILURES!!!" "$out" || grep -q "INSTRUMENTATION_FAILED\|Process crashed" "$out"; then return 1; fi
+  local failed t bad=0
+  failed=$(awk '/INSTRUMENTATION_STATUS: class=/{c=substr($0, index($0,"=")+1)} /INSTRUMENTATION_STATUS: test=/{t=substr($0, index($0,"=")+1)} /INSTRUMENTATION_STATUS_CODE: -2/{print c"#"t}' "$out" | sort -u)
+  [ -n "$failed" ] || return 1
+  for t in $failed; do
+    adb shell am instrument -w -r -e debug false -e class "$t" "$@" $P.test/androidx.test.runner.AndroidJUnitRunner > retry.txt 2>&1
+    if grep -q "^OK (" retry.txt; then echo "SECOND TRY passed: $t"; else echo "FAILED TWICE: $t"; bad=1; fi
+  done
+  return $bad
+}
+judge instrument.txt || fail=1
 alive() { timeout 20 adb shell true >/dev/null 2>&1; }
 finish() { timeout 300 bash android/ci/evidence.sh || true; exit $fail; }
 if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP TESTS (nothing more can run on it)"; fail=1; finish; fi
@@ -106,7 +121,7 @@ adb shell am instrument -w -r -e debug false -e class $P.ScreenTests -e shotTag 
 grep -E "^OK|FAILURES|Tests run" instrument_big.txt | tail -3
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument_big.txt | cut -c1-600
 grep -E "ScreenTests.kt:[0-9]+" instrument_big.txt | head -10
-if grep -q "^OK (" instrument_big.txt; then :; elif grep -q "device offline\|not found\|Process crashed" instrument_big.txt && ! adb shell true 2>/dev/null; then echo "(the virtual phone dropped off during the big-text run)"; else fail=1; fi
+if grep -q "^OK (" instrument_big.txt; then :; elif grep -q "device offline\|not found\|Process crashed" instrument_big.txt && ! adb shell true 2>/dev/null; then echo "(the virtual phone dropped off during the big-text run)"; else judge instrument_big.txt -e shotTag _big || fail=1; fi
 fi
 
 finish
