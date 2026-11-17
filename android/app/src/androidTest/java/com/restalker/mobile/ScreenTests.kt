@@ -83,8 +83,11 @@ class ScreenTests {
         compose.onNodeWithTag("add").performClick()
         compose.onNodeWithTag("f-link").performTextInput("https://www.ebay.com/itm/12345")
         compose.onNodeWithTag("f-cap").performTextInput("120")
-        compose.onNodeWithTag("f-save").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("f-err").fetchSemanticsNodes().isNotEmpty() }
+        // (the keyboard is still sliding in: a tap during that can miss - as for a person, tap again)
+        for (k in 0 until 3) {
+            compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
+            try { compose.waitUntil(4_000) { compose.onAllNodesWithTag("f-err").fetchSemanticsNodes().isNotEmpty() }; break } catch (e: Throwable) { if (k == 2) throw e }
+        }
         shot("t7_bad_link")
         compose.onNodeWithTag("f-link").performTextClearance()
         compose.onNodeWithTag("f-link").performTextInput("B0TEST0009")

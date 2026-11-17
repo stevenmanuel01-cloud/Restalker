@@ -68,8 +68,8 @@ if [ ! -f apk/next/next1.apk ] || [ ! -f apk/next/next2.apk ]; then echo "NO NEW
   if [ "$api" -ge 31 ]; then
     if waitvc $((v0+1)); then echo "updated by itself, no question: OK (now $(vc))"
     else echo "DID NOT UPDATE BY ITSELF on API $api"; adb shell dumpsys notification --noredact | grep -A1 "Restalker update" | head -4; fail=1; fi
-    # C) and the next one too
-    adb shell appops set $P REQUEST_INSTALL_PACKAGES allow
+    # C) and the next one too (Android allows one silent update a minute at most - real updates are hours apart)
+    sleep 65; adb shell appops set $P REQUEST_INSTALL_PACKAGES allow
     put apk/next/next2.apk; trig $s2 1.7.2
     if waitvc $((v0+2)); then echo "next update by itself too: OK (now $(vc))"; else echo "SECOND SELF-UPDATE FAILED"; fail=1; fi
   else
