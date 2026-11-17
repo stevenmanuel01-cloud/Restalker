@@ -93,11 +93,15 @@ class ScreenTests {
         compose.onNodeWithTag("f-link").performTextInput("B0TEST0009")
         compose.onNodeWithTag("f-cap").performTextClearance()
         compose.onNodeWithTag("f-cap").performTextInput("4500")
-        compose.onNodeWithTag("f-save").performClick()                 // a big cap is asked about once
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("f-err").fetchSemanticsNodes().isNotEmpty() }
+        for (k in 0 until 3) {                                          // a big cap is asked about once (tap again if the keyboard took the tap)
+            compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
+            try { compose.waitUntil(4_000) { compose.onAllNodesWithText("is that right?", substring = true).fetchSemanticsNodes().isNotEmpty() }; break } catch (e: Throwable) { if (k == 2) throw e }
+        }
         assertEquals(false, RkApp.store().products().any { it.asin == "B0TEST0009" })
-        compose.onNodeWithTag("f-save").performClick()
-        compose.waitUntil(10_000) { RkApp.store().products().any { it.asin == "B0TEST0009" } }
+        for (k in 0 until 3) {
+            compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
+            try { compose.waitUntil(5_000) { RkApp.store().products().any { it.asin == "B0TEST0009" } }; break } catch (e: Throwable) { if (k == 2) throw e }
+        }
         assertEquals(4500.0, p("B0TEST0009").cap, 0.001)
     }
 

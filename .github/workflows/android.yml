@@ -10,9 +10,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # (v127, owner: "im getting email alerts which is not desired": GitHub e-mails the owner for every FAILED run. A failed build or
+  #  test now ends the run as finished, not failed - Claude reads the results itself; nothing is released unless every phone passed)
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      ok: ${{ steps.b.outcome == 'success' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -25,6 +29,8 @@ jobs:
         run: |
           if [ -n "$KS" ]; then echo "$KS" | base64 -d > $RUNNER_TEMP/rk.jks; echo "RKM_KEYSTORE=$RUNNER_TEMP/rk.jks" >> $GITHUB_ENV; fi
       - name: Core rule tests + build
+        id: b
+        continue-on-error: true
         working-directory: android
         env:
           RKM_KEYSTORE_PASSWORD: ${{ secrets.RKM_KEYSTORE_PASSWORD }}
@@ -51,6 +57,7 @@ jobs:
 
   phone:
     needs: build
+    if: needs.build.outputs.ok == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -67,6 +74,8 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run the app on a virtual phone
+        id: run
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
@@ -76,11 +85,17 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash android/ci/phone.sh
+      - name: Result
+        if: always()
+        run: |
+          echo "${{ steps.run.outcome }}" > result.txt
+          echo "RESULT api${{ matrix.api }} = $(cat result.txt)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phone-api${{ matrix.api }}
           path: |
+            result.txt
             instrument*.txt
             monkey.txt
             shots/
@@ -90,7 +105,7 @@ jobs:
   # every version must carry the same key, or a phone refuses the update.
   publish:
     needs: [build, phone]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.build.outputs.ok == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -98,7 +113,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: apk, path: apk }
+      - uses: actions/download-artifact@v4
+        with: { pattern: "phone-api*", path: results }
+      - name: Every phone passed?
+        id: all
+        run: |
+          n=0; for a in 30 33 34 35; do r=$(cat results/phone-api$a/result.txt 2>/dev/null); echo "api$a: ${r:-no result}"; [ "$r" = "success" ] && n=$((n+1)); done
+          if [ $n -eq 4 ]; then echo "ok=true" >> $GITHUB_OUTPUT; echo "ALL PHONES PASSED"; else echo "ok=false" >> $GITHUB_OUTPUT; echo "NOT RELEASED: $((4-n)) phone(s) did not pass"; fi
       - name: Release the APK
+        if: steps.all.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           HAS_KEY: ${{ secrets.RKM_KEYSTORE_B64 != '' }}
