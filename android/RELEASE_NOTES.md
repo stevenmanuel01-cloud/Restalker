@@ -10,6 +10,8 @@
 - Several phones / tablets: link each one with the same desktop code - all stay the same and only one of them buys (the PC first).
   1.4-1.9 could take a second phone for the desktop.
 - Share: Settings -> Share Restalker shows a QR code of the download page.
+- FIX: Buy 2 / Buy 3 was forgotten at every start since 1.8 (and a linked PC then got "Buy 1" back from the phone). Found by the
+  phone-and-PC link test.
 
 # Restalker Mobile 1.9 (2026-11-17; from the app's own report)
 - Pictures: on some pages a small badge came before the product picture, and its picture (which Amazon's picture server does not

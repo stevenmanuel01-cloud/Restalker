@@ -631,6 +631,19 @@ object CoreTests {
             posts.add(LinkCrypto.seal(sec, MiniJson.write(bye)))
             aBuys = false; la.touched(); la.cycle(); lb.cycle(); la.cycle()
             one && noDesk && bothStand && !lb.othersBuy() }
+        t("106_every_product_field_kept_over_a_restart") {
+            // (a regression guard: 1.8 / 1.9 lost Buy 1/2/3 at every start - a line of the reading code had become a comment)
+            val p = Product(id = "x1", asin = "B0TEST0106", name = "N", cap = 12.5, kind = "box", watch = false, buy = true, tokens = listOf("a", "b"),
+                status = "s", price = 9.5, lastCheck = 11, buyable = true, episodeStart = 12, alertedEpisode = 13, inProgress = true, attempted = true,
+                purchased = true, submittedAt = 14, orderNumber = "111-1", fails = 2, failEpisode = 15, lockedUntil = 16, practiceOkAt = 17, year = "2026",
+                set = "S", image = "https://m.media-amazon.com/images/I/81Xk2abcL.jpg", qty = 3, qtySince = 18, overCap = true, dSt = "over", dPr = 7.5,
+                dAt = 19, msrp = 20.0, tcg = 21.0, others = listOf(mapOf("s" to "Target", "st" to "in", "pr" to 1.5, "at" to 22L)), picTriedAt = 23,
+                dImg = "https://tcgplayer-cdn.tcgplayer.com/product/1_200w.jpg")
+            val q = Product.fromMap(MiniJson.obj(MiniJson.write(p.toMap()))!!)!!
+            q.copy(others = emptyList()) == p.copy(others = emptyList()) && q.others.size == 1 && q.qty == 3 && q.qtySince == 18L &&
+                Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(watching = true, buying = true, practice = false, intervalSec = 120, wifiOnly = true, autoReport = false,
+                    runIcon = false, autoUpdate = false).toMap()))) == Settings(watching = true, buying = true, practice = false, intervalSec = 120, wifiOnly = true,
+                    autoReport = false, runIcon = false, autoUpdate = false) }
         return results
     }
 

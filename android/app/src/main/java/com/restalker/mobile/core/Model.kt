@@ -91,7 +91,9 @@ data class Product(
                 failEpisode = m["failEpisode"].asLong() ?: 0, lockedUntil = m["lockedUntil"].asLong() ?: 0, practiceOkAt = m["practiceOkAt"].asLong() ?: 0,
                 year = m["year"].asStr() ?: "", set = m["set"].asStr() ?: "",
                 // 1.7: a kept address that is not a product picture (an Amazon logo / placeholder from 1.5-1.6) is dropped and looked for again
-                image = Pics.canon(m["image"].asStr()) ?: "",            // (1.8: kept in its plain form) qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
+                image = Pics.canon(m["image"].asStr()) ?: "",            // (1.8: kept in its plain form)
+                // (2.0: Buy 1/2/3 is read again - 1.8 and 1.9 lost it at every start, and a linked desktop got Buy 1 back from the phone)
+                qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
                 overCap = m["overCap"].asBool(), dSt = m["dSt"].asStr() ?: "", dPr = m["dPr"].asDouble(), dAt = m["dAt"].asLong() ?: 0,
                 msrp = m["msrp"].asDouble(), tcg = m["tcg"].asDouble(),
                 others = m["others"].asList().mapNotNull { it.asMap() }.take(8),
