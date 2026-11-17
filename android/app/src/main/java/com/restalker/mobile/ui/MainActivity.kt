@@ -47,6 +47,7 @@ import com.restalker.mobile.Notifier
 import com.restalker.mobile.Reporter
 import com.restalker.mobile.RkApp
 import com.restalker.mobile.WatchService
+import com.restalker.mobile.Updater
 import com.restalker.mobile.core.APP_VERSION
 import com.restalker.mobile.core.Asin
 import com.restalker.mobile.core.Engine
@@ -117,25 +118,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); sharedText(intent) }
     override fun onResume() {
-        super.onResume(); bump(); ticker.post(tick)
+        super.onResume(); shown = true; bump(); ticker.post(tick)
+        if (update.value != null) checkUpdate()                               // (back from "allow installs": go on at once)
         if (DeskLink.get().linked()) DeskLink.cycleAsync { bump() }          // (opening the app: the desktop's latest at once)
         com.restalker.mobile.HealthRunner.tick(this)                          // 1.7: the self-check (a report by itself when something is wrong)
     }
-    override fun onPause() { ticker.removeCallbacks(tick); super.onPause() }
+    override fun onPause() { shown = false; ticker.removeCallbacks(tick); super.onPause() }
     override fun onDestroy() { RkApp.listeners.remove(bump); super.onDestroy() }
 
     private fun sharedText(i: Intent?) {
         if (i?.action == Intent.ACTION_SEND) i.getStringExtra(Intent.EXTRA_TEXT)?.let { t -> shared.value = Asin.firstLink(t) ?: t }
     }
 
+    /** 1.7: the app updates itself (Updater); the screen shows what it is doing. */
     private fun checkUpdate() = Thread {
-        try {
-            val c = java.net.URL(UPDATE_URL).openConnection() as java.net.HttpURLConnection
-            c.connectTimeout = 10_000; c.readTimeout = 10_000; c.useCaches = false
-            val m = MiniJson.obj(c.inputStream.bufferedReader().use { it.readText() }) ?: return@Thread
-            val code = m["code"].asLong() ?: 0
-            if (code > BuildConfig.VERSION_CODE) runOnUiThread { update.value = (m["version"].asStr() ?: "?") to (m["apk"].asStr() ?: RELEASES) }
-        } catch (e: Exception) { }
+        Updater.tick(this, force = true)
+        for (k in 0 until 40) { Thread.sleep(500); if (Updater.available != null || Updater.state.isNotEmpty() && !Updater.state.startsWith("downloading")) break }
+        runOnUiThread { update.value = Updater.available?.let { it.version to it.apk } }
     }.start()
 
     private fun signedIn() = CookieManager.getInstance().getCookie("https://www.amazon.com")?.let { it.contains("at-main=") || it.contains("x-main=") || it.contains("sess-at-main=") } == true
@@ -269,7 +268,16 @@ class MainActivity : ComponentActivity() {
             }
             item {
                 Column(Modifier.padding(horizontal = 16.dp)) {
-                    update.value?.let { (v, apk) -> Banner("Update available: Restalker Mobile v$v", "Get it", "update") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apk))) } }
+                    // 1.7: updates install by themselves; you are only asked for what Android needs from you (once)
+                    update.value?.let { (v, apk) ->
+                        when {
+                            !st.autoUpdate -> Banner("Update available: Restalker Mobile v$v", "Get it", "update") { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apk))) }
+                            !Updater.allowed(this@MainActivity) -> Banner("Update v$v is ready. Let Restalker install its own updates (once) - then you never download again.", "Allow", "update-allow") {
+                                try { startActivity(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
+                                catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apk))) } }
+                            else -> Banner("Updating to v$v by itself: ${Updater.state.ifBlank { "starting" }}", "Now", "update-now") { Updater.tick(this@MainActivity, force = true) }
+                        }
+                    }
                     if (st.signinNeededAt > 0 && now - st.signinNeededAt < 3_600_000L) Banner("Amazon wants you to sign in again. Nothing is bought until you do.", "Sign in", "signin-banner") { openBrowser(BrowserActivity.SIGNIN_URL) }
                     else if (products.any { it.buy } && st.buying && !signed) Banner("Products are set to Buy, but Amazon is not signed in.", "Sign in", "signin-banner") { openBrowser(BrowserActivity.SIGNIN_URL) }
                     if (!notes) Banner("Notifications are off - you won't hear about restocks or purchases.", "Fix", "notes-banner") { openNotifSettings() }
@@ -779,6 +787,11 @@ class MainActivity : ComponentActivity() {
                     SwitchRow("Wi-Fi only", "Saves mobile data", st.wifiOnly, "wifionly") { on -> store.setSettings { it.copy(wifiOnly = on) }; store.log("Wi-Fi only switched ${if (on) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
                     // 1.5 (owner: "We can keep a single icon at the top to indicate that its running, but it should be clearable by user option")
+                    // 1.7 (owner: "Why do i have to manually download everything still?")
+                    SwitchRow("Update by itself", if (st.autoUpdate) "New versions install by themselves (never during a purchase). ${Updater.state}".trim()
+                        else "Off - you are told when there is a new version", st.autoUpdate, "autoupdate") { on ->
+                        store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true) }
+                    HorizontalDivider(color = Look.Line)
                     SwitchRow("Running icon", if (st.runIcon) "An icon at the top while it watches" else "No icon - the notice is tucked away at the bottom of your notifications",
                         st.runIcon, "runicon") { on ->
                         store.setSettings { it.copy(runIcon = on) }; store.log("Running icon switched ${if (on) "ON" else "OFF"}.")
@@ -836,6 +849,8 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** 1.7: the app's screen is in front (an update's "Install" question can then be shown at once). */
+        @Volatile var shown = false
         const val UPDATE_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/latest.json"
         const val RELEASES = "https://github.com/stevenmanuel01-cloud/Restalker/releases"
     }

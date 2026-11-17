@@ -23,6 +23,7 @@ data class HealthIn(
     val hoursWatching: Double = 0.0,
     val busy: Boolean = false,
     val crash: String? = null,
+    val updateFail: String? = null,       // 1.7: the last self-update failed
 )
 
 object Health {
@@ -60,6 +61,7 @@ object Health {
         }
         if (i.linked && i.linkFailsInRow >= 10) out += "link" to "the desktop link failed ${i.linkFailsInRow} rounds in a row: ${i.linkLast.take(120)}"
         i.mbPerHour?.let { if (i.hoursWatching >= 1.0 && it > DATA_MB_H) out += "data" to "high data use: about ${it.toInt()} MB an hour" }
+        i.updateFail?.let { out += "update" to it.take(200) }
         val bought = i.purchases.map { it.asin }.toSet()
         val odd = i.products.filter { it.purchased && it.asin !in bought }
         if (odd.isNotEmpty()) out += "latch" to "marked bought with no purchase record: ${odd.take(5).joinToString(", ") { it.asin }}"

@@ -50,6 +50,40 @@ else
 fi
 adb shell cmd connectivity airplane-mode disable 2>/dev/null || true; adb shell svc wifi enable; adb shell svc data enable
 
+echo "=== the app updates itself (1.7)"
+api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
+vc() { adb shell dumpsys package $P | grep -m1 -o 'versionCode=[0-9]*' | cut -d= -f2; }
+put() { adb push "$1" /data/local/tmp/u.apk >/dev/null && adb shell chmod 644 /data/local/tmp/u.apk && adb shell run-as $P cp /data/local/tmp/u.apk cache/u.apk; }
+trig() { adb shell am start -n $P/.ui.MainActivity >/dev/null 2>&1; sleep 3; adb shell am broadcast -n $P/.UpdateTestReceiver --es apk cache/u.apk --es sha "$1" --es version "$2" >/dev/null; }
+waitvc() { for i in $(seq 1 30); do [ "$(vc)" = "$1" ] && return 0; sleep 2; done; return 1; }
+if [ ! -f apk/next/next1.apk ] || [ ! -f apk/next/next2.apk ]; then echo "NO NEWER TEST COPIES BUILT"; fail=1; else
+  v0=$(vc); s1=$(sha256sum apk/next/next1.apk | cut -d' ' -f1); s2=$(sha256sum apk/next/next2.apk | cut -d' ' -f1)
+  adb shell appops set $P REQUEST_INSTALL_PACKAGES allow
+  # A) a file that is not the released one: refused
+  put apk/next/next1.apk; trig 0000000000000000000000000000000000000000000000000000000000000000 9.9; sleep 12
+  if [ "$(vc)" = "$v0" ]; then echo "wrong file refused: OK"; else echo "WRONG FILE WAS INSTALLED"; fail=1; fi
+  # B) the app was installed by something else (your browser / files): Android asks once - a notice to tap
+  adb shell cmd notification allow_listener com.android.shell 2>/dev/null || true
+  put apk/next/next1.apk; trig $s1 1.7.1; sleep 15
+  if adb shell dumpsys notification --noredact | grep -q "Restalker update"; then echo "asks you once (tap Install): OK"
+  elif [ "$(vc)" = "$((v0+1))" ]; then echo "installed without asking (this phone allows it): OK"
+  else echo "NO 'TAP TO INSTALL' NOTICE AND NOT INSTALLED"; adb exec-out run-as $P cat files/rk-test/log.txt 2>/dev/null | tail -5; fail=1; fi
+  # C) once the app installed itself: Android 12+ updates without asking
+  adb install -r -g -i $P apk/outputs/apk/debug/app-debug.apk >/dev/null 2>&1 || echo "(could not set the installer)"
+  adb shell appops set $P REQUEST_INSTALL_PACKAGES allow; v0=$(vc)
+  put apk/next/next1.apk; trig $s1 1.7.1
+  if waitvc $((v0+1)); then echo "updated by itself, no question: OK (now $(vc))"
+  elif [ "$api" -lt 31 ]; then echo "Android $api: asks each time (Android 11 and older have no silent update) - expected"
+  else echo "DID NOT UPDATE BY ITSELF on API $api"; adb shell dumpsys notification --noredact | grep -A2 "Restalker update" | head -5; fail=1; fi
+  # D) and the next one too (installed by itself now)
+  if [ "$api" -ge 31 ]; then
+    adb shell appops set $P REQUEST_INSTALL_PACKAGES allow
+    put apk/next/next2.apk; trig $s2 1.7.2
+    if waitvc $((v0+2)); then echo "next update by itself too: OK (now $(vc))"; else echo "SECOND SELF-UPDATE FAILED"; fail=1; fi
+    adb shell dumpsys package $P | grep -m1 -i "installerPackageName"
+  fi
+fi
+
 if adb exec-out run-as $P cat files/crash.txt 2>/dev/null | grep -q .; then echo "THE APP WROTE A CRASH:"; adb exec-out run-as $P cat files/crash.txt | head -30; fail=1; fi
 adb logcat -d > logcat.txt || true
 grep -E "FATAL EXCEPTION|AndroidRuntime" -A12 logcat.txt | head -60

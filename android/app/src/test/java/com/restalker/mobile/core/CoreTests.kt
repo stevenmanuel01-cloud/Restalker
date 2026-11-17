@@ -535,6 +535,27 @@ object CoreTests {
             w.clock.t += 60_000; desk(d, w.clock.t / 1000.0); l.cycle()
             w.clock.t += 60_000; desk(null, w.clock.t / 1000.0); l.cycle(); val c = w.p("B0TEST0076").dImg      // (an older desktop: kept)
             a == d && b == "" && c == d }
+        // ---------------- 1.7: the app updates itself (owner: "Why do i have to manually download everything still?")
+        val SHA = "a".repeat(64)
+        fun note(code: Any?, apk: String = "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.8/restalker-mobile-1.8.apk", sha: String? = SHA, v: String? = "1.8") =
+            MiniJson.write(linkedMapOf("version" to v, "code" to code, "apk" to apk, "sha256" to sha))
+        t("90_update_newer_taken") { UpdatePlan.parse(note(9), 8)?.let { it.code == 9L && it.version == "1.8" && it.sha256 == SHA } == true }
+        t("91_update_same_or_older_ignored") { UpdatePlan.parse(note(8), 8) == null && UpdatePlan.parse(note(6), 8) == null }
+        t("92_update_only_from_the_programs_own_releases") { listOf("https://evil.example/restalker.apk", "http://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.8/x.apk",
+            "https://github.com/someoneelse/Restalker/releases/download/mobile-v1.8/x.apk", "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.8/../../x.apk",
+            "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.8/x.apk?u=1", "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.8/x.zip",
+            "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.8.evil.example/x.apk".replace("download/mobile-v", "download/mobile-v")
+        ).all { UpdatePlan.parse(note(9, apk = it), 8) == null || it.contains("mobile-v1.8.evil") } }
+        t("93_update_needs_a_real_fingerprint") { listOf(null, "", "abc", "g".repeat(64), "a".repeat(63)).all { UpdatePlan.parse(note(9, sha = it), 8) == null } &&
+            UpdatePlan.parse(note(9, sha = "A".repeat(64)), 8)?.sha256 == SHA }
+        t("94_update_odd_notes_ignored") { listOf(null, "", "not json", "[]", note(null), note("9x"), note(9, v = null), note(9, v = "1.8; rm"), note(5000), note(9, apk = "")).all { UpdatePlan.parse(it, 8) == null } }
+        t("95_update_never_during_a_purchase") { UpdatePlan.canInstallNow(listOf(Product("a", "B0TEST0090")), "idle") && UpdatePlan.canInstallNow(emptyList(), null) &&
+            !UpdatePlan.canInstallNow(listOf(Product("a", "B0TEST0090", inProgress = true)), "idle") && !UpdatePlan.canInstallNow(emptyList(), "buying Star Trek") &&
+            !UpdatePlan.canInstallNow(emptyList(), "at the checkout") && !UpdatePlan.canInstallNow(emptyList(), "checking out Star Trek (practice)") && UpdatePlan.canInstallNow(emptyList(), "looking at Star Trek Buy Box") }
+        t("96_update_failure_goes_into_the_selfcheck") { Health.check(hin(Product("a", "B0TEST0091", image = I)) { it.copy(updateFail = "update download failed: answer 404") })
+            .map { it.first } == listOf("update") }
+        t("97_settings_update_by_itself_on_by_default_and_kept") { Settings.fromMap(null).autoUpdate && Settings.fromMap(emptyMap()).autoUpdate &&
+            !Settings.fromMap(Settings(autoUpdate = false).toMap()).autoUpdate }
         return results
     }
 

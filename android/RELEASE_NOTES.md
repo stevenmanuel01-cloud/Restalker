@@ -1,3 +1,11 @@
+# Restalker Mobile 1.7 (2026-11-16; includes 1.6)
+- Updates by itself: new versions download, are checked, and install on their own (never during a purchase). Android asks you once
+  to allow it, and once more to tap Install on the next update - after that, no more downloading.
+- Pictures fixed: 1.5/1.6 kept Amazon's grey placeholder dot from the phone page instead of the product picture. The real picture is
+  taken now, downloaded by the app itself; the desktop's picture is shown when the phone has none.
+- Self-check: the app sends a report to Claude by itself when something is wrong (pictures, watching stopped, desktop link, data use,
+  a product marked bought without an order, a crash, a failed update).
+
 # Restalker Mobile 1.6 (2026-11-16; from your report)
 - FIX: a product the desktop had bought BEFORE the link (weeks ago) was marked "Bought" here, and the phone told the desktop "Buy off".
   Now only a purchase since the link counts; such products are corrected once by themselves.

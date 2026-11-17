@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Test builds only (never in the app you install): lets the virtual-phone tests hand the updater a local file. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver android:name=".UpdateTestReceiver" android:exported="true" />
+    </application>
+</manifest>

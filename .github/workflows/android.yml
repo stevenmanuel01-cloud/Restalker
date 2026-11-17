@@ -28,7 +28,11 @@ jobs:
         working-directory: android
         env:
           RKM_KEYSTORE_PASSWORD: ${{ secrets.RKM_KEYSTORE_PASSWORD }}
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+        run: |
+          # two "newer" copies of the test app first (version code +1 and +2): the virtual phone checks that the app updates itself
+          mkdir -p app/build/next
+          for b in 1 2; do gradle --no-daemon -q :app:assembleDebug -PrkCodeBump=$b && cp app/build/outputs/apk/debug/app-debug.apk app/build/next/next$b.apk; done
+          gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
       - name: Core test report
         if: always()
         run: |
@@ -41,6 +45,7 @@ jobs:
             android/app/build/outputs/apk/release/*.apk
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/outputs/apk/androidTest/debug/*.apk
+            android/app/build/next/*.apk
             android/app/build/reports/tests/
           if-no-files-found: warn
 

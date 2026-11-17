@@ -47,6 +47,7 @@ class WatchService : Service() {
         tick.postDelayed(object : Runnable {        // 1.7: the self-check (it sends a report by itself when something is wrong)
             override fun run() {
                 HealthRunner.tick(this@WatchService)
+                Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
                 tick.postDelayed(this, 60_000)
             }
         }, 30_000)

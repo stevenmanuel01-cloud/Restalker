@@ -28,7 +28,8 @@ object HealthRunner {
             picFails = { PicCache.failures(it) }, picStatus = { PicCache.status[it] }, picInfo = { Engine.picInfo[it] },
             serviceRunning = svc != null, serviceSince = svc?.since ?: 0L, net = WatchService.netKind(ctx), deskBuys = link.desktopBuys(),
             linked = link.linked(), linkFailsInRow = DeskLink.failsInRow, linkLast = DeskLink.lastResult,
-            mbPerHour = svc?.mbPerHour(), hoursWatching = svc?.hours() ?: 0.0, busy = svc?.engine?.busyWith?.let { it != "idle" && it.contains("buy", true) } ?: false,
+            mbPerHour = svc?.mbPerHour(), hoursWatching = svc?.hours() ?: 0.0, busy = svc?.engine?.busyWith?.startsWith("checking out") ?: false,
+            updateFail = Updater.failed,
             crash = try { crashFile(ctx).takeIf { it.isFile }?.readText()?.take(4000) } catch (e: Exception) { null })
     }
 
