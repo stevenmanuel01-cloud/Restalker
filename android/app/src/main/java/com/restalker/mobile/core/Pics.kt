@@ -15,7 +15,8 @@ object Pics {
     }
     private val AMZ = Regex("^https://m\\.media-amazon\\.com/images/I/[A-Za-z0-9+%-]{5,40}\\.jpg$")
     /** Other stores' picture servers (the linked desktop's picture of a product can come from them). */
-    private val OTHER = Regex("^https://(target\\.scene7\\.com|pisces\\.bbystatic\\.com|i5\\.walmartimages\\.com|media\\.gamestop\\.com)/[^\\s\"'<>]+$",
+    // (2.0: the same picture servers the PC takes its pictures from - TCGplayer's catalogue photo first, then the stores)
+    private val OTHER = Regex("^https://([a-z0-9-]+\\.)*(scene7\\.com|bbystatic\\.com|walmartimages\\.com|gamestop\\.com|tcgplayer\\.com|target\\.com|bestbuy\\.com)/[^\\s\"'<>]+$",
         RegexOption.IGNORE_CASE)
 
     /** A picture this phone read from an Amazon page (kept in its plain form). */

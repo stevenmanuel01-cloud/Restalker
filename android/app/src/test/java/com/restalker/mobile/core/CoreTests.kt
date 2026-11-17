@@ -458,7 +458,9 @@ object CoreTests {
             Pics.small("https://target.scene7.com/is/image/Target/x") == "https://target.scene7.com/is/image/Target/x" }
         t("74_pics_other_stores_only_from_desktop") { Pics.validAny("https://target.scene7.com/is/image/Target/GUEST_1?wid=200") && !Pics.valid("https://target.scene7.com/is/image/Target/GUEST_1")
             && Pics.validAny("https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6686/6686924_sd.jpg") && !Pics.validAny("https://evil.example/x.jpg")
-            && Pics.desk(RAW) == I && Pics.desk("https://evil.example/x.jpg") == null }
+            && Pics.desk(RAW) == I && Pics.desk("https://evil.example/x.jpg") == null
+            && Pics.validAny("https://tcgplayer-cdn.tcgplayer.com/product/12345_200w.jpg") && Pics.validAny("https://i5.walmartimages.com/seo/x.jpeg?odnHeight=192")
+            && !Pics.validAny("https://tcgplayer.com.evil.example/x.jpg") && !Pics.validAny("http://tcgplayer-cdn.tcgplayer.com/x.jpg") }
         t("75_kept_pictures_put_in_plain_form_placeholder_dropped") {
             val p = Product.fromMap(Product("a", "B0TEST0070", image = GREY, picTriedAt = 99).toMap())!!
             val q = Product.fromMap(Product("a", "B0TEST0070", image = "https://m.media-amazon.com/images/I/810ZB7WLddL._AC_UL495_SR495,495_.jpg", picTriedAt = 99).toMap())!!
