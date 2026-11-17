@@ -1,6 +1,6 @@
 # Restalker Mobile 1.7 (2026-11-16; includes 1.6)
 - Updates by itself: new versions download, are checked, and install on their own (never during a purchase). Android asks you once
-  to allow it, and once more to tap Install on the next update - after that, no more downloading.
+  to allow it (Allow) - after that, no more downloading. (Android 11 and older: also a tap on Install for each update.)
 - Pictures fixed: 1.5/1.6 kept Amazon's grey placeholder dot from the phone page instead of the product picture. The real picture is
   taken now, downloaded by the app itself; the desktop's picture is shown when the phone has none.
 - Self-check: the app sends a report to Claude by itself when something is wrong (pictures, watching stopped, desktop link, data use,

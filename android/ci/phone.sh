@@ -62,29 +62,25 @@ if [ ! -f apk/next/next1.apk ] || [ ! -f apk/next/next2.apk ]; then echo "NO NEW
   # A) a file that is not the released one: refused
   put apk/next/next1.apk; trig 0000000000000000000000000000000000000000000000000000000000000000 9.9; sleep 12
   if [ "$(vc)" = "$v0" ]; then echo "wrong file refused: OK"; else echo "WRONG FILE WAS INSTALLED"; fail=1; fi
-  # B) the app was installed by something else (your browser / files): Android asks once - a notice to tap
-  adb shell cmd notification allow_listener com.android.shell 2>/dev/null || true
-  put apk/next/next1.apk; trig $s1 1.7.1; sleep 15
-  if adb shell dumpsys notification --noredact | grep -q "Restalker update"; then echo "asks you once (tap Install): OK"
-  elif [ "$(vc)" = "$((v0+1))" ]; then echo "installed without asking (this phone allows it): OK"
-  else echo "NO 'TAP TO INSTALL' NOTICE AND NOT INSTALLED"; adb exec-out run-as $P cat files/rk-test/log.txt 2>/dev/null | tail -5; fail=1; fi
-  # C) once the app installed itself: Android 12+ updates without asking
-  adb install -r -g -i $P apk/outputs/apk/debug/app-debug.apk >/dev/null 2>&1 || echo "(could not set the installer)"
-  adb shell appops set $P REQUEST_INSTALL_PACKAGES allow; v0=$(vc)
+  # B) the first update by the app itself (the app was installed by something else - your browser / files):
+  #    Android 12+ (API 31+) installs it without asking; Android 11 and older ask once - a notice to tap
   put apk/next/next1.apk; trig $s1 1.7.1
-  if waitvc $((v0+1)); then echo "updated by itself, no question: OK (now $(vc))"
-  elif [ "$api" -lt 31 ]; then echo "Android $api: asks each time (Android 11 and older have no silent update) - expected"
-  else echo "DID NOT UPDATE BY ITSELF on API $api"; adb shell dumpsys notification --noredact | grep -A2 "Restalker update" | head -5; fail=1; fi
-  # D) and the next one too (installed by itself now)
   if [ "$api" -ge 31 ]; then
+    if waitvc $((v0+1)); then echo "updated by itself, no question: OK (now $(vc))"
+    else echo "DID NOT UPDATE BY ITSELF on API $api"; adb shell dumpsys notification --noredact | grep -A1 "Restalker update" | head -4; fail=1; fi
+    # C) and the next one too
     adb shell appops set $P REQUEST_INSTALL_PACKAGES allow
     put apk/next/next2.apk; trig $s2 1.7.2
     if waitvc $((v0+2)); then echo "next update by itself too: OK (now $(vc))"; else echo "SECOND SELF-UPDATE FAILED"; fail=1; fi
-    adb shell dumpsys package $P | grep -m1 -i "installerPackageName"
+  else
+    sleep 15
+    if adb shell dumpsys notification --noredact | grep -q "Restalker update"; then echo "Android $api asks you once (tap Install): OK"
+    else echo "NO 'TAP TO INSTALL' NOTICE ON API $api"; fail=1; fi
   fi
+  adb shell dumpsys package $P | grep -m1 -i "installerPackageName"
 fi
 
-if adb exec-out run-as $P cat files/crash.txt 2>/dev/null | grep -q .; then echo "THE APP WROTE A CRASH:"; adb exec-out run-as $P cat files/crash.txt | head -30; fail=1; fi
+if adb shell run-as $P test -s files/crash.txt 2>/dev/null; then echo "THE APP WROTE A CRASH:"; adb exec-out run-as $P cat files/crash.txt | head -30; fail=1; fi
 adb logcat -d > logcat.txt || true
 grep -E "FATAL EXCEPTION|AndroidRuntime" -A12 logcat.txt | head -60
 bash android/ci/evidence.sh || true
