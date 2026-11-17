@@ -47,7 +47,7 @@ object HealthRunner {
         val (bad, ids) = com.restalker.mobile.core.Pics.repair(store.products(), { PicCache.status[it] }, { PicCache.failures(it) })
         if (bad.isEmpty()) return
         val old = (store.readFile(Engine.BAD_PICS) ?: "").split(Regex("\\s+")).filter { it.isNotBlank() }.toSet()
-        if (!old.containsAll(bad)) store.writeFile(Engine.BAD_PICS, (old + bad).takeLast(500).joinToString("\n"))
+        if (!old.containsAll(bad)) store.writeFile(Engine.BAD_PICS, (old + bad).toList().takeLast(500).joinToString("\n"))
         for (id in ids) store.update(id) { it.copy(image = "", picTriedAt = 0) }
         if (ids.isNotEmpty()) store.log("Pictures: ${ids.size} product(s) had a picture that is not theirs (${bad.joinToString(",")}) - looked for again.")
     }
