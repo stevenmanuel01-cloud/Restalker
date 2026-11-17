@@ -289,6 +289,7 @@ class MainActivity : ComponentActivity() {
         sec < 90 -> "just now"; sec < 3600 -> "${sec / 60} min ago"; sec < 2 * 86400 -> "${sec / 3600} h ago"; else -> "${sec / 86400} days ago" }
 
     /** 2.3: Settings - the PC, this device and every other linked phone / tablet; each one's buying choice can be changed here. */
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     fun LinkedDevices(st: com.restalker.mobile.core.Settings, r: Int) {
         val store = RkApp.store()
