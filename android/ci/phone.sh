@@ -19,6 +19,9 @@ echo "--- failures (name + reason) ---"
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument.txt | cut -c1-600
 sed -n '/^There w/,/^FAILURES/p' instrument.txt | head -60
 grep -q "^OK (" instrument.txt && ! grep -q "FAILURES!!!\|INSTRUMENTATION_FAILED\|Process crashed" instrument.txt || fail=1
+alive() { timeout 20 adb shell true >/dev/null 2>&1; }
+finish() { timeout 300 bash android/ci/evidence.sh || true; exit $fail; }
+if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP TESTS (nothing more can run on it)"; fail=1; finish; fi
 
 echo "=== the phone's reports, read back from outside (the way Claude reads them)"
 code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
@@ -44,12 +47,13 @@ if adb shell ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
 else
   adb shell monkey -p $P --pct-syskeys 0 --pct-appswitch 5 --throttle 120 -s 4242 -v 3000 > monkey.txt 2>&1
   tail -5 monkey.txt
-  if grep -q "CRASH\|ANR in\|Monkey aborted" monkey.txt; then echo "RANDOM TAPS FOUND A CRASH"; grep -A30 "CRASH\|ANR in" monkey.txt | head -60; fail=1; else echo "random taps: no crash, no freeze"; fi
+  if ! grep -q "Monkey finished" monkey.txt; then echo "RANDOM TAPS DID NOT FINISH (the virtual phone dropped off?)"; fail=1
+  elif grep -q "CRASH\|ANR in\|Monkey aborted" monkey.txt; then echo "RANDOM TAPS FOUND A CRASH"; grep -A30 "CRASH\|ANR in" monkey.txt | head -60; fail=1; else echo "random taps: no crash, no freeze"; fi
 fi
 adb shell cmd connectivity airplane-mode disable 2>/dev/null || true; adb shell svc wifi enable; adb shell svc data enable
 
 echo "=== the app updates itself (1.7)"
-up || fail=1
+if ! up; then fail=1; finish; fi
 api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 vc() { adb shell dumpsys package $P | grep -m1 -o 'versionCode=[0-9]*' | cut -d= -f2; }
 put() { adb push "$1" /data/local/tmp/u.apk >/dev/null && adb shell chmod 644 /data/local/tmp/u.apk && adb shell run-as $P cp /data/local/tmp/u.apk cache/u.apk; }
@@ -80,7 +84,7 @@ if [ ! -f apk/next/next1.apk ] || [ ! -f apk/next/next2.apk ]; then echo "NO NEW
 fi
 
 if adb shell run-as $P test -s files/crash.txt 2>/dev/null; then echo "THE APP WROTE A CRASH:"; adb exec-out run-as $P cat files/crash.txt | head -30; fail=1; fi
-adb logcat -d > logcat.txt || true
+timeout 60 adb logcat -d > logcat.txt || true
 grep -E "FATAL EXCEPTION|AndroidRuntime" -A12 logcat.txt | head -60
 # (last: changing the screen size has made the virtual phone drop off afterwards - nothing after this needs it)
 echo "=== big text, small screen"
@@ -94,5 +98,4 @@ grep -E "ScreenTests.kt:[0-9]+" instrument_big.txt | head -10
 if grep -q "^OK (" instrument_big.txt; then :; elif grep -q "device offline\|not found\|Process crashed" instrument_big.txt && ! adb shell true 2>/dev/null; then echo "(the virtual phone dropped off during the big-text run)"; else fail=1; fi
 fi
 
-bash android/ci/evidence.sh || true
-exit $fail
+finish
