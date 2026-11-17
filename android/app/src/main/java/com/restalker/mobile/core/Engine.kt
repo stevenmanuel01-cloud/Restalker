@@ -40,12 +40,19 @@ class Engine(private val store: Store, private val page: Page, private val alert
              /** "Wi-Fi" / "mobile" / null (no internet) - the Android side tells; tests give their own. */
              private val network: () -> String? = { "wifi" },
              /** 1.4: linked with the desktop and the desktop is the buyer right now (this phone only stands by). */
-             private val desktopBuys: () -> Boolean = { false }) {
+             private val desktopBuys: () -> Boolean = { false },
+             /** 2.2: another linked phone / tablet is first in line to buy (this one stands by whatever Who buys says). */
+             private val otherPhoneBuys: () -> Boolean = { false },
+             /** 2.2: who buys on Amazon while linked - "pc" | "phone" | "both" (Settings, Who buys). */
+             private val buyerMode: () -> String = { "pc" },
+             /** 2.2: the PC's latest checkout news for a product on the fast channel: (started | bought | failed | busy, when ms) or null. */
+             private val pcVerdict: (String) -> Pair<String, Long>? = { null }) {
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
         data class Practice(val id: String) : Cmd()        // a practice checkout of this product now (stops before Place your order)
         data class PracticeAny(val asin: String) : Cmd()   // 2.0: a practice checkout of ANY Amazon item that is in stock (nothing is bought)
+        data class Go(val asin: String) : Cmd()             // 2.2: the PC saw it in stock under the cap (Who buys: phone / both) - look now
         object Wake : Cmd()
         object Quit : Cmd()
     }
@@ -88,7 +95,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (st.wifiOnly && net != "wifi") { status("Wi-Fi only is on - waiting for Wi-Fi"); waitFor(30_000); return }
         val watched = store.products().filter { it.watch }
         if (watched.isEmpty()) { status("Watching, but no product is switched on."); waitFor(30_000); return }
-        val desk = desktopBuys()
+        // 2.2: standing by = the linked PC buys and Who buys is "pc" (with "both" this phone watches at its own pace too)
+        val desk = standby()
         if (watched.any { it.buy } && !desk && now() - st.ordersReadAt > ORDERS_EVERY) { readOrders(); return }   // (the desktop reads them while it buys)
         // 1.4: while the linked desktop watches and buys, this phone looks only every 10 minutes (a backup; it saves battery and data)
         val interval = if (desk) maxOf(STANDBY_MS, st.intervalSec * 1000L) else st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
@@ -97,7 +105,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         offlineSince = 0
         if (wait > 0 && pictureOnce()) return
         if (wait > 20_000) page.rest()                  // 2.0: the page closed and quiet until the next look (battery)
-        if (wait > 0) { status(if (desk) "The PC buys · this phone stands by · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
+        if (wait > 0) { status(if (desk) (if (otherPhoneBuys()) "Another phone / tablet buys" else "The PC buys") + " · this phone stands by (a backup look every 30 min - Settings, Who buys) · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
 
@@ -106,6 +114,15 @@ class Engine(private val store: Store, private val page: Page, private val alert
             is Cmd.Quit -> quit = true
             is Cmd.Wake -> {}
             is Cmd.CheckNow -> store.product(c.id)?.let { check(it, manual = true) }
+            is Cmd.Go -> {
+                // 2.2 (owner: "buy only on app (so the desktop is doing the searching work but pushing purchasing to the app)"): the PC's
+                // signal - this phone looks at the product at once and buys it if IT sees it in stock under the cap (the PC's word alone
+                // never buys anything)
+                val p = store.products().firstOrNull { it.asin == c.asin && it.buy && it.watch } ?: return
+                if (!s().watching || !s().buying || buyerMode() == "pc" || otherPhoneBuys() || now() < s().cooldownUntil) return
+                log("${p.label}: the PC saw it in stock - looking now (Who buys: ${buyerMode()}).")
+                check(p, manual = false)
+            }
             is Cmd.BuyNow -> {
                 val p = store.product(c.id) ?: return
                 if (p.purchased || p.attempted) { alerts.needYou("Not bought", "${p.label} was already ordered once - press Re-arm in the app to buy it again.", p); return }
@@ -228,7 +245,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (p.buyable) {
             val practicedThisRestock = s().practice && p.episodeStart > 0 && p.practiceOkAt >= p.episodeStart
             if (canAutoBuy(p) && !practicedThisRestock) buy(p, p.price)
-            else if (p.buy && s().buying && desktopBuys() && overrideDesk != p.id) {
+            else if (p.buy && s().buying && standby() && overrideDesk != p.id) {
                 if (p.alertedEpisode != p.episodeStart) { store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }; log("${p.label}: buyable - the linked desktop buys it (this phone stands by).") }
             }
             else if (!canAutoBuy(p) && !p.purchased && !p.attempted && p.alertedEpisode != p.episodeStart && now() >= s().snoozeUntil) {
@@ -241,7 +258,35 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     private fun canAutoBuy(p: Product): Boolean {
         val st = s()
-        return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold() && (overrideDesk == p.id || !desktopBuys())
+        return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold() &&
+            (overrideDesk == p.id || (!otherPhoneBuys() && (!desktopBuys() || buyerMode() == "both")))
+    }
+
+    /** 2.2: this phone only stands by - another phone / tablet is first in line, or the linked PC buys and Who buys is "pc". */
+    private fun standby(): Boolean = otherPhoneBuys() || (desktopBuys() && buyerMode() == "pc")
+
+    /** 2.2 (Who buys: both): right before Place your order this phone waits for the PC's OWN try at the same product - it orders only if
+     *  that try FAILED (or the PC is not trying it at all); the PC bought it / the PC's word does not come in time -> not ordered here.
+     *  One order per product, whichever is faster. -> null = go ahead, else why not. */
+    private fun holdForPc(p: Product, startedAt: Long): String? {
+        if (buyerMode() != "both" || !desktopBuys() || overrideDesk == p.id) return null
+        val t0 = now()
+        log("${p.label}: at Place your order - waiting for the PC's own try first (Who buys: both; one order only).")
+        var saw = false
+        while (now() - t0 < HOLD_MS) {
+            val v = pcVerdict(p.asin)?.takeIf { it.second >= startedAt - 180_000 }
+            if (v != null) {
+                saw = true
+                when (v.first) {
+                    "bought" -> return "PC: the PC bought it (or its order is being checked) - not ordered here"
+                    "failed" -> { log("${p.label}: the PC's try did not buy it - this phone orders now."); return null }
+                }
+            } else if (!saw && now() - t0 >= HOLD_NONE_MS) {
+                log("${p.label}: the PC is not checking this one out - this phone orders now."); return null
+            }
+            clock.sleep(400)
+        }
+        return "the PC's result did not come in ${HOLD_MS / 1000} s - not ordered here (never two orders)"
     }
 
     /** Amazon asked to sign in: checkouts wait until you opened the sign-in (the app clears it) or for 1 hour. */
@@ -261,7 +306,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
     }
 
     // ------------------------------------------------------------------ buying (the desktop's _try_amazon)
-    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED }
+    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT }
 
     fun buy(p: Product, price: Double?, forcePractice: Boolean = false) {
         val practice = forcePractice || s().practice
@@ -272,13 +317,14 @@ class Engine(private val store: Store, private val page: Page, private val alert
         page.images(true)
         page.visited()                                  // (forget the pages before this checkout)
         var end = End.STOPPED; var why = ""; var order: String? = null; var paid: Double? = price
+        val startedAt = now()
         var practiceFees: Map<String, Any?>? = null
         var submitted = false
         try {
             val b = page.ask(mapOf("bb" to "begin", "product" to p.forPage(), "price" to price, "hit" to now()), 10_000)
             if (b != null && b["ok"] == false && b["reason"] is String) { why = b["reason"] as String; return }
             var seen = 0L
-            val until = now() + CHECKOUT_MS
+            var until = now() + CHECKOUT_MS
             loop@ while (now() < until) {
                 val m = page.ask(mapOf("bb" to "msgs", "since" to seen), 4_000)
                 if (m == null || m["ok"] != true) { clock.sleep(150); continue }
@@ -297,6 +343,15 @@ class Engine(private val store: Store, private val page: Page, private val alert
                                 page.ask(mapOf("bb" to "reply", "n" to x["n"], "value" to mapOf("ok" to false, "reason" to "practice run - stopped before Place your order")), 4_000)
                                 end = End.PRACTICE_OK
                                 continue@loop
+                            }
+                            // 2.2: Who buys = both - the PC's own try first
+                            val h0 = now()
+                            val held = holdForPc(p, startedAt)
+                            until += now() - h0                  // (the wait does not count against the checkout's own time)
+                            if (held != null) {
+                                page.ask(mapOf("bb" to "reply", "n" to x["n"], "value" to mapOf("ok" to false, "reason" to held)), 4_000)
+                                if (held.startsWith("PC: ")) { end = End.PC_BOUGHT; why = held.removePrefix("PC: ") } else { end = End.STOPPED; why = held }
+                                return
                             }
                             // the one-per-product lock: written down BEFORE the page may press Place your order
                             val cur = store.product(p.id)
@@ -376,6 +431,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 store.update(p.id) { it.copy(inProgress = false, practiceOkAt = now(), status = "PRACTICE OK - reached Place your order") }
                 log("${p.label}: $txt")
                 alerts.practice(store.product(p.id) ?: p, txt)
+            }
+            End.PC_BOUGHT -> {
+                // (one order per product: Buy goes off here; the PC's purchase comes over the link as usual)
+                store.update(p.id) { it.copy(inProgress = false, buy = false, status = "THE PC BOUGHT IT - not ordered here") }
+                log("${p.label}: $why (Who buys: both).")
             }
             End.UNCLEAR -> {
                 store.update(p.id) { it.copy(inProgress = false, attempted = true, buy = false, status = "ORDER MAY HAVE BEEN PLACED - check Amazon") }
@@ -507,6 +567,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val VERIFY_LOOKS = longArrayOf(5_000, 15_000, 40_000, 120_000)
         /** 2.0: the id of a practice item (Settings -> Practice checkout with any item): never shared, removed after the practice. */
         const val PRACTICE_ID = "practice-"
+        const val HOLD_MS = 85_000L             // 2.2: Who buys = both - the longest wait at Place your order for the PC's result
+        const val HOLD_NONE_MS = 10_000L        // 2.2: ... and when the PC says nothing at all about this product in that time, it is not trying it
         const val STANDBY_MS = 30 * 60_000L     // 1.6: was 10 min (about 80 MB an hour on the owner's phone); the desktop's view shows meanwhile
         const val PIC_RETRY_MS = 24 * 3600_000L
         fun money(d: Double) = String.format(java.util.Locale.US, "%.2f", d)

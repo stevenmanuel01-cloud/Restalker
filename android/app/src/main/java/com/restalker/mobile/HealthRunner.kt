@@ -26,7 +26,7 @@ object HealthRunner {
         val link = DeskLink.get()
         return HealthIn(now = now, products = s.products(), purchases = s.purchases(), settings = s.settings(),
             picFails = { PicCache.failures(it) }, picStatus = { PicCache.status[it] }, picInfo = { Engine.picInfo[it] },
-            serviceRunning = svc != null, serviceSince = svc?.since ?: 0L, net = WatchService.netKind(ctx), deskBuys = link.othersBuy(),
+            serviceRunning = svc != null, serviceSince = svc?.since ?: 0L, net = WatchService.netKind(ctx), deskBuys = DeskLink.standsBy(),
             linked = link.linked(), linkFailsInRow = DeskLink.failsInRow, linkLast = DeskLink.lastResult,
             mbPerHour = svc?.mbPerHour(), hoursWatching = svc?.hours() ?: 0.0, busy = svc?.engine?.busyWith?.startsWith("checking out") ?: false,
             updateFail = Updater.failed,

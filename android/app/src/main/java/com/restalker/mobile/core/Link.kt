@@ -236,8 +236,12 @@ class Link(private val store: Store, private val net: LinkNet,
             if (d.isNotEmpty()) s.phones[d] = linkedMapOf("at" to (srvTime ?: now), "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(),
                 "av" to (msg["av"].asLong() ?: 0L))
             s.phones.keys.filter { (s.phones[it]?.get("at").asDouble() ?: 0.0) < now - 30 * 86400 }.forEach { s.phones.remove(it) }
-        } else s.peer = linkedMapOf("d" to (msg["d"].asStr() ?: "").take(20), "r" to (msg["r"].asStr() ?: "").take(10), "at" to (srvTime ?: now),
-            "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(), "n" to (msg["items"].asList().size))
+        } else {
+            s.peer = linkedMapOf("d" to (msg["d"].asStr() ?: "").take(20), "r" to (msg["r"].asStr() ?: "").take(10), "at" to (srvTime ?: now),
+                "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(), "n" to (msg["items"].asList().size))
+            takeMode(msg["bm"].asStr(), msg["bmAt"].asDouble())
+        }
+        if (msg["r"].asStr() == "phone") takeMode(msg["bm"].asStr(), msg["bmAt"].asDouble())
         if (msg["hi"].asBool()) s.dirty = true
         for (x in msg["items"].asList().take(500)) {
             val m = x.asMap() ?: continue
@@ -282,7 +286,8 @@ class Link(private val store: Store, private val net: LinkNet,
                     msrp = m["ms"].asDouble(), tcg = m["tc"].asDouble(),
                     others = m["sx"].asList().mapNotNull { it.asMap() }.take(8).map { o ->
                         linkedMapOf("s" to (o["s"].asStr() ?: "").take(20), "st" to (o["st"].asStr() ?: "").take(5), "pr" to o["pr"].asDouble(),
-                            "at" to ((o["at"].asDouble() ?: 0.0) * 1000).toLong()) })
+                            "at" to ((o["at"].asDouble() ?: 0.0) * 1000).toLong(),
+                            "u" to o["u"].asStr()?.takeIf { it.startsWith("https://") && it.length <= 400 }) })     // 2.2: that store's own page
             }
             // 1.7: the desktop table's picture of the product
             if (m.containsKey("im")) q = q.copy(dImg = Pics.desk(m["im"].asStr()) ?: "")
@@ -320,7 +325,8 @@ class Link(private val store: Store, private val net: LinkNet,
         val (ch, sec) = LinkCrypto.parse(s.code) ?: return
         val mine = try { me() } catch (e: Exception) { emptyMap() }
         val o = linkedMapOf<String, Any?>("v" to 1, "d" to s.dev, "r" to "phone", "at" to now, "amz" to (mine["amz"] == true && !bye),
-            "av" to mine["av"], "au" to (mine["au"] == true), "items" to s.recs.values.map { it.post() })
+            "av" to mine["av"], "au" to (mine["au"] == true), "items" to s.recs.values.map { it.post() },
+            "bm" to store.settings().buyMode, "bmAt" to store.settings().buyModeAt / 1000.0)        // 2.2: Who buys on Amazon (the newest choice wins)
         if (bye) o["bye"] = true
         if (hi) o["hi"] = true
         val body = LinkCrypto.seal(sec, MiniJson.write(o))
@@ -396,6 +402,24 @@ class Link(private val store: Store, private val net: LinkNet,
     /** 2.0: the other phones / tablets heard within PHONE_ALIVE. */
     fun otherPhones(): Int { val (dev, ph) = snapPhones; val t = nowS(); return ph.count { (d, v) -> d != dev && t - (v["at"].asDouble() ?: 0.0) < PHONE_ALIVE } }
 
+    /** 2.2: Who buys on Amazon - a newer choice made on the PC's side (echoed from another phone / tablet) is taken here. */
+    private fun takeMode(bm: String?, atS: Double?) {
+        if (bm == null || bm !in Settings.BUY_MODES || atS == null) return
+        val atMs = (atS * 1000).toLong()
+        val st = store.settings()
+        if (atMs > st.buyModeAt && bm != st.buyMode) {
+            store.setSettings { it.copy(buyMode = bm, buyModeAt = atMs) }
+            store.log("Who buys on Amazon: ${modeWord(bm)} (chosen on another linked device).")
+        } else if (atMs > st.buyModeAt) store.setSettings { it.copy(buyModeAt = atMs) }
+    }
+
+    /** 2.2: where the fast channel is: (channel, secret, this device's id) - null when not linked. */
+    fun goTarget(): Triple<String, ByteArray, String>? = synchronized(lock) {
+        val s = load()
+        val (ch, sec) = LinkCrypto.parse(s.code) ?: return null
+        Triple("$ch-go", sec, s.dev)
+    }
+
     /** For the screen: (linked, a short line). */
     fun state(): Pair<Boolean, String> {
         val sn = snap ?: return false to "Not linked"
@@ -411,8 +435,13 @@ class Link(private val store: Store, private val net: LinkNet,
         return true to when {
             peer["bye"].asBool() -> "Linked - desktop stopped ($heard). $mine$also"
             nowS() - at >= DESK_SILENT -> "Linked - desktop silent since $heard. $mine$also"
+            !peer["amz"].asBool() && store.settings().buyMode == "phone" -> "Linked - the PC watches and signals this phone within seconds (heard $heard). $mine$also"
             !peer["amz"].asBool() -> "Linked - desktop auto-buy is off. $mine$also"
+            store.settings().buyMode == "both" -> "Linked - the PC and this phone both buy (heard $heard); this phone orders only if the PC's try failed.$also"
             else -> "Linked - desktop buys (heard $heard). This phone stands by.$also"
         }
     }
 }
+
+/** 2.2: Who buys on Amazon, in words. */
+fun modeWord(m: String): String = when (m) { "phone" -> "the phone"; "both" -> "both"; else -> "the PC" }

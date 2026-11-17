@@ -34,6 +34,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +53,7 @@ import com.restalker.mobile.WatchService
 import com.restalker.mobile.Updater
 import com.restalker.mobile.core.APP_VERSION
 import com.restalker.mobile.core.Asin
+import com.restalker.mobile.core.CapStep
 import com.restalker.mobile.core.Engine
 import com.restalker.mobile.core.Groups
 import com.restalker.mobile.core.MiniJson
@@ -238,7 +242,7 @@ class MainActivity : ComponentActivity() {
         val svc = WatchService.instance
         val now = System.currentTimeMillis()
         val (linked, linkLine) = remember(r) { DeskLink.get().state() }
-        val deskBuys = remember(r) { DeskLink.get().othersBuy() }
+        val deskBuys = remember(r) { DeskLink.standsBy() }
         LazyColumn(Modifier.fillMaxSize().testTag("list"), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
                 Column(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)) {
@@ -476,29 +480,58 @@ class MainActivity : ComponentActivity() {
     /** 2.0 (owner: "tick marks on the line for $0, $MSRP, $TCG, $cap and current listing. The bar can remain red when its over the cap,
      *  but should be green when its under"): where the price stands among the others. */
     @Composable
-    fun PriceBar(p: Product, nowPr: Double?) {
-        val marks = PriceMarks.of(nowPr, p.cap, p.msrp, p.tcg)
-        val under = nowPr != null && nowPr <= p.cap
+    fun PriceBar(p: Product, nowPr: Double?, cap: Double = p.cap, onDrag: (Double) -> Unit = {}, onDrop: (Double) -> Unit = {}) {
+        // 2.2: the scale stays put while the cap mark is dragged (from the values without the dragged cap; room up to 1.6 x)
+        val scale = remember(p.id, p.cap, nowPr, p.msrp, p.tcg) { CapStep.scale(nowPr, p.cap, p.msrp, p.tcg) }
+        val marks = PriceMarks.of(nowPr, cap, p.msrp, p.tcg, scale)
+        val under = nowPr != null && nowPr <= cap
         val barColor = if (nowPr == null) Look.GreyText else if (under) Look.Green else Look.Red
+        var last by remember { mutableStateOf(cap) }
+        var grabbed by remember { mutableStateOf(false) }
         BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp).height(96.dp).testTag("pricebar-${p.asin}")) {
             val w = maxWidth
+            val wPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
             val lineY = 34.dp
+            val valueAt = { x: Float -> CapStep.snap(scale * (x / wPx).coerceIn(0f, 1f)) }
+            // (only a drag that starts ON the cap mark moves it - a tap or a swipe elsewhere on the bar changes nothing)
+            val capPx = wPx * (cap / scale).toFloat().coerceIn(0f, 1f)
+            val grabPx = with(LocalDensity.current) { 36.dp.toPx() }
+            Box(Modifier.fillMaxSize().testTag("capdrag-${p.asin}").pointerInput(p.id, scale, p.cap) {
+                detectHorizontalDragGestures(
+                    onDragStart = { o -> grabbed = Math.abs(o.x - capPx) <= grabPx; if (grabbed) { last = valueAt(o.x); onDrag(last) } },
+                    onDragEnd = { if (grabbed) onDrop(last); grabbed = false }, onDragCancel = { if (grabbed) onDrop(last); grabbed = false },
+                    onHorizontalDrag = { ch, _ -> if (grabbed) { ch.consume(); last = valueAt(ch.position.x); onDrag(last) } })
+            })
             Box(Modifier.offset(y = lineY).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Look.GreySoft))
             if (nowPr != null) Box(Modifier.offset(y = lineY).width(w * marks.frac(nowPr)).height(8.dp).clip(RoundedCornerShape(4.dp)).background(barColor)
                 .testTag(if (under) "pricebar-green" else "pricebar-red"))
             for (m in marks.items) {
                 val x = w * marks.frac(m.value)
                 val now = m.kind == PriceMarks.NOW
+                val isCap = m.kind == PriceMarks.CAP
                 val c = when (m.kind) { PriceMarks.NOW -> barColor; PriceMarks.CAP -> Look.Ink; else -> Look.GreyText }
                 Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = lineY - (if (now) 8.dp else 4.dp)).width(2.dp).height(if (now) 24.dp else 16.dp).background(c))
+                if (isCap) Box(Modifier.offset(x = (x - 9.dp).coerceIn(0.dp, w - 18.dp), y = lineY - 5.dp).size(18.dp).clip(RoundedCornerShape(9.dp))
+                    .background(Look.Ink).border(3.dp, Color.White, RoundedCornerShape(9.dp)).testTag("capknob-${p.asin}"))
                 val labelW = 84.dp
                 val y = if (now) 0.dp else lineY + 18.dp + (if (m.row == 1) 18.dp else 0.dp)
-                Text(m.label, fontSize = if (now) 13.sp else 11.sp, fontWeight = if (now || m.kind == PriceMarks.CAP) FontWeight.Bold else FontWeight.Normal, color = c,
+                Text(m.label, fontSize = if (now) 13.sp else 11.sp, fontWeight = if (now || isCap) FontWeight.Bold else FontWeight.Normal, color = c,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
                     modifier = Modifier.offset(x = (x - labelW / 2).coerceIn(0.dp, w - labelW), y = y).width(labelW).testTag("tick-${m.kind}"))
             }
         }
     }
+
+    /** 2.2: a new cap from the bar or the - / + buttons (the same as Change cap: saved, logged, and the linked PC gets it). */
+    private fun saveCap(p: Product, v: Double) {
+        if (v <= 0 || Math.abs(v - p.cap) < 0.005) return
+        RkApp.store().update(p.id) { it.copy(cap = v) }
+        RkApp.store().log("${p.label}: cap \$${Engine.money(v)}.")
+        bump()
+    }
+
+    /** 2.2: another store's own product page, in your browser (you buy it there yourself). */
+    private fun openOutside(u: String) = try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } catch (e: Exception) { }
 
     @Composable
     fun ProductCard(p: Product, deskBuys: Boolean, tag: String = "product-${p.asin}", onClick: () -> Unit) {
@@ -511,7 +544,7 @@ class MainActivity : ComponentActivity() {
                 Text(p.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 5.dp)) {
                     Chip(c, bg, fg, Modifier.testTag("pstatus-${p.asin}"))
-                    Text("  cap \$${Engine.money(p.cap)}", color = Look.Muted, fontSize = 12.sp, maxLines = 1)
+                    Text(if (p.cap > 0) "  cap \$${Engine.money(p.cap)}" else "  no cap yet", color = if (p.cap > 0) Look.Muted else Look.AmberText, fontSize = 12.sp, maxLines = 1)
                 }
                 Text(buyLine(p, deskBuys), color = if (p.inProgress) Look.Teal else if (p.attempted) Look.Red else Look.Muted, fontSize = 12.sp,
                     fontWeight = if (p.inProgress) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
@@ -524,7 +557,7 @@ class MainActivity : ComponentActivity() {
     fun ProductScreen(p: Product, r: Int, onBack: () -> Unit, onEdit: (Product) -> Unit) {
         val store = RkApp.store()
         var confirmRemove by remember(p.id) { mutableStateOf(false) }
-        val deskBuys = remember(r) { DeskLink.get().othersBuy() }
+        val deskBuys = remember(r) { DeskLink.standsBy() }
         val lines = remember(r) { store.log().filter { it.contains(p.label) }.takeLast(6).asReversed() }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("product-screen")) {
             Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -543,36 +576,36 @@ class MainActivity : ComponentActivity() {
                     val (c, bg, fg) = chip(p)
                     Row(verticalAlignment = Alignment.CenterVertically) { Text("Now", color = Look.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f)); Chip(c, bg, fg) }
                     val nowPr = p.stock().second
-                    Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 8.dp)) {
-                        Text(nowPr?.let { "\$${Engine.money(it)}" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp)
-                        Text("   your cap \$${Engine.money(p.cap)}", color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(bottom = 5.dp))
+                    // 2.2 (owner: "the ability to change the cap higher on the page, closer to where the price indicator bar is ... a slider option
+                    // for the bar to change the cap - limited to $5 increments"): drag the cap mark on the bar, or - / + $5
+                    var drag by remember(p.id, p.cap) { mutableStateOf<Double?>(null) }
+                    val capNow = drag ?: p.cap
+                    Text(nowPr?.let { "\$${Engine.money(it)}" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp, modifier = Modifier.padding(top = 8.dp))
+                    PriceBar(p, nowPr, capNow, onDrag = { drag = it }, onDrop = { v -> drag = null; saveCap(p, v) })
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (capNow > 0) "Your cap \$${Engine.money(capNow)}" else "No cap yet - set one to buy it", fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp, color = if (capNow > 0) Look.Ink else Look.AmberText, modifier = Modifier.weight(1f).testTag("cap-${p.asin}"))
+                        OutlinedButton(onClick = { saveCap(p, CapStep.down(p.cap)) }, enabled = p.cap > CapStep.STEP, contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.size(48.dp).testTag("capdown-${p.asin}")) { Text("−", fontSize = 20.sp) }
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(onClick = { saveCap(p, CapStep.up(p.cap)) }, contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.size(48.dp).testTag("capup-${p.asin}")) { Text("+", fontSize = 20.sp) }
                     }
-                    PriceBar(p, nowPr)
+                    Text("Drag the cap mark on the bar, or tap − / + (\$5 steps). Change cap below types an exact amount.", color = Look.Muted, fontSize = 11.sp)
                     Text(seenText(p).ifEmpty { "Not checked yet" }.replaceFirstChar { it.uppercase() } + if (p.lastCheck > 0 && p.lastCheck >= p.dAt) " · " + p.status else "",
                         color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                     val ref = listOfNotNull(p.msrp?.let { "MSRP \$${Engine.money(it)}" }, p.tcg?.let { "TCG market \$${Engine.money(it)}" })
                     if (ref.isNotEmpty()) Text(ref.joinToString(" · "), color = Look.GreyText, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp).testTag("ref-${p.asin}"))
                 }
-                // 1.5: the product's other stores, as the linked desktop sees them (it watches and buys there)
-                if (p.others.isNotEmpty()) Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("others-${p.asin}"),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Other stores (from the desktop)", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    p.others.forEach { o ->
-                        val st = o["st"] as? String ?: ""; val pr = (o["pr"] as? Number)?.toDouble(); val at = (o["at"] as? Number)?.toLong() ?: 0L
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(o["s"] as? String ?: "?", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            val (t, bg, fg) = when (st) { "in" -> Triple("In stock", Look.TealSoft, Look.TealText); "over" -> Triple("Over cap", Look.OrangeSoft, Look.OrangeText)
-                                "out" -> Triple("Out of stock", Look.GreySoft, Look.GreyText); else -> Triple("Not read yet", Look.GreySoft, Look.GreyText) }
-                            Chip(t + (pr?.let { " · \$${Engine.money(it)}" } ?: ""), bg, fg)
-                        }
-                        if (at > 0) Text("seen ${ago(at)}", color = Look.Muted, fontSize = 11.sp)
-                    }
-                }
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
                     SwitchRow("Buy when in stock", if (deskBuys && p.buy) "The linked desktop buys it; this phone takes over if the desktop stops" else "One order, at or under your cap",
-                        p.buy, "buy-${p.asin}") { v -> store.update(p.id) { it.copy(buy = v, watch = it.watch || v) }; store.log("${p.label}: Buy ${if (v) "ON" else "OFF"}.") }
+                        p.buy, "buy-${p.asin}") { v ->
+                        if (v && p.cap <= 0) { onEdit(p); return@SwitchRow }            // (2.2: a product without a cap gets one first)
+                        store.update(p.id) { it.copy(buy = v, watch = it.watch || v) }; store.log("${p.label}: Buy ${if (v) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
-                    SwitchRow("Watch", "Looked at all day; a phone message when it comes back", p.watch, "watch-${p.asin}") { v -> store.update(p.id) { it.copy(watch = v) } }
+                    SwitchRow("Watch", "Looked at all day; a phone message when it comes back", p.watch, "watch-${p.asin}") { v ->
+                        if (v && p.cap <= 0) { onEdit(p); return@SwitchRow }
+                        store.update(p.id) { it.copy(watch = v) } }
                     HorizontalDivider(color = Look.Line)
                     // 1.5 (owner: "there is no option to set the app to buy multiple instances of a product"): Buy 1 / 2 / 3 - separate
                     // orders (as on the desktop); the count starts when you choose it
@@ -613,6 +646,30 @@ class MainActivity : ComponentActivity() {
                     Text("Latest", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Look.GreyText)
                     Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         lines.forEach { Text(it.replace(p.label + ": ", ""), fontSize = 12.sp, lineHeight = 16.sp) }
+                    }
+                }
+                // 1.5: the product's other stores, as the linked desktop sees them. 2.2 (owner: "the information for "other stores" to be placed
+                // towards the bottom of the page ... include external links to any product that is in stock so that the user can manually
+                // purchase it"): at the bottom; a store that has it in stock gets Open (its own page, in your browser - you buy it there yourself)
+                if (p.others.isNotEmpty()) Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("others-${p.asin}"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Other stores", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text("What the linked PC sees there. In stock: Open takes you to that store to buy it yourself (this app buys on Amazon only).",
+                        color = Look.Muted, fontSize = 11.sp, lineHeight = 15.sp)
+                    p.others.forEach { o ->
+                        val st = o["st"] as? String ?: ""; val pr = (o["pr"] as? Number)?.toDouble(); val at = (o["at"] as? Number)?.toLong() ?: 0L
+                        val u = (o["u"] as? String)?.takeIf { it.startsWith("https://") }
+                        val name = o["s"] as? String ?: "?"
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(name, fontSize = 14.sp)
+                                if (at > 0) Text("seen ${ago(at)}", color = Look.Muted, fontSize = 11.sp)
+                            }
+                            val (t, bg, fg) = when (st) { "in" -> Triple("In stock", Look.TealSoft, Look.TealText); "over" -> Triple("Over cap", Look.OrangeSoft, Look.OrangeText)
+                                "out" -> Triple("Out of stock", Look.GreySoft, Look.GreyText); else -> Triple("Not read yet", Look.GreySoft, Look.GreyText) }
+                            Chip(t + (pr?.let { " · \$${Engine.money(it)}" } ?: ""), bg, fg)
+                            if (u != null && (st == "in" || st == "over")) TextButton(onClick = { openOutside(u) }, modifier = Modifier.testTag("open-$name")) { Text("Open") }
+                        }
                     }
                 }
             }
@@ -805,6 +862,29 @@ class MainActivity : ComponentActivity() {
                         if (linked) TextButton(onClick = { confirmUnlink = true }, modifier = Modifier.testTag("unlink")) { Text("Unlink", color = Look.Mint) }
                     }
                 }
+                // ---- 2.2: who buys on Amazon while linked
+                if (linked) Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("whobuys")) {
+                    Text("Who buys on Amazon", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text(when (st.buyMode) {
+                        "phone" -> "This phone buys. The PC keeps watching and tells this phone within seconds when something is back in stock under your cap; this phone checks it and checks out. Uses this phone's battery and data the most."
+                        "both" -> "Both try. This phone also watches and checks out; right before Place your order it waits for the PC's own try and orders only if that try failed - never two orders. The most chances; uses the most battery and data."
+                        else -> "The PC buys. This phone only takes a backup look every 30 minutes and takes over if the PC stops. Uses the least battery and data."
+                    }, fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp).testTag("whobuys-text"))
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("pc" to "PC", "phone" to "Phone", "both" to "Both").forEach { (m, l) ->
+                            FilterChip(st.buyMode == m, {
+                                if (st.buyMode != m) {
+                                    store.setSettings { it.copy(buyMode = m, buyModeAt = System.currentTimeMillis()) }
+                                    store.log("Who buys on Amazon: ${com.restalker.mobile.core.modeWord(m)} (chosen here).")
+                                    Thread { try { DeskLink.get().touched() } catch (e: Exception) { }; DeskLink.cycleAsync { bump() } }.start()
+                                    com.restalker.mobile.GoListener.check()
+                                    WatchService.instance?.standbyCheck()
+                                    WatchService.instance?.engine?.send(Engine.Cmd.Wake)
+                                }
+                            }, { Text(l) }, Modifier.heightIn(min = 44.dp).testTag("bm-$m"))
+                        }
+                    }
+                }
                 // ---- Amazon and buying
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -868,6 +948,36 @@ class MainActivity : ComponentActivity() {
                         }.start()
                     }, modifier = Modifier.padding(top = 8.dp).testTag("pa-go")) { Text("Run the practice") }
                     if (!signed) Text("Sign in to Amazon first (above).", color = Look.AmberText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                }
+                // ---- 2.2: all products from the central list (no caps, nothing watched)
+                var catMsg by remember { mutableStateOf("") }
+                var catBusy by remember { mutableStateOf(false) }
+                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("catalog")) {
+                    Text("Get all products", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text("Adds every Magic product Restalker knows (names, Amazon codes, MSRP and other stores' links) that is not in your list yet. " +
+                        "They come in WITHOUT a cap and are not watched: set a cap and switch Watch / Buy on for the ones you want.",
+                        fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
+                    Button(enabled = !catBusy, onClick = {
+                        catBusy = true; catMsg = "Getting the list..."
+                        Thread {
+                            val r = try {
+                                val c = java.net.URL(com.restalker.mobile.core.Catalog.URL + "?t=" + System.currentTimeMillis() / 60_000).openConnection() as java.net.HttpURLConnection
+                                c.connectTimeout = 15_000; c.readTimeout = 20_000; c.setRequestProperty("User-Agent", "RestalkerMobile")
+                                val body = try { c.inputStream.bufferedReader().use { it.readText().take(2_000_000) } } finally { c.disconnect() }
+                                com.restalker.mobile.core.Catalog.import(body, store)
+                            } catch (e: Exception) { null }
+                            runOnUiThread {
+                                catBusy = false
+                                catMsg = when {
+                                    r == null -> "The list could not be read - check the internet and try again."
+                                    r.added == 0 -> "Nothing new - you have every product already (${r.already})."
+                                    else -> "${r.added} products added (no cap, not watched). Open one, set its cap, then switch Watch / Buy on."
+                                }
+                                bump()
+                            }
+                        }.start()
+                    }, modifier = Modifier.padding(top = 8.dp).testTag("catalog-go")) { Text("Get all products") }
+                    if (catMsg.isNotEmpty()) Text(catMsg, fontSize = 12.sp, color = Look.TealText, modifier = Modifier.padding(top = 4.dp).testTag("catalog-msg"))
                 }
                 // ---- 2.0: share the app (its download page)
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("share"), horizontalAlignment = Alignment.CenterHorizontally) {

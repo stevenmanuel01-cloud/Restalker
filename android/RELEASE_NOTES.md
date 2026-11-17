@@ -1,3 +1,13 @@
+# Restalker Mobile 2.2 (2026-11-17; your notes of this morning)
+- Who buys on Amazon (Settings, when linked): PC (as before - this phone only takes a backup look every 30 minutes, the "next look in
+  12 min" you saw), Phone (the PC keeps watching and tells this phone within seconds; this phone checks it and checks out) or Both (both
+  try; right before Place your order this phone waits for the PC's own try and orders only if that try failed - never two orders).
+- Product page: change the cap right at the price bar - drag the cap mark, or tap - / + ($5 steps). Other stores are at the bottom now;
+  a store that has it in stock gets Open (that store's page in your browser - you buy it there yourself).
+- New installs start in buying mode (not practice).
+- Get all products (Settings): every Magic product Restalker knows, with its links - no caps, nothing watched until you switch it on.
+- A product without a cap asks for one before Watch / Buy goes on.
+
 # Restalker Mobile 2.1 (2026-11-17)
 - Battery: while the PC buys, the phone is no longer kept awake at all; it is woken for a moment every 15 minutes instead, and when
   the PC has stopped, it takes over within those 15 minutes.

@@ -366,6 +366,49 @@ class PhoneTests {
         assertTrue("unlinked", !DeskLink.get().linked())
     }
 
+    /** 2.2 (Who buys = phone): the PC's fast signal on the REAL channel makes this phone look at the product at once and buy it (the
+     *  product is not due for its own look); the phone says it is listening (heartbeat with its choice); the PC's checkout news is kept. */
+    @Test fun t20_whoBuys_phone_pcSignal_realChannel() {
+        val code = com.restalker.mobile.core.LinkCrypto.make()
+        val (ch, sec) = com.restalker.mobile.core.LinkCrypto.parse(code)!!
+        assertEquals(null, DeskLink.get().connect(code))
+        fun post(to: String, o: Map<String, Any?>) {
+            val c = java.net.URL("https://ntfy.sh/$to").openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true; c.setRequestProperty("User-Agent", "Restalker-CI")
+            c.outputStream.use { it.write(com.restalker.mobile.core.LinkCrypto.seal(sec, com.restalker.mobile.core.MiniJson.write(o)).toByteArray()) }
+            assertTrue("posted", c.responseCode in 200..299); c.disconnect()
+        }
+        val now0 = System.currentTimeMillis()
+        // the PC: linked, Amazon buying handed to the phone (amz = false), Who buys = phone
+        post(ch, linkedMapOf("v" to 1, "d" to "d-test", "r" to "desktop", "at" to now0 / 1000.0, "amz" to false, "bm" to "phone", "bmAt" to now0 / 1000.0 - 5,
+            "items" to emptyList<Any>()))
+        assertTrue("the PC's choice arrived", waitCycle(90_000) { DeskLink.get().cycle(); RkApp.store().settings().buyMode == "phone" })
+        assertTrue("the PC does not buy on Amazon", !DeskLink.get().desktopBuys())
+        assertTrue("says so", DeskLink.get().state().second.contains("signals this phone"))
+        val pr = Product(id = "go1", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true, lastCheck = System.currentTimeMillis())
+        start(false, true, pr)
+        RkApp.store().update("go1") { it.copy(lastCheck = System.currentTimeMillis()) }          // (not due for its own look for a minute)
+        GoListener.check()
+        assertTrue("listening", waitFor(30_000) { GoListener.state == "listening" })
+        Thread.sleep(1_500)
+        post("$ch-go", linkedMapOf("v" to 1, "d" to "d-test", "r" to "desktop", "at" to System.currentTimeMillis() / 1000.0, "go" to mapOf("a" to "B0TEST0001", "pr" to 99.99)))
+        val bought = waitFor(45_000) { site.places >= 1 }
+        dumpLog("t20")
+        assertTrue("bought at once after the PC's signal", bought)
+        assertTrue("the log says why", RkApp.store().log().any { it.contains("the PC saw it in stock") })
+        assertEquals("one order", 1, site.places)
+        // the PC's checkout news is kept for Who buys = both
+        post("$ch-go", linkedMapOf("v" to 1, "d" to "d-test", "r" to "desktop", "at" to System.currentTimeMillis() / 1000.0, "res" to mapOf("a" to "B0TEST0009", "k" to "failed")))
+        assertTrue("PC news kept", waitFor(30_000) { GoListener.verdict("B0TEST0009")?.first == "failed" })
+        // the heartbeat with this phone's choice reached the go channel (read from outside, as the PC does)
+        val hb = java.net.URL("https://ntfy.sh/$ch-go/json?poll=1&since=all").readText().lines().mapNotNull { com.restalker.mobile.core.MiniJson.obj(it) }
+            .mapNotNull { com.restalker.mobile.core.LinkCrypto.unseal(sec, it["message"] as? String) }.map { com.restalker.mobile.core.MiniJson.obj(it)!! }
+            .filter { it["r"] == "phone" && it["hb"] != null }
+        assertTrue("heartbeat with the choice", hb.any { it["bm"] == "phone" })
+        GoListener.stop()
+        DeskLink.get().unlink()
+    }
+
     /** 1.5: the product's picture is read from its page (Amazon's own image address); Buy 2 buys twice in separate orders; the running
      *  notice goes to the no-icon channel when "Running icon" is off (and back). */
     @Test fun t16_picture_buy2_runningIcon() {

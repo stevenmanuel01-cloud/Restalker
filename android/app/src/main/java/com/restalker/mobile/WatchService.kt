@@ -35,7 +35,10 @@ class WatchService : Service() {
         web = AmazonWeb(this); web.create()
         val store = RkApp.store()
         startRx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); startAt = System.currentTimeMillis()
-        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().othersBuy() })        // (2.0: the desktop, or another phone first in line)
+        // 2.2: the PC and the other phones apart (Who buys: pc / phone / both decides what the PC's buying means for this phone)
+        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() },
+            otherPhoneBuys = { DeskLink.get().otherPhoneBuys() }, buyerMode = { RkApp.store().settings().buyMode },
+            pcVerdict = { a -> GoListener.verdict(a) })
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
@@ -49,6 +52,7 @@ class WatchService : Service() {
             override fun run() {
                 HealthRunner.tick(this@WatchService)
                 standbyCheck()
+                GoListener.check()                          // 2.2: the fast channel with the PC (Who buys: phone / both)
                 Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
                 tick.postDelayed(this, 60_000)
             }
@@ -81,6 +85,7 @@ class WatchService : Service() {
         instance = null
         try { StandbyAlarm.cancel(this) } catch (e: Exception) { }
         tick.removeCallbacksAndMessages(null)
+        GoListener.stop()
         engine.send(Engine.Cmd.Quit)
         thread?.interrupt()
         web.destroy()
@@ -92,7 +97,7 @@ class WatchService : Service() {
      *  every 30 minutes - then the phone may sleep between looks (no wake lock) and the notice has no icon. When this phone is the buyer:
      *  the wake lock (looks every minute or so even with the screen off). */
     fun standbyCheck() {
-        val sb = try { DeskLink.get().othersBuy() } catch (e: Exception) { false }
+        val sb = try { standsBy() } catch (e: Exception) { false }
         if (sb != Notifier.standby) {
             Notifier.standby = sb
             notifier.status(notifier.lastStatus)
@@ -105,6 +110,9 @@ class WatchService : Service() {
         // this phone takes over within 15 minutes - without keeping the phone awake all the time
         if (sb) StandbyAlarm.schedule(this) else StandbyAlarm.cancel(this)
     }
+
+    /** 2.2: this phone only stands by - another phone / tablet is first in line, or the PC buys and Who buys is "pc". */
+    private fun standsBy(): Boolean = DeskLink.standsBy()
 
     private var startRx = 0L; private var startAt = 0L
     val since: Long get() = startAt

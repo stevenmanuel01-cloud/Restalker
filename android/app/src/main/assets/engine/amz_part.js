@@ -29,7 +29,7 @@
     if (t === 'STATUS' || t === 'CHECKOUT_PRICE_EVIDENCE') { if (t === 'CHECKOUT_PRICE_EVIDENCE') push(keep); return {ok: true}; }
     const n = push(keep);
     if (t === 'SUBMITTING') {                 // the ONE-order latch: Restalker answers (ok = this browser presses Place your order)
-      const end = Date.now() + 30000;
+      const end = Date.now() + 100000;          // (2.2: Who buys = both - the phone may wait up to 85 s for the PC's own try)
       while (Date.now() < end) {
         const v = SS.get('__rkAmzReply' + n);
         if (v) { SS.del('__rkAmzReply' + n); try { return JSON.parse(v); } catch { return {ok: false}; } }

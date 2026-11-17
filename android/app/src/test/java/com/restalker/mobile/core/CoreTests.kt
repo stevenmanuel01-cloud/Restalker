@@ -85,7 +85,10 @@ object CoreTests {
         val store = Store(dir) { clock.t }
         val amz = FakeAmazon(clock).also { it.store = store }
         val said = Said()
-        val engine = Engine(store, amz, said, clock, { net }, { desk })
+        var mode = "pc"; var other = false
+        val verdicts = HashMap<String, Pair<String, Long>>()
+        var verdictFn: ((String) -> Pair<String, Long>?)? = null
+        val engine = Engine(store, amz, said, clock, { net }, { desk }, { other }, { mode }, { a -> verdictFn?.invoke(a) ?: verdicts[a] })
         init { store.setSettings { it.copy(watching = true, buying = buying, practice = practice) } }
         fun add(asin: String, cap: Double, buy: Boolean, stock: Boolean = true, price: Double = 99.99): Product {
             amz.items[asin] = FakeAmazon.Item(stock, price, "Magic: The Gathering Test Product $asin Collector Booster Box")
@@ -644,6 +647,107 @@ object CoreTests {
                 Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(watching = true, buying = true, practice = false, intervalSec = 120, wifiOnly = true, autoReport = false,
                     runIcon = false, autoUpdate = false).toMap()))) == Settings(watching = true, buying = true, practice = false, intervalSec = 120, wifiOnly = true,
                     autoReport = false, runIcon = false, autoUpdate = false) }
+        // ---- 2.2 (owner, 2026-11-17): who buys on Amazon (pc / phone / both), the PC's fast signal, the $5 cap steps, all products
+        t("107_both_pc_failed_then_the_phone_orders") {
+            val w = World(desk = true); w.mode = "both"; w.add("B0TEST0301", 120.0, true)
+            w.verdicts["B0TEST0301"] = "failed" to w.clock.t
+            w.check("B0TEST0301")
+            w.amz.places == 1 && w.p("B0TEST0301").purchased }
+        t("108_both_pc_bought_the_phone_does_not_order") {
+            val w = World(desk = true); w.mode = "both"; w.add("B0TEST0302", 120.0, true)
+            w.verdicts["B0TEST0302"] = "bought" to w.clock.t
+            w.check("B0TEST0302")
+            val p = w.p("B0TEST0302")
+            w.amz.begins == 1 && w.amz.places == 0 && w.amz.replyOk == false && !p.buy && !p.attempted && !p.purchased && p.status.contains("PC BOUGHT") &&
+                w.said.problems.isEmpty() }
+        t("109_both_pc_silent_about_it_the_phone_orders_after_10s") {
+            val w = World(desk = true); w.mode = "both"; w.add("B0TEST0303", 120.0, true)
+            val t0 = w.clock.t
+            w.check("B0TEST0303")
+            w.amz.places == 1 && w.clock.t - t0 >= Engine.HOLD_NONE_MS }
+        t("110_both_pc_started_and_never_said_how_it_ended_no_order") {
+            val w = World(desk = true); w.mode = "both"; w.add("B0TEST0304", 120.0, true)
+            w.verdicts["B0TEST0304"] = "started" to w.clock.t
+            w.check("B0TEST0304")
+            val p = w.p("B0TEST0304")
+            w.amz.places == 0 && !p.attempted && p.status.contains("never two orders") }
+        t("111_both_the_pc_word_arrives_while_waiting") {
+            val w = World(desk = true); w.mode = "both"; w.add("B0TEST0305", 120.0, true)
+            val t0 = w.clock.t
+            w.verdictFn = { _ -> if (w.clock.t - t0 < 30_000) "started" to t0 else "failed" to w.clock.t }
+            w.check("B0TEST0305")
+            w.amz.places == 1 && w.clock.t - t0 >= 30_000 && w.clock.t - t0 < Engine.HOLD_MS }
+        t("112_pc_mode_linked_pc_buys_the_phone_stands_by_and_status_says_why") {
+            val w = World(desk = true); w.add("B0TEST0306", 120.0, true)
+            w.check("B0TEST0306"); w.engine.step()
+            w.amz.begins == 0 && w.said.last.contains("stands by") && w.said.last.contains("Who buys") }
+        t("113_both_another_phone_first_in_line_this_one_does_not_buy") {
+            val w = World(desk = true); w.mode = "both"; w.other = true; w.add("B0TEST0307", 120.0, true)
+            w.check("B0TEST0307")
+            w.amz.begins == 0 && w.amz.places == 0 }
+        t("114_phone_mode_the_pc_signal_looks_at_once_and_buys") {
+            val w = World(desk = false); w.mode = "phone"; w.add("B0TEST0308", 120.0, true)
+            w.store.update("idB0TEST0308") { it.copy(lastCheck = w.clock.t) }          // (just looked: not due for a while)
+            w.engine.send(Engine.Cmd.Go("B0TEST0308")); w.engine.step()
+            w.amz.places == 1 && w.p("B0TEST0308").purchased }
+        t("115_the_pc_signal_never_buys_by_itself") {
+            // pc mode: ignored; phone mode: out of stock on this phone's own look -> nothing; over the cap -> nothing; not set to Buy -> nothing
+            val w = World(desk = true); w.add("B0TEST0309", 120.0, true)
+            w.engine.send(Engine.Cmd.Go("B0TEST0309")); w.engine.step()
+            val pcIgnored = w.amz.begins == 0
+            val w2 = World(desk = false); w2.mode = "phone"
+            w2.add("B0TEST0310", 120.0, true, stock = false); w2.add("B0TEST0311", 120.0, true, price = 199.0); w2.add("B0TEST0312", 120.0, false)
+            for (a in listOf("B0TEST0310", "B0TEST0311", "B0TEST0312")) { w2.engine.send(Engine.Cmd.Go(a)); w2.engine.step() }
+            pcIgnored && w2.amz.begins == 0 && w2.amz.places == 0 }
+        t("116_cap_steps_of_5") {
+            CapStep.up(449.99) == 450.0 && CapStep.up(450.0) == 455.0 && CapStep.down(450.01) == 450.0 && CapStep.down(450.0) == 445.0 &&
+                CapStep.down(7.0) == 5.0 && CapStep.down(5.0) == 5.0 && CapStep.up(0.0) == 5.0 && CapStep.snap(452.4) == 450.0 && CapStep.snap(452.6) == 455.0 &&
+                CapStep.snap(0.3) == 5.0 && CapStep.scale(455.88, 550.0, 455.88, null) == 880.0 && CapStep.scale(null, 0.0, null, null) == 50.0 }
+        t("117_price_bar_fixed_scale_and_no_cap_mark_without_a_cap") {
+            val a = PriceMarks.of(500.0, 550.0, 455.88, null, 880.0)
+            val b = PriceMarks.of(500.0, 0.0, 455.88, null)
+            Math.abs(a.frac(440.0) - 0.5f) < 0.001f && b.items.none { it.kind == PriceMarks.CAP } && a.items.any { it.kind == PriceMarks.CAP } }
+        t("118_all_products_come_without_a_cap_not_watched_never_bought") {
+            val w = World(); w.add("B0TEST0313", 120.0, true)
+            val json = MiniJson.write(mapOf("v" to 1, "products" to listOf(
+                mapOf("a" to "B0TEST0313", "n" to "Already here", "k" to "box"),
+                mapOf("a" to "B0TEST0314", "n" to "Magic: The Gathering Test Collector Booster Box", "k" to "box", "gy" to "2026", "gs" to "Test", "ms" to 455.88,
+                    "sx" to listOf(mapOf("s" to "Target", "u" to "https://www.target.com/p/x/-/A-1"), mapOf("s" to "Bad", "u" to "http://x"))),
+                mapOf("a" to "bad code", "n" to "x"))))
+            val r = Catalog.import(json, w.store)!!
+            val p = w.p("B0TEST0314")
+            w.amz.items["B0TEST0314"] = FakeAmazon.Item(true, 99.0, "Magic: The Gathering Test Product B0TEST0314 Collector Booster Box")
+            w.check("B0TEST0314")
+            r.added == 1 && r.already == 1 && r.bad == 1 && p.cap == 0.0 && !p.watch && !p.buy && p.year == "2026" && p.msrp == 455.88 &&
+                p.others.size == 1 && p.others[0]["u"] == "https://www.target.com/p/x/-/A-1" && w.amz.begins == 0 && w.p("B0TEST0313").cap == 120.0 &&
+                Catalog.import("{}", w.store) == null && Catalog.import("not json", w.store) == null }
+        t("119_new_install_buys_for_real_an_old_setting_is_kept") {
+            val d = Settings()
+            val old = Settings.fromMap(mapOf("watching" to true, "buying" to false, "practice" to true))
+            val missing = Settings.fromMap(mapOf("watching" to true))
+            d.buying && !d.practice && d.buyMode == "pc" && !old.buying && old.practice && missing.buying && !missing.practice &&
+                Settings.fromMap(mapOf("buyMode" to "everyone")).buyMode == "pc" &&
+                Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(buyMode = "both", buyModeAt = 5).toMap()))).let { it.buyMode == "both" && it.buyModeAt == 5L } }
+        t("120_who_buys_travels_over_the_link_newest_wins") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val posts = ArrayList<String>()
+            val net = object : LinkNet {
+                override fun post(url: String, body: String, asFile: Boolean): Int { posts.add(body); return 200 }
+                override fun get(url: String): String = posts.mapIndexed { i, b -> MiniJson.write(mapOf("event" to "message", "id" to "m$i", "time" to 1.8e9 + i, "message" to b)) }.joinToString("\n")
+            }
+            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true) }) { wa.clock.t }
+            la.connect(code); la.cycle()
+            wa.store.setSettings { it.copy(buyMode = "phone", buyModeAt = wa.clock.t) }; la.touched(); la.cycle()
+            val sent = posts.mapNotNull { MiniJson.obj(LinkCrypto.unseal(sec, it)) }.last()
+            val mine = sent["bm"] == "phone"
+            // the PC echoes an OLDER choice: not taken; a NEWER one (made on the tablet): taken
+            fun desk(bm: String, at: Double) = posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0,
+                "amz" to false, "items" to emptyList<Any>(), "bm" to bm, "bmAt" to at))))
+            desk("pc", wa.clock.t / 1000.0 - 60); la.cycle()
+            val keptMine = wa.store.settings().buyMode == "phone"
+            desk("both", wa.clock.t / 1000.0 + 60); la.cycle()
+            val tookNewer = wa.store.settings().buyMode == "both"
+            mine && keptMine && tookNewer && la.goTarget()!!.first.endsWith("-go") && la.state().second.isNotEmpty() }
         return results
     }
 

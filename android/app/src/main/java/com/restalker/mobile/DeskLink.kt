@@ -32,6 +32,11 @@ object DeskLink {
         mapOf("amz" to (st.buying && st.watching), "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (st.autoUpdate && Updater.allowed(RkApp.app)))
     }).also { link = it }
 
+    /** 2.2: this phone only stands by - another phone / tablet is first in line, or the PC buys and Who buys is "pc". */
+    fun standsBy(): Boolean = try {
+        val l = get(); l.otherPhoneBuys() || (l.desktopBuys() && RkApp.store().settings().buyMode == "pc")
+    } catch (e: Exception) { false }
+
     /** Tests: a fresh link object (after the store was reset). */
     @Synchronized fun reset() { link = null }
 

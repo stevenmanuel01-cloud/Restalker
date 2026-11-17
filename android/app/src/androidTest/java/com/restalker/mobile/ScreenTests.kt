@@ -16,6 +16,9 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.geometry.Offset
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.restalker.mobile.ui.MainActivity
@@ -73,8 +76,13 @@ class ScreenTests {
         compose.waitForIdle()
         compose.onNodeWithTag("setup").assertIsDisplayed()
         shot("t6_first_run")
+        // 2.2 (owner: "load up with the option to be buying"): a new install buys for real (only products set to Buy, under the cap)
+        assertEquals("a new install buys for real", false, RkApp.store().settings().practice)
+        assertEquals("a new install has buying on", true, RkApp.store().settings().buying)
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
-        compose.onNodeWithTag("practice").performScrollTo().performClick()     // switching Real purchases on asks first
+        compose.onNodeWithTag("practice").performScrollTo().performClick()     // practice on: at once
+        compose.waitUntil(3_000) { RkApp.store().settings().practice }
+        compose.onNodeWithTag("practice").performScrollTo().performClick()     // switching Real purchases on again asks first
         compose.onNodeWithTag("confirm-real").assertIsDisplayed()
         assertEquals("still practicing until Yes", true, RkApp.store().settings().practice)
         shot("t6_confirm_real")
@@ -191,7 +199,8 @@ class ScreenTests {
         PicCache.clear(); val png = f.readBytes(); PicCache.fetch = { u -> if (u.contains("/images/I/T13pic")) png else throw java.io.IOException("unexpected $u") }
         s.add(prod("B0TEST0301", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(image = "https://m.media-amazon.com/images/I/T13pic.jpg",
             dSt = "over", dPr = 529.99, dAt = System.currentTimeMillis(), msrp = 455.88, tcg = 610.25,
-            others = listOf(mapOf("s" to "Best Buy", "st" to "in", "pr" to 449.99, "at" to System.currentTimeMillis()), mapOf("s" to "Target", "st" to "out", "pr" to null, "at" to 0L))))
+            others = listOf(mapOf("s" to "Best Buy", "st" to "in", "pr" to 449.99, "at" to System.currentTimeMillis(), "u" to "https://www.bestbuy.com/product/x/JJ1"),
+                mapOf("s" to "Target", "st" to "out", "pr" to null, "at" to 0L, "u" to "https://www.target.com/p/x/-/A-1"))))
         compose.waitForIdle()
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0301"))
         compose.onAllNodesWithText("Over cap · \$529.99", substring = true).onFirst().assertIsDisplayed()   // the desktop's newer look (also on top: in stock)
@@ -208,6 +217,10 @@ class ScreenTests {
         compose.onNodeWithTag("ref-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("others-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Best Buy").assertIsDisplayed()
+        // 2.2: in stock at a store -> Open (that store's own page); out of stock -> no Open
+        compose.onNodeWithTag("open-Best Buy").performScrollTo().assertIsDisplayed()
+        assertTrue("no Open for a store without stock", compose.onAllNodesWithTag("open-Target").fetchSemanticsNodes().isEmpty())
+        shot("t13_other_stores_bottom")
         compose.onNodeWithTag("qty-B0TEST0301-2").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0301").qty == 2 && p("B0TEST0301").qtySince > 0 }
         compose.onNodeWithTag("qty-B0TEST0301-1").performClick()
@@ -283,6 +296,53 @@ class ScreenTests {
         }
         compose.onNodeWithTag("share-qr").performScrollTo().assertIsDisplayed()
         shot("t15_settings_share")
+    }
+
+    /** 2.2: the cap right at the price bar - - / + in $5 steps, dragging the cap mark (only from the mark itself); a product without a
+     *  cap asks for one before Buy goes on; Get all products brings the central list in without caps. */
+    @Test fun t16_cap_at_the_bar_and_all_products() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0601", "Reality Fracture Collector Booster Box", "2026", "Reality Fracture", price = 420.0).copy(msrp = 323.88))
+        compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0601"))
+        compose.onNodeWithTag("product-B0TEST0601").performClick(); compose.waitForIdle(); Thread.sleep(600)
+        compose.onNodeWithTag("capup-B0TEST0601").performScrollTo().performClick()
+        compose.waitUntil(3_000) { p("B0TEST0601").cap == 405.0 }
+        compose.onNodeWithTag("capdown-B0TEST0601").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("capdown-B0TEST0601").performClick()
+        compose.waitUntil(3_000) { p("B0TEST0601").cap == 395.0 }
+        compose.onNodeWithTag("cap-B0TEST0601").assertIsDisplayed()
+        shot("t16_cap_buttons")
+        // a swipe that does not start on the cap mark changes nothing
+        compose.onNodeWithTag("capdrag-B0TEST0601", useUnmergedTree = true).performTouchInput { swipe(Offset(width * 0.02f, height * 0.4f), Offset(width * 0.1f, height * 0.4f), 300) }
+        compose.waitForIdle(); Thread.sleep(300)
+        assertEquals(395.0, p("B0TEST0601").cap, 0.001)
+        // dragging the cap mark to the right raises it (on a $5 mark)
+        compose.onNodeWithTag("capknob-B0TEST0601", useUnmergedTree = true).performTouchInput { swipe(center, Offset(center.x + 120f, center.y), 500) }
+        compose.waitUntil(3_000) { p("B0TEST0601").cap > 395.0 }
+        val c = p("B0TEST0601").cap
+        assertTrue("on a \$5 mark: $c", Math.abs(c / 5.0 - Math.round(c / 5.0)) < 1e-9)
+        shot("t16_cap_dragged")
+        // no cap -> Buy asks for one first
+        s.update("idB0TEST0601") { it.copy(cap = 0.0, buy = false) }; compose.waitForIdle(); Thread.sleep(400)
+        compose.onNodeWithTag("buy-B0TEST0601").performScrollTo().performClick()
+        compose.onNodeWithTag("e-cap").assertIsDisplayed()
+        assertEquals("not set to Buy without a cap", false, p("B0TEST0601").buy)
+        compose.onNodeWithTag("e-cap").performTextClearance(); compose.onNodeWithTag("e-cap").performTextInput("350")
+        compose.onNodeWithTag("e-save").performClick()
+        compose.waitUntil(3_000) { p("B0TEST0601").cap == 350.0 }
+        compose.onNodeWithTag("back").performClick(); compose.waitForIdle()
+        // Get all products (the central list on the release home): added without caps, nothing watched or set to Buy
+        compose.onNodeWithText("Settings").performClick(); compose.waitForIdle()
+        val before = s.products().size
+        compose.onNodeWithTag("catalog-go").performScrollTo().performClick()
+        compose.waitUntil(40_000) { compose.onAllNodesWithTag("catalog-msg").fetchSemanticsNodes().isNotEmpty() && s.products().size > before }
+        val added = s.products().filter { it.asin != "B0TEST0601" }
+        shot("t16_all_products")
+        assertTrue("products came in", added.size >= 10)
+        assertTrue("no caps, not watched, not Buy", added.all { it.cap == 0.0 && !it.watch && !it.buy })
+        assertEquals("the own product kept", 350.0, p("B0TEST0601").cap, 0.001)
     }
 
     /** 1.4: a product's own screen - Buy, Watch, the cap, Remove (asks once), Back. */

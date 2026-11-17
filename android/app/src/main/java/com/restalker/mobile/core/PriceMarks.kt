@@ -14,14 +14,15 @@ class PriceMarks private constructor(val items: List<Mark>, private val max: Dou
 
         private fun m(v: Double) = "\$" + if (v >= 1000) String.format(java.util.Locale.US, "%,.0f", v) else String.format(java.util.Locale.US, "%.0f", v)
 
-        fun of(now: Double?, cap: Double, msrp: Double?, tcg: Double?): PriceMarks {
+        /** [scale]: the bar's end, fixed (2.2: while the cap mark is dragged); null = 12 % past the highest value. */
+        fun of(now: Double?, cap: Double, msrp: Double?, tcg: Double?, scale: Double? = null): PriceMarks {
             val vals = listOfNotNull(now, cap, msrp, tcg).filter { it.isFinite() && it >= 0 }
-            val max = ((vals.maxOrNull() ?: 1.0) * 1.12).coerceAtLeast(1.0)
+            val max = scale?.takeIf { it.isFinite() && it > 0 } ?: ((vals.maxOrNull() ?: 1.0) * 1.12).coerceAtLeast(1.0)
             val below = listOfNotNull(
                 Mark(ZERO, 0.0, "\$0", 0),
                 msrp?.takeIf { it.isFinite() && it > 0 }?.let { Mark(MSRP, it, "MSRP ${m(it)}", 0) },
                 tcg?.takeIf { it.isFinite() && it > 0 }?.let { Mark(TCG, it, "TCG ${m(it)}", 0) },
-                Mark(CAP, cap, "Cap ${m(cap)}", 0),
+                cap.takeIf { it > 0 }?.let { Mark(CAP, it, "Cap ${m(it)}", 0) },
             ).sortedBy { it.value }
             // two rows: a label too near the last one on row 0 goes to row 1 (and back when row 1 is taken there too)
             val out = ArrayList<Mark>()
