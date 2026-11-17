@@ -1,8 +1,8 @@
 {
- "version": "v126",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v126_update.zip",
- "sha256": "fa08cede4328db19c02d179bdf74541fbf4fac9bdcd168270059d79f48f8c083",
- "size": 734377,
- "notes": "Phone pictures come from the table too; phone link: a purchase from before the link no longer turns Buy off; Report problem asks what went wrong; top row tidied (Phone / Copy / Help next to the title)",
+ "version": "v127",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v127_update.zip",
+ "sha256": "8ba0b3560cea51f56a81b549cca8f60f9c9898e6fffdee65c7afb24dc97d8844",
+ "size": 737501,
+ "notes": "Regular reports every 4 h; phone pictures exactly as on the PC; no 'app ready' message when the phone updated itself; several phones; share QR; checkout history for Hobbit; top row on one line",
  "files": 81
 }
