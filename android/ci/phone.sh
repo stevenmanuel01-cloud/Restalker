@@ -4,6 +4,13 @@
 set -u
 P=com.restalker.mobile
 fail=0
+up() {   # the virtual phone back and ready (it can drop off for a moment after a screen-size change)
+  for i in $(seq 1 3); do
+    timeout 150 adb wait-for-device && for k in $(seq 1 60); do [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && return 0; sleep 2; done
+    echo "(virtual phone not answering - reconnecting)"; adb reconnect offline >/dev/null 2>&1; sleep 5
+  done
+  echo "THE VIRTUAL PHONE STOPPED ANSWERING"; return 1
+}
 adb install -r -g apk/outputs/apk/debug/app-debug.apk
 adb install -r -g apk/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell am instrument -w -r -e debug false $P.test/androidx.test.runner.AndroidJUnitRunner > instrument.txt 2>&1
@@ -37,7 +44,7 @@ grep -E "^OK|FAILURES|Tests run" instrument_big.txt | tail -3
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument_big.txt | cut -c1-600
 grep -E "ScreenTests.kt:[0-9]+" instrument_big.txt | head -10
 grep -q "^OK (" instrument_big.txt || fail=1
-adb shell settings put system font_scale 1.0; adb shell wm size reset; adb shell wm density reset
+adb shell settings put system font_scale 1.0; adb shell wm size reset; adb shell wm density reset; sleep 3; up || fail=1
 
 echo "=== random taps with the internet off"
 adb shell svc wifi disable; adb shell svc data disable; adb shell cmd connectivity airplane-mode enable 2>/dev/null || true; sleep 5
@@ -51,17 +58,18 @@ fi
 adb shell cmd connectivity airplane-mode disable 2>/dev/null || true; adb shell svc wifi enable; adb shell svc data enable
 
 echo "=== the app updates itself (1.7)"
+up || fail=1
 api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 vc() { adb shell dumpsys package $P | grep -m1 -o 'versionCode=[0-9]*' | cut -d= -f2; }
 put() { adb push "$1" /data/local/tmp/u.apk >/dev/null && adb shell chmod 644 /data/local/tmp/u.apk && adb shell run-as $P cp /data/local/tmp/u.apk cache/u.apk; }
 trig() { adb shell am start -n $P/.ui.MainActivity >/dev/null 2>&1; sleep 3; adb shell am broadcast -n $P/.UpdateTestReceiver --es apk cache/u.apk --es sha "$1" --es version "$2" >/dev/null; }
 waitvc() { for i in $(seq 1 30); do [ "$(vc)" = "$1" ] && return 0; sleep 2; done; return 1; }
 if [ ! -f apk/next/next1.apk ] || [ ! -f apk/next/next2.apk ]; then echo "NO NEWER TEST COPIES BUILT"; fail=1; else
-  v0=$(vc); s1=$(sha256sum apk/next/next1.apk | cut -d' ' -f1); s2=$(sha256sum apk/next/next2.apk | cut -d' ' -f1)
+  v0=$(vc); [ -n "$v0" ] || { echo "VERSION NOT READABLE"; fail=1; }; s1=$(sha256sum apk/next/next1.apk | cut -d' ' -f1); s2=$(sha256sum apk/next/next2.apk | cut -d' ' -f1)
   adb shell appops set $P REQUEST_INSTALL_PACKAGES allow
   # A) a file that is not the released one: refused
   put apk/next/next1.apk; trig 0000000000000000000000000000000000000000000000000000000000000000 9.9; sleep 12
-  if [ "$(vc)" = "$v0" ]; then echo "wrong file refused: OK"; else echo "WRONG FILE WAS INSTALLED"; fail=1; fi
+  if [ -n "$v0" ] && [ "$(vc)" = "$v0" ]; then echo "wrong file refused: OK"; else echo "WRONG FILE WAS INSTALLED"; fail=1; fi
   # B) the first update by the app itself (the app was installed by something else - your browser / files):
   #    Android 12+ (API 31+) installs it without asking; Android 11 and older ask once - a notice to tap
   put apk/next/next1.apk; trig $s1 1.7.1
