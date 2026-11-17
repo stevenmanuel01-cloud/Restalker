@@ -1,3 +1,10 @@
+# Restalker Mobile 1.6 (2026-11-16; from your report)
+- FIX: a product the desktop had bought BEFORE the link (weeks ago) was marked "Bought" here, and the phone told the desktop "Buy off".
+  Now only a purchase since the link counts; such products are corrected once by themselves.
+- Report a problem asks "What went wrong?" (optional) - your words go to Claude first.
+- Pictures also for products that are not watched (one look each, on Wi-Fi).
+- Less data: while the linked desktop buys, the phone looks every 30 minutes (was 10; about 80 MB an hour) - the desktop's view shows meanwhile.
+
 # Restalker Mobile 1.5 (2026-11-16; owner's notes on 1.4)
 - Product pictures: Amazon's own picture, read from the product's page the first time it is looked at.
 - "In stock" = for sale at any price (also just over the cap); new "Watched" filter.

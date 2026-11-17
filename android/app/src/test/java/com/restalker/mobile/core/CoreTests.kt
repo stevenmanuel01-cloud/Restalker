@@ -404,6 +404,39 @@ object CoreTests {
             val older = p.copy(dSt = "in", dAt = p.lastCheck - 1000)
             over && d.stock().first == "out" && !d.inStock && older.stock().first == "over"
         }
+        t("49 a picture for a product that is not watched: one look, Wi-Fi only, not again for a day") {
+            val w = World(net = "mobile"); w.add("B0TEST0002", 50.0, false); w.store.update("idB0TEST0002") { it.copy(watch = false) }
+            w.add("B0TEST0001", 120.0, false); w.check("B0TEST0001")
+            w.clock.t += 5_000; w.amz.gotoCount = 0; w.engine.step()
+            val noMobile = w.amz.gotoCount == 0 && w.p("B0TEST0002").image.isEmpty()
+            w.net = "wifi"; w.clock.t += 5_000; w.engine.step()
+            val got = w.p("B0TEST0002").image.contains("B0TEST0002")
+            w.store.update("idB0TEST0002") { it.copy(image = "") }; w.amz.gotoCount = 0; w.clock.t += 5_000; w.engine.step()
+            noMobile && got && w.amz.gotoCount == 0
+        }
+        t("50 linked: the desktop's purchase from BEFORE the link does not mark the product bought here; one after the link turns Buy off") {
+            val w = World()
+            var posts = ArrayList<String>()
+            val code = LinkCrypto.make(); val (ch, sec) = LinkCrypto.parse(code)!!
+            val inbox = ArrayList<String>()
+            val net = object : LinkNet {
+                override fun post(url: String, body: String, asFile: Boolean): Int { posts.add(body); return 200 }
+                override fun get(url: String): String = inbox.joinToString("\n")
+            }
+            val l = Link(w.store, net) { w.clock.t }
+            l.connect(code)
+            val linkedAt = w.clock.t / 1000.0
+            fun desk(ba: Double, t: Double) {
+                val o = mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to t, "amz" to true, "items" to listOf(mapOf("a" to "B0TEST0005", "n" to "Old Buy",
+                    "c" to 80.0, "b" to true, "w" to true, "k" to "bundle", "t" to t, "g" to false, "ba" to ba)))
+                inbox.add(MiniJson.write(mapOf("event" to "message", "id" to "m${inbox.size + 1}", "time" to t, "message" to LinkCrypto.seal(sec, MiniJson.write(o)))))
+            }
+            desk(linkedAt - 30 * 86400, 2.0); l.cycle()
+            val p1 = w.p("B0TEST0005")
+            w.clock.t += 60_000; desk(w.clock.t / 1000.0, w.clock.t / 1000.0); l.cycle()
+            val p2 = w.p("B0TEST0005")
+            !p1.purchased && p1.buy && !p2.purchased && !p2.buy
+        }
         return results
     }
 

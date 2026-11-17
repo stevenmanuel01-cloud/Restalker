@@ -91,6 +91,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val due = watched.minByOrNull { it.lastCheck } ?: return
         val wait = due.lastCheck + interval - now()
         offlineSince = 0
+        if (wait > 0 && pictureOnce()) return
         if (wait > 0) { status(if (desk) "Desktop is buying · this phone stands by (next look ${secs(wait)})" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
@@ -397,6 +398,21 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     // ------------------------------------------------------------------ your Amazon orders (the desktop's order check)
     /** Reads your Amazon order list for every product set to buy: the orders already there (so a new one can be told apart). */
+    /** 1.6 (owner: pictures): a product without its picture (one that is not watched is never looked at) gets ONE look for it when there
+     *  is time - Wi-Fi only, at most once a day per product, nothing else is done on that page. -> true when a page was opened. */
+    private fun pictureOnce(): Boolean {
+        val p = store.products().firstOrNull { it.image.isBlank() && now() - it.picTriedAt > PIC_RETRY_MS && Asin.parse(it.asin) != null } ?: return false
+        if (network() != "wifi") return false
+        store.update(p.id) { it.copy(picTriedAt = now()) }
+        status("Getting the picture of ${p.label}")
+        page.images(false)
+        if (!page.goto(p.url)) return true
+        page.ask(mapOf("bb" to "picture"), 4_000)?.get("picture").asStr()
+            ?.takeIf { Regex("^https://(m\\.media-amazon\\.com|images-na\\.ssl-images-amazon\\.com|images-amazon\\.com)/").containsMatchIn(it) && it.length < 400 }
+            ?.let { u -> store.update(p.id) { it.copy(image = u) } }
+        return true
+    }
+
     fun readOrders() {
         busyWith = "reading your Amazon orders"
         val armed = store.products().filter { it.buy && it.watch }.map { it.asin }.distinct()
@@ -448,7 +464,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val LOCK_AFTER = 3
         const val LOCK_MS = 10 * 60_000L
         val VERIFY_LOOKS = longArrayOf(5_000, 15_000, 40_000, 120_000)
-        const val STANDBY_MS = 10 * 60_000L
+        const val STANDBY_MS = 30 * 60_000L     // 1.6: was 10 min (about 80 MB an hour on the owner's phone); the desktop's view shows meanwhile
+        const val PIC_RETRY_MS = 24 * 3600_000L
         fun money(d: Double) = String.format(java.util.Locale.US, "%.2f", d)
         fun secs(ms: Long) = if (ms < 90_000) "in ${(ms + 999) / 1000} s" else "in ${(ms + 59_999) / 60_000} min"
     }

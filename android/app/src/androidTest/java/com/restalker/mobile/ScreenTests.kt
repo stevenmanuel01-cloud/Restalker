@@ -103,6 +103,8 @@ class ScreenTests {
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
         shot("t9_settings")
         compose.onNodeWithTag("report").performScrollTo().performClick()
+        compose.onNodeWithTag("report-note").performTextInput("test note: pictures missing")      // 1.6: your words go with it
+        compose.onNodeWithTag("report-send").performClick()
         compose.waitUntil(90_000) { compose.onAllNodesWithTag("report-msg").fetchSemanticsNodes().isNotEmpty() &&
             RkApp.store().log().any { it.contains("Report sent") || it.contains("could not be sent") } }
         compose.waitForIdle(); Thread.sleep(1_000)

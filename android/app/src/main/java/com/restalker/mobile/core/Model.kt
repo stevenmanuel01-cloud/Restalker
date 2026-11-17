@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "1.5"
+const val APP_VERSION = "1.6"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -47,6 +47,7 @@ data class Product(
     val msrp: Double? = null,
     val tcg: Double? = null,
     val others: List<Map<String, Any?>> = emptyList(),
+    val picTriedAt: Long = 0,             // 1.6: when its page was last opened only for its picture
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -64,7 +65,7 @@ data class Product(
         "submittedAt" to submittedAt, "orderNumber" to orderNumber, "fails" to fails, "failEpisode" to failEpisode,
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
         "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
-        "msrp" to msrp, "tcg" to tcg, "others" to others,
+        "msrp" to msrp, "tcg" to tcg, "others" to others, "picTriedAt" to picTriedAt,
     )
 
     /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
@@ -91,7 +92,7 @@ data class Product(
                 image = m["image"].asStr() ?: "", qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
                 overCap = m["overCap"].asBool(), dSt = m["dSt"].asStr() ?: "", dPr = m["dPr"].asDouble(), dAt = m["dAt"].asLong() ?: 0,
                 msrp = m["msrp"].asDouble(), tcg = m["tcg"].asDouble(),
-                others = m["others"].asList().mapNotNull { it.asMap() }.take(8),
+                others = m["others"].asList().mapNotNull { it.asMap() }.take(8), picTriedAt = m["picTriedAt"].asLong() ?: 0,
             )
         }
     }

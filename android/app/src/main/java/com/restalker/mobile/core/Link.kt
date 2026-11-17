@@ -134,7 +134,21 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
     private fun save(s: St) = store.writeFile(FILE, MiniJson.write(linkedMapOf("code" to s.code, "dev" to s.dev, "since" to s.since,
         "recs" to s.recs.mapValues { it.value.toMap() }, "peer" to s.peer, "linkedAt" to s.linkedAt, "pubAt" to s.pubAt, "dirty" to s.dirty)))
 
-    init { remember(load()) }
+    init {
+        remember(load())
+        // 1.6: undo 1.5's mistake once - a product marked bought here only because the desktop bought it before the link (no purchase on
+        // this phone) is not bought; the desktop's Buy decides
+        try {
+            if (store.readFile("fix16.done") == null) {
+                val mine = store.purchases().map { it.asin }.toSet()
+                for (p in store.products()) if (p.purchased && p.asin !in mine && p.orderNumber == null) {
+                    store.update(p.id) { it.copy(purchased = false, attempted = false) }
+                    store.log("${p.label}: was marked bought by mistake (the desktop's purchase from before the link) - corrected.")
+                }
+                store.writeFile("fix16.done", "1")
+            }
+        } catch (e: Exception) { }
+    }
 
     /** (never waits for a round on the network - the screen and the buy decision ask this) */
     fun linked(): Boolean = snap?.first == true
@@ -165,23 +179,26 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         for (p in store.products()) {
             if (!ASIN.matches(p.asin) || p.cap <= 0 || out.containsKey(p.asin)) continue
             // (a checkout running here, or a Place order pressed: not "Buy" for the desktop - the same product is never ordered twice)
-            out[p.asin] = LinkRec(p.asin, p.label, p.cap, p.buy && !p.purchased && !p.attempted && !p.inProgress, p.watch, p.kind, 0.0, false, bought[p.asin] ?: 0.0, here = true, q = p.qty)
+            out[p.asin] = LinkRec(p.asin, p.label, p.cap, p.buy && !p.attempted && !p.inProgress, p.watch, p.kind, 0.0, false, bought[p.asin] ?: 0.0, here = true, q = p.qty)
         }
         return out
     }
 
     /** A change from the desktop, made here. */
-    private fun apply(n: LinkRec, old: LinkRec?) {
+    private fun apply(n: LinkRec, old: LinkRec?, linkedAt: Double) {
         val p = store.products().firstOrNull { it.asin == n.a }
         if (n.g) {
             if (p != null) { store.remove(p.id); store.log("From the desktop: ${p.label} removed.") }
             return
         }
         val kind = if (n.k in Product.SHAPES) n.k else "other"
-        val boughtThere = n.ba > (old?.ba ?: 0.0) && n.ba > ((localItems()[n.a]?.ba ?: 0.0) + 1)
+        // bought by the desktop SINCE the link (1.6: a purchase from before the link - e.g. weeks ago - is not "bought there": 1.5 marked
+        // such a product bought here and then told the desktop "Buy off"). Buy goes off here; nothing is latched - the desktop's Buy says
+        // when it wants it again
+        val boughtThere = n.ba > linkedAt && n.ba > (old?.ba ?: 0.0) && n.ba > ((localItems()[n.a]?.ba ?: 0.0) + 1)
         if (p == null) {
             store.add(Product(id = store.newId(), asin = n.a, name = n.n, cap = n.c, kind = kind, watch = n.w, buy = n.b && !boughtThere,
-                tokens = Tokens.fromTitle(n.n), purchased = boughtThere, qty = n.q, qtySince = clockMs()))
+                tokens = Tokens.fromTitle(n.n), qty = n.q, qtySince = clockMs()))
             store.log("From the desktop: ${n.n} added (cap \$${Engine.money(n.c)}${if (n.b) ", Buy on" else ""}).")
             return
         }
@@ -194,7 +211,6 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         store.update(p.id) {
             var q = it.copy(cap = n.c, watch = n.w, buy = if (boughtThere) false else n.b)
             if (it.qty != n.q) q = q.copy(qty = n.q, qtySince = clockMs())
-            if (boughtThere) q = q.copy(purchased = true)
             if (n.b && !it.buy && !boughtThere) q = q.copy(fails = 0, lockedUntil = 0)
             q
         }
@@ -322,7 +338,7 @@ class Link(private val store: Store, private val net: LinkNet, private val clock
         val msgs = try { read(s) } catch (e: Exception) { save(s); return "read failed: ${e.message?.take(80)}" }
         for ((m, srv) in msgs) {
             for ((_, n, old) in merge(s, m, srv, now)) {
-                try { apply(n, old) } catch (e: Exception) { store.log("! A change from the desktop could not be made: ${e.message?.take(100)}") }
+                try { apply(n, old, s.linkedAt) } catch (e: Exception) { store.log("! A change from the desktop could not be made: ${e.message?.take(100)}") }
             }
             try { takeGroups(m) } catch (e: Exception) { }
         }

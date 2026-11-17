@@ -68,9 +68,13 @@ class MainActivity : ComponentActivity() {
     private var update = mutableStateOf<Pair<String, String>?>(null)
     private var reportResult = mutableStateOf<String?>(null)
     private var linkMsg = mutableStateOf<String?>(null)
-    private fun report() {
+    /** 1.6: "Report a problem" first asks what went wrong (optional) - your words go to Claude with the report. */
+    private var asking = mutableStateOf(false)
+    private fun report() { asking.value = true }
+    private fun sendReport(note: String) {
         reportResult.value = "Sending..."
-        Reporter.send(this, "sent by you") { ok ->
+        val n = note.replace(Regex("\\s+"), " ").trim().take(1500)
+        Reporter.send(this, if (n.isEmpty()) "sent by you" else "sent by you - your note: $n") { ok ->
             reportResult.value = if (ok) "Sent to Claude.\nYour report code:\n${com.restalker.mobile.core.Report.code(RkApp.store())}\n\nTell Claude \"reported\" (the first time, also send this code)."
                                  else "Could not send it (no internet?). Try again."
         }
@@ -185,6 +189,17 @@ class MainActivity : ComponentActivity() {
         }
         if (adding) AddSheet(shared.value, onDone = { adding = false; shared.value = null })
         editing?.let { p -> CapDialog(p) { editing = null } }
+        if (asking.value) {
+            var note by remember { mutableStateOf("") }
+            AlertDialog(onDismissRequest = { asking.value = false }, title = { Text("Report a problem") }, text = {
+                Column {
+                    Text("What went wrong? (optional - the app's log goes with it)", fontSize = 13.sp)
+                    OutlinedTextField(note, { note = it }, minLines = 3, maxLines = 6, placeholder = { Text("For example: no pictures on the Hobbit box") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("report-note"))
+                }
+            }, confirmButton = { Button(onClick = { asking.value = false; sendReport(note) }, modifier = Modifier.testTag("report-send")) { Text("Send to Claude") } },
+                dismissButton = { TextButton(onClick = { asking.value = false }) { Text("Cancel") } })
+        }
         reportResult.value?.let { msg ->
             AlertDialog(onDismissRequest = { reportResult.value = null }, title = { Text("Report problem") },
                 text = { androidx.compose.foundation.text.selection.SelectionContainer { Text(msg, modifier = Modifier.testTag("report-msg")) } },

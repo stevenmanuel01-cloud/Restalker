@@ -17,8 +17,8 @@ echo "=== the phone's reports, read back from outside (the way Claude reads them
 code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
 if [ -z "$code" ]; then echo "no report code from the test"; fail=1; else
   got=""; for i in 1 2 3 4 5 6; do got=$(curl -s -A "Restalker-CI" "https://ntfy.sh/$code/json?poll=1&since=all" || true)
-    echo "$got" | grep -q '"sent by you"' && echo "$got" | grep -q 'automatic: Sign in to Amazon' && break; sleep 5; done
-  if echo "$got" | grep -q '"sent by you"' && echo "$got" | grep -q 'automatic: Sign in to Amazon'; then
+    echo "$got" | grep -q '"sent by you' && echo "$got" | grep -q 'automatic: Sign in to Amazon' && break; sleep 5; done
+  if echo "$got" | grep -q '"sent by you' && echo "$got" | grep -q 'automatic: Sign in to Amazon'; then
     url=$(echo "$got" | grep 'automatic: Sign in' | grep -o '"url":"[^"]*"' | tail -1 | cut -d'"' -f4)
     body=$(curl -s -A "Restalker-CI" "$url" || true)
     if echo "$body" | grep -q "Restalker Mobile v" && echo "$body" | grep -q "Amazon asked to sign in"; then echo "reports read back: OK (button + automatic, file readable)"
