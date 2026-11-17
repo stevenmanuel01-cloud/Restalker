@@ -47,6 +47,17 @@ if adb shell ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
 else
   adb shell monkey -p $P --pct-syskeys 0 --pct-appswitch 5 --throttle 120 -s 4242 -v 3000 > monkey.txt 2>&1
   tail -5 monkey.txt
+  # 2.1: once on API 33 the virtual phone's own system restarted (graphics errors, no app crash) at tap 2208 - then the same 3000 taps
+  # run once more; a restart at the same tap again, or any app crash, still fails.
+  if ! grep -q "Monkey finished" monkey.txt && grep -q "System appears to have crashed" monkey.txt && ! grep -q "CRASH\|ANR in" monkey.txt \
+     && ! adb shell run-as $P test -s files/crash.txt 2>/dev/null; then
+    first=$(grep -o "crashed at event [0-9]*" monkey.txt)
+    echo "(the virtual phone's own system restarted during random taps - $first; no app crash - the same taps once more)"
+    up; adb shell svc wifi disable; adb shell svc data disable; adb shell cmd connectivity airplane-mode enable 2>/dev/null || true; sleep 5
+    adb shell monkey -p $P --pct-syskeys 0 --pct-appswitch 5 --throttle 120 -s 4242 -v 3000 > monkey.txt 2>&1
+    tail -3 monkey.txt
+    if grep -q "$first" monkey.txt; then echo "THE SYSTEM RESTARTED AT THE SAME TAP AGAIN"; fi
+  fi
   if ! grep -q "Monkey finished" monkey.txt; then echo "RANDOM TAPS DID NOT FINISH (the virtual phone dropped off?)"; fail=1
   elif grep -q "CRASH\|ANR in\|Monkey aborted" monkey.txt; then echo "RANDOM TAPS FOUND A CRASH"; grep -A30 "CRASH\|ANR in" monkey.txt | head -60; fail=1; else echo "random taps: no crash, no freeze"; fi
 fi
