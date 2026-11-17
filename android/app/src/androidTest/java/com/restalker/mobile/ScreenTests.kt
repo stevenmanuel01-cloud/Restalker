@@ -274,8 +274,10 @@ class ScreenTests {
         compose.onNodeWithText("Settings").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("practice-any").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("pa-link").performTextInput("https://www.ebay.com/itm/1")
-        compose.onNodeWithTag("pa-go").performClick()
-        compose.waitUntil(8_000) { compose.onAllNodesWithTag("pa-err").fetchSemanticsNodes().isNotEmpty() }      // not an Amazon link: said, nothing runs
+        for (k in 0 until 3) {                                    // not an Amazon link: said, nothing runs (tap again if the keyboard took the tap)
+            compose.waitForIdle(); compose.onNodeWithTag("pa-go").performScrollTo().performClick()
+            try { compose.waitUntil(5_000) { compose.onAllNodesWithTag("pa-err").fetchSemanticsNodes().isNotEmpty() }; break } catch (e: Throwable) { if (k == 2) throw e }
+        }
         compose.onNodeWithTag("share-qr").performScrollTo().assertIsDisplayed()
         shot("t15_settings_share")
     }

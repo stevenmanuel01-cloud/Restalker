@@ -160,6 +160,8 @@ class PhoneTests {
         start(true, false, Product(id = "a6", asin = "B0TEST0002", cap = 120.0, buy = false, watch = true))
         assertTrue(waitFor(60_000) { p("B0TEST0002").lastCheck > 0 })
         val web = WatchService.instance!!.web
+        web.wake()                       // (2.0: between looks the page rests - its scripts are paused; a look or a checkout wakes it first)
+        Thread.sleep(500)
         val res = java.util.concurrent.atomic.AtomicReference<String>()
         val l = java.util.concurrent.CountDownLatch(1)
         android.os.Handler(android.os.Looper.getMainLooper()).post {

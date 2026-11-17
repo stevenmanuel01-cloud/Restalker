@@ -161,6 +161,7 @@ class AmazonWeb(private val appCtx: Context) : Page {
     }
 
     override fun ask(msg: Map<String, Any?>, timeoutMs: Long): Map<String, Any?>? {
+        wake()                                         // (2.0: never ask a resting page - its scripts would not answer)
         val until = System.currentTimeMillis() + timeoutMs
         val json = MiniJson.write(msg)
         var injectedAgain = false
