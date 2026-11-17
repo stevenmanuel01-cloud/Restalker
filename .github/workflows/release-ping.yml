@@ -20,7 +20,14 @@ jobs:
         run: |
           V=$(python3 -c "import json;print(json.load(open('latest.json'))['version'])")
           echo "version $V"
-          for i in 1 2 3; do
-            curl -fsS -m 20 -H "Title: Restalker $V" -d "$V" "https://ntfy.sh/$TOPIC" && break
-            sleep 10
+          # v130: ntfy can refuse GitHub's shared address for a while ("429 too many") - the v129 ping was lost that way. So: up to 12
+          # tries over about 10 minutes, each one read back from the channel. Never fails the job (no GitHub e-mails); the PC also
+          # takes a fresh look every 6 hours by itself.
+          ok=""
+          for i in $(seq 1 12); do
+            curl -sS -m 20 -o /dev/null -w "try $i: answer %{http_code}\n" -H "Title: Restalker $V" -d "$V" "https://ntfy.sh/$TOPIC" || true
+            sleep 3
+            if curl -sS -m 20 "https://ntfy.sh/$TOPIC/json?poll=1&since=15m" | grep -q "\"message\":\"$V\""; then ok=1; break; fi
+            sleep $((10 + i * 5))
           done
+          if [ -n "$ok" ]; then echo "PING ON THE CHANNEL: $V"; else echo "PING NOT DELIVERED (429?) - the PC finds $V by its 6-hour safety look"; fi
