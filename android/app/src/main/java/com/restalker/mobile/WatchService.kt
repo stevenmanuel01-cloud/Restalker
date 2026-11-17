@@ -37,8 +37,9 @@ class WatchService : Service() {
         startRx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); startAt = System.currentTimeMillis()
         // 2.2: the PC and the other phones apart (Who buys: pc / phone / both decides what the PC's buying means for this phone)
         engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() },
-            otherPhoneBuys = { DeskLink.get().otherPhoneBuys() }, buyerMode = { RkApp.store().settings().buyMode },
-            pcVerdict = { a -> GoListener.verdict(a) })
+            otherPhoneBuys = { DeskLink.get().otherPhoneBuys() },
+            buyerMode = { if (DeskLink.get().linked()) RkApp.store().settings().buyMode else "solo" },     // (not linked: this phone buys)
+            pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() })
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
@@ -71,6 +72,8 @@ class WatchService : Service() {
                 val id = intent.getStringExtra("id") ?: ""
                 when (intent.getStringExtra("cmd")) {
                     "check" -> engine.send(Engine.Cmd.CheckNow(id))
+                    // 2.3 (owner: "a button to [refresh all products at once] would be good"): one after another, watched products only
+                    "checkall" -> RkApp.store().products().filter { it.watch }.forEach { engine.send(Engine.Cmd.CheckNow(it.id)) }
                     "buynow" -> engine.send(Engine.Cmd.BuyNow(id))
                     "practice" -> engine.send(Engine.Cmd.Practice(id))
                     "practiceany" -> engine.send(Engine.Cmd.PracticeAny(id))

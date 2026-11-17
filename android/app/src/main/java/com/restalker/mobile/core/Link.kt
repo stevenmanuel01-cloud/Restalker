@@ -234,14 +234,18 @@ class Link(private val store: Store, private val net: LinkNet,
         if (msg["r"].asStr() == "phone") {
             val d = (msg["d"].asStr() ?: "").take(20)
             if (d.isNotEmpty()) s.phones[d] = linkedMapOf("at" to (srvTime ?: now), "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(),
-                "av" to (msg["av"].asLong() ?: 0L))
+                "av" to (msg["av"].asLong() ?: 0L), "nm" to (msg["nm"].asStr() ?: "").take(40), "bm" to (msg["bm"].asStr() ?: "").take(8),
+                "fo" to (msg["fo"] != false), "vn" to (msg["vn"].asStr() ?: "").take(12))
+            // 2.3 (owner: "multiple devices should be able to independently determine who buys ... In settings, there should be an option
+            // to see all devices linked, with options to control the above buying selection manually/remotely"): a change of THIS device's
+            // choice made on another device
+            msg["set"].asMap()?.let { st -> if (st["d"].asStr() == s.dev) takeSet(st, (msg["nm"].asStr() ?: d).take(40)) }
             s.phones.keys.filter { (s.phones[it]?.get("at").asDouble() ?: 0.0) < now - 30 * 86400 }.forEach { s.phones.remove(it) }
         } else {
             s.peer = linkedMapOf("d" to (msg["d"].asStr() ?: "").take(20), "r" to (msg["r"].asStr() ?: "").take(10), "at" to (srvTime ?: now),
-                "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(), "n" to (msg["items"].asList().size))
-            takeMode(msg["bm"].asStr(), msg["bmAt"].asDouble())
+                "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(), "n" to (msg["items"].asList().size),
+                "hand" to msg["hand"].asBool())          // 2.3: the PC does not buy on Amazon because a phone / tablet buys instead
         }
-        if (msg["r"].asStr() == "phone") takeMode(msg["bm"].asStr(), msg["bmAt"].asDouble())
         if (msg["hi"].asBool()) s.dirty = true
         for (x in msg["items"].asList().take(500)) {
             val m = x.asMap() ?: continue
@@ -326,12 +330,16 @@ class Link(private val store: Store, private val net: LinkNet,
         val mine = try { me() } catch (e: Exception) { emptyMap() }
         val o = linkedMapOf<String, Any?>("v" to 1, "d" to s.dev, "r" to "phone", "at" to now, "amz" to (mine["amz"] == true && !bye),
             "av" to mine["av"], "au" to (mine["au"] == true), "items" to s.recs.values.map { it.post() },
-            "bm" to store.settings().buyMode, "bmAt" to store.settings().buyModeAt / 1000.0)        // 2.2: Who buys on Amazon (the newest choice wins)
+            "bm" to store.settings().buyMode, "bmAt" to store.settings().buyModeAt / 1000.0,        // 2.3: THIS device's choice (each its own)
+            "fo" to store.settings().failover, "nm" to (mine["nm"] as? String ?: "").take(40), "vn" to (mine["vn"] as? String ?: "").take(12))
+        val set = pendingSet
+        set?.let { o["set"] = it }
         if (bye) o["bye"] = true
         if (hi) o["hi"] = true
         val body = LinkCrypto.seal(sec, MiniJson.write(o))
         val st = net.post("$SERVER/$ch", body, body.length > INLINE_MAX)
         if (st !in 200..299) throw java.io.IOException("the link server answered $st")
+        if (set != null && pendingSet === set) pendingSet = null              // (kept for the next post when this one failed)
         s.pubAt = now; s.dirty = false
     }
 
@@ -402,16 +410,59 @@ class Link(private val store: Store, private val net: LinkNet,
     /** 2.0: the other phones / tablets heard within PHONE_ALIVE. */
     fun otherPhones(): Int { val (dev, ph) = snapPhones; val t = nowS(); return ph.count { (d, v) -> d != dev && t - (v["at"].asDouble() ?: 0.0) < PHONE_ALIVE } }
 
-    /** 2.2: Who buys on Amazon - a newer choice made on the PC's side (echoed from another phone / tablet) is taken here. */
-    private fun takeMode(bm: String?, atS: Double?) {
-        if (bm == null || bm !in Settings.BUY_MODES || atS == null) return
-        val atMs = (atS * 1000).toLong()
-        val st = store.settings()
-        if (atMs > st.buyModeAt && bm != st.buyMode) {
-            store.setSettings { it.copy(buyMode = bm, buyModeAt = atMs) }
-            store.log("Who buys on Amazon: ${modeWord(bm)} (chosen on another linked device).")
-        } else if (atMs > st.buyModeAt) store.setSettings { it.copy(buyModeAt = atMs) }
+    /** 2.3: a change of this device's choice made on another linked device (the newest change wins). */
+    private fun takeSet(st: Map<String, Any?>, from: String) {
+        val bm = st["bm"].asStr()?.takeIf { it in Settings.BUY_MODES } ?: return
+        val atMs = ((st["at"].asDouble() ?: return) * 1000).toLong()
+        val cur = store.settings()
+        if (atMs <= cur.buyModeAt) return
+        val fo = if (st.containsKey("fo")) st["fo"] != false else cur.failover
+        store.setSettings { it.copy(buyMode = bm, buyModeAt = atMs, failover = fo) }
+        store.log("Who buys on Amazon here: ${modeWord(bm)} (changed on $from).")
     }
+
+    /** 2.3: the PC does not buy on Amazon because a linked phone / tablet buys there instead (not because it stopped). */
+    fun pcHanded(): Boolean {
+        val sn = snap ?: return false
+        if (!sn.first) return false
+        val p = sn.second
+        return p["r"].asStr() == "desktop" && !p["amz"].asBool() && p["hand"].asBool() && !p["bye"].asBool() && nowS() - (p["at"].asDouble() ?: 0.0) < DESK_SILENT
+    }
+
+    /** 2.3: every linked device for Settings - the PC, this device and the other phones / tablets: (id, kind, name, choice, takes over,
+     *  app version, heard seconds ago or -1). */
+    data class Device(val id: String, val pc: Boolean, val me: Boolean, val name: String, val mode: String, val failover: Boolean, val av: Long, val agoS: Long,
+                      val vn: String = "")
+
+    fun devices(myName: String): List<Device> {
+        val sn = snap ?: return emptyList()
+        if (!sn.first) return emptyList()
+        val (dev, ph) = snapPhones
+        val t = nowS()
+        val out = ArrayList<Device>()
+        sn.second["at"].asDouble()?.let { at -> out += Device(sn.second["d"].asStr() ?: "pc", true, false, "PC (Restalker)", "", false, 0, (t - at).toLong()) }
+        val st = store.settings()
+        out += Device(dev, false, true, myName, st.buyMode, st.failover, 0, 0)
+        ph.filter { (d, v) -> d != dev && t - (v["at"].asDouble() ?: 0.0) < 30 * 86400 }.forEach { (d, v) ->
+            out += Device(d, false, false, (v["nm"].asStr() ?: "").ifBlank { "Phone / tablet ${d.takeLast(4)}" }, (v["bm"].asStr() ?: "").ifBlank { "pc" },
+                v["fo"] != false, v["av"].asLong() ?: 0, (t - (v["at"].asDouble() ?: 0.0)).toLong(), (v["vn"].asStr() ?: ""))
+        }
+        return out
+    }
+
+    /** 2.3: change another device's choice from here (it takes it at its next round; the newest change wins). */
+    fun setFor(target: String, bm: String, failover: Boolean): Boolean = synchronized(lock) {
+        if (bm !in Settings.BUY_MODES) return false
+        val s = load()
+        if (LinkCrypto.parse(s.code) == null) return false
+        pendingSet = linkedMapOf("d" to target, "bm" to bm, "fo" to failover, "at" to nowS())
+        s.phones[target]?.let { s.phones[target] = LinkedHashMap(it).also { m -> m["bm"] = bm; m["fo"] = failover } }   // (shown at once)
+        s.dirty = true
+        try { postNow(s) } catch (e: Exception) { save(s); remember(s); return false }
+        save(s); remember(s)
+        true
+    }
+    @Volatile private var pendingSet: Map<String, Any?>? = null
 
     /** 2.2: where the fast channel is: (channel, secret, this device's id) - null when not linked. */
     fun goTarget(): Triple<String, ByteArray, String>? = synchronized(lock) {
@@ -435,10 +486,12 @@ class Link(private val store: Store, private val net: LinkNet,
         return true to when {
             peer["bye"].asBool() -> "Linked - desktop stopped ($heard). $mine$also"
             nowS() - at >= DESK_SILENT -> "Linked - desktop silent since $heard. $mine$also"
-            !peer["amz"].asBool() && store.settings().buyMode == "phone" -> "Linked - the PC watches and signals this phone within seconds (heard $heard). $mine$also"
+            store.settings().buyMode == "phone" -> "Linked - the PC watches and signals this device within seconds (heard $heard). $mine$also"
+            peer["hand"].asBool() && !peer["amz"].asBool() -> "Linked - the PC hands Amazon to another phone / tablet (heard $heard). " +
+                (if (store.settings().buyMode == "both") mine else "This one only watches.") + also
             !peer["amz"].asBool() -> "Linked - desktop auto-buy is off. $mine$also"
-            store.settings().buyMode == "both" -> "Linked - the PC and this phone both buy (heard $heard); this phone orders only if the PC's try failed.$also"
-            else -> "Linked - desktop buys (heard $heard). This phone stands by.$also"
+            store.settings().buyMode == "both" -> "Linked - the PC and this device both buy (heard $heard); this one orders only if the PC's try failed.$also"
+            else -> "Linked - desktop buys (heard $heard). This device only watches" + (if (store.settings().failover) " (it takes over if the PC stops)." else ".") + also
         }
     }
 }

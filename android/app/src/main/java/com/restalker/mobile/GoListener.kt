@@ -100,7 +100,8 @@ object GoListener {
     private fun post(ch: String, sec: ByteArray, dev: String) {
         val st = RkApp.store().settings()
         val body = LinkCrypto.seal(sec, MiniJson.write(linkedMapOf("v" to 1, "d" to dev, "r" to "phone", "hb" to 1,
-            "bm" to st.buyMode, "bmAt" to st.buyModeAt / 1000.0, "at" to System.currentTimeMillis() / 1000.0)))
+            "bm" to st.buyMode, "bmAt" to st.buyModeAt / 1000.0, "fo" to st.failover, "nm" to DeskLink.name(),
+            "at" to System.currentTimeMillis() / 1000.0)))
         val c = java.net.URL("${com.restalker.mobile.core.Link.SERVER}/$ch").openConnection() as java.net.HttpURLConnection
         try {
             c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 15_000; c.readTimeout = 20_000

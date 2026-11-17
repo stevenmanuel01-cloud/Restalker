@@ -85,10 +85,11 @@ object CoreTests {
         val store = Store(dir) { clock.t }
         val amz = FakeAmazon(clock).also { it.store = store }
         val said = Said()
-        var mode = "pc"; var other = false
+        var mode = "pc"; var other = false; var fo = true; var handed = false
         val verdicts = HashMap<String, Pair<String, Long>>()
         var verdictFn: ((String) -> Pair<String, Long>?)? = null
-        val engine = Engine(store, amz, said, clock, { net }, { desk }, { other }, { mode }, { a -> verdictFn?.invoke(a) ?: verdicts[a] })
+        val engine = Engine(store, amz, said, clock, { net }, { desk }, { other }, { mode }, { a -> verdictFn?.invoke(a) ?: verdicts[a] },
+            failover = { fo }, pcHanded = { handed })
         init { store.setSettings { it.copy(watching = true, buying = buying, practice = practice) } }
         fun add(asin: String, cap: Double, buy: Boolean, stock: Boolean = true, price: Double = 99.99): Product {
             amz.items[asin] = FakeAmazon.Item(stock, price, "Magic: The Gathering Test Product $asin Collector Booster Box")
@@ -587,7 +588,8 @@ object CoreTests {
         t("100_price_bar_ticks_and_rows") {
             val pm = PriceMarks.of(399.99, 380.0, 455.88, 410.0)
             val k = pm.items.map { it.kind }
-            val near = pm.items.filter { it.kind != PriceMarks.NOW }.zipWithNext().all { (a, b) -> a.row != b.row || pm.frac(b.value) - pm.frac(a.value) >= PriceMarks.NEAR }
+            val near = pm.items.filter { it.above }.groupBy { it.row }.values.all { r -> r.sortedBy { it.value }.zipWithNext().all { (a, b) ->
+                PriceMarks.centre(pm.frac(b.value).toDouble()) - PriceMarks.centre(pm.frac(a.value).toDouble()) >= PriceMarks.NEAR - 1e-6 } }
             k.containsAll(listOf("zero", "msrp", "tcg", "cap", "now")) && pm.items.first { it.kind == "now" }.label == "Now \$400" && pm.frac(0.0) == 0f &&
                 pm.frac(455.88) < 1f && near && PriceMarks.of(null, 90.0, null, null).items.map { it.kind } == listOf("zero", "cap") &&
                 PriceMarks.of(1299.0, 1200.0, null, null).items.first { it.kind == "cap" }.label == "Cap \$1,200" }
@@ -728,26 +730,90 @@ object CoreTests {
             d.buying && !d.practice && d.buyMode == "pc" && !old.buying && old.practice && missing.buying && !missing.practice &&
                 Settings.fromMap(mapOf("buyMode" to "everyone")).buyMode == "pc" &&
                 Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(buyMode = "both", buyModeAt = 5).toMap()))).let { it.buyMode == "both" && it.buyModeAt == 5L } }
-        t("120_who_buys_travels_over_the_link_newest_wins") {
-            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+        // ---- 2.3 (owner, 2026-11-17): each device its own buying choice; Settings, Linked devices; the price bar's labels
+        fun hub(): Pair<LinkNet, ArrayList<String>> {
             val posts = ArrayList<String>()
-            val net = object : LinkNet {
+            return object : LinkNet {
                 override fun post(url: String, body: String, asFile: Boolean): Int { posts.add(body); return 200 }
                 override fun get(url: String): String = posts.mapIndexed { i, b -> MiniJson.write(mapOf("event" to "message", "id" to "m$i", "time" to 1.8e9 + i, "message" to b)) }.joinToString("\n")
-            }
-            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true) }) { wa.clock.t }
+            } to posts
+        }
+        t("120_a_choice_stays_on_its_own_device_the_pc_echo_changes_nothing") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val (net, posts) = hub()
+            val wa = World(); val wb = World()
+            val la = Link(wa.store, net, { mapOf("amz" to true, "nm" to "Phone") }) { wa.clock.t }
+            val lb = Link(wb.store, net, { mapOf("amz" to true, "nm" to "Tablet") }) { wb.clock.t }
+            la.connect(code); lb.connect(code)
+            wb.store.setSettings { it.copy(buyMode = "both", buyModeAt = wb.clock.t) }; lb.touched()
+            la.cycle(); lb.cycle()
+            wa.store.setSettings { it.copy(buyMode = "pc", buyModeAt = wa.clock.t + 5_000) }; la.touched(); la.cycle(); lb.cycle(); la.cycle()
+            val sent = posts.mapNotNull { MiniJson.obj(LinkCrypto.unseal(sec, it)) }.last { it["nm"] == "Phone" }
+            // the PC tells its own (newest) view - a "bm" from the PC is not taken by anyone
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0 + 100,
+                "amz" to true, "items" to emptyList<Any>(), "bm" to "phone", "bmAt" to wa.clock.t / 1000.0 + 100))))
+            la.cycle(); lb.cycle()
+            sent["bm"] == "pc" && sent["nm"] == "Phone" && wa.store.settings().buyMode == "pc" && wb.store.settings().buyMode == "both" &&
+                la.goTarget()!!.first.endsWith("-go") }
+        t("121_pc_only_watches_and_buys_only_when_the_pc_stopped_and_it_takes_over") {
+            val w = World(desk = true); w.add("B0TEST0321", 120.0, true)                 // PC buys -> watch only
+            w.check("B0TEST0321"); val watched = w.amz.begins == 0
+            val w2 = World(desk = false); w2.add("B0TEST0322", 120.0, true)               // the PC stopped, takes over on -> buys
+            w2.check("B0TEST0322"); val tookOver = w2.amz.places == 1
+            val w3 = World(desk = false); w3.fo = false; w3.add("B0TEST0323", 120.0, true)  // takes over off -> never buys
+            w3.check("B0TEST0323"); val never = w3.amz.begins == 0
+            val w4 = World(desk = false); w4.handed = true; w4.add("B0TEST0324", 120.0, true)   // the PC handed Amazon to another device -> not this one
+            w4.check("B0TEST0324"); val handed = w4.amz.begins == 0
+            val w5 = World(desk = true); w5.mode = "phone"; w5.add("B0TEST0325", 120.0, true)  // "Instead of PC" -> buys
+            w5.check("B0TEST0325")
+            watched && tookOver && never && handed && w5.amz.places == 1 }
+        t("122_a_remote_change_reaches_only_that_device_and_an_older_one_is_not_taken") {
+            val code = LinkCrypto.make()
+            val (net, _) = hub()
+            val wa = World(); val wb = World()
+            val la = Link(wa.store, net, { mapOf("amz" to true, "nm" to "Phone") }) { wa.clock.t }
+            val lb = Link(wb.store, net, { mapOf("amz" to true, "nm" to "Tablet") }) { wb.clock.t }
+            la.connect(code); lb.connect(code)
+            wa.store.setSettings { it.copy(buyMode = "both", buyModeAt = wa.clock.t) }; la.touched()
+            la.cycle(); lb.cycle(); la.cycle()
+            val devs = lb.devices("Tablet")
+            val phone = devs.firstOrNull { !it.me && !it.pc }
+            // the tablet sets the phone to "PC only", takes over off
+            wb.clock.t += 10_000
+            val ok = lb.setFor(phone!!.id, "pc", false)
+            la.cycle()
+            val took = wa.store.settings().buyMode == "pc" && !wa.store.settings().failover && wb.store.settings().buyMode == "pc" &&
+                wa.store.log().any { it.contains("changed on Tablet") }
+            // an older change (made before the phone's own newest one) is not taken
+            wa.store.setSettings { it.copy(buyMode = "both", buyModeAt = wb.clock.t + 60_000) }; la.touched(); la.cycle()
+            lb.setFor(phone.id, "phone", true); la.cycle()
+            val kept = wa.store.settings().buyMode == "both"
+            val shown = devs.any { it.me && it.name == "Tablet" } && phone.name == "Phone" && phone.mode == "both"
+            ok && took && kept && shown }
+        t("123_the_pc_hand_flag_and_the_devices_list") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val (net, posts) = hub()
+            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true, "nm" to "Phone", "vn" to "2.3") }) { wa.clock.t }
             la.connect(code); la.cycle()
-            wa.store.setSettings { it.copy(buyMode = "phone", buyModeAt = wa.clock.t) }; la.touched(); la.cycle()
-            val sent = posts.mapNotNull { MiniJson.obj(LinkCrypto.unseal(sec, it)) }.last()
-            val mine = sent["bm"] == "phone"
-            // the PC echoes an OLDER choice: not taken; a NEWER one (made on the tablet): taken
-            fun desk(bm: String, at: Double) = posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0,
-                "amz" to false, "items" to emptyList<Any>(), "bm" to bm, "bmAt" to at))))
-            desk("pc", wa.clock.t / 1000.0 - 60); la.cycle()
-            val keptMine = wa.store.settings().buyMode == "phone"
-            desk("both", wa.clock.t / 1000.0 + 60); la.cycle()
-            val tookNewer = wa.store.settings().buyMode == "both"
-            mine && keptMine && tookNewer && la.goTarget()!!.first.endsWith("-go") && la.state().second.isNotEmpty() }
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0,
+                "amz" to false, "hand" to true, "items" to emptyList<Any>()))))
+            la.cycle()
+            val handed = la.pcHanded() && !la.desktopBuys()
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0 + 1,
+                "amz" to true, "items" to emptyList<Any>()))))
+            la.cycle()
+            val d = la.devices("Phone")
+            handed && !la.pcHanded() && la.desktopBuys() && d.size == 2 && d[0].pc && d[1].me && d[1].mode == "pc" }
+        t("124_price_bar_fixed_prices_above_the_cap_alone_below") {
+            val all = listOf(PriceMarks.of(399.99, 380.0, 455.88, 410.0), PriceMarks.of(400.0, 405.0, 400.0, 401.0), PriceMarks.of(5.0, 600.0, 4.0, 6.0),
+                PriceMarks.of(1299.0, 1200.0, 323.88, 1250.0, 2000.0))
+            all.all { pm ->
+                val below = pm.items.filter { !it.above }
+                val noOverlap = pm.items.filter { it.above }.groupBy { it.row }.values.all { r -> r.sortedBy { it.value }.zipWithNext().all { (a, b) ->
+                    PriceMarks.centre(pm.frac(b.value).toDouble()) - PriceMarks.centre(pm.frac(a.value).toDouble()) >= PriceMarks.NEAR - 1e-6 } }
+                below.map { it.kind } == listOf("cap") && noOverlap && pm.rows in 1..PriceMarks.MAX_ROWS &&
+                    pm.items.filter { it.above }.map { it.kind }.toSet() == setOf("zero", "msrp", "tcg", "now") }
+        }
         return results
     }
 

@@ -1,3 +1,15 @@
+# Restalker Mobile 2.3 (2026-11-17; your notes of this afternoon)
+- Each phone or tablet now decides its own buying. Settings -> Linked devices lists the PC and every linked phone / tablet (name,
+  version, when it was last heard). Per device: PC only (watches, does not buy - optionally "Buy if the PC stops"), Both buy, or
+  Instead of PC. You can change another device's choice from here too; changing one never changes the others. Rename this device there.
+- Swipe left / right to move between Watch, Bought, Activity and Settings.
+- Pull down on any of those to refresh (reads the PC link and looks for an update - it does not re-check every product).
+  Watch has a "Check all now" button for that.
+- Pull down on a product's page: it is looked at again right now (and the PC link is read for the other stores).
+- Price bar: the fixed prices ($0, MSRP, TCG, now) sit above the line, on separate rows so they never overlap; the cap and its knob
+  sit below the line on their own.
+- Cap box: type an exact cap next to the - / + buttons and tap Done.
+
 # Restalker Mobile 2.2 (2026-11-17; your notes of this morning)
 - Who buys on Amazon (Settings, when linked): PC (as before - this phone only takes a backup look every 30 minutes, the "next look in
   12 min" you saw), Phone (the PC keeps watching and tells this phone within seconds; this phone checks it and checks out) or Both (both

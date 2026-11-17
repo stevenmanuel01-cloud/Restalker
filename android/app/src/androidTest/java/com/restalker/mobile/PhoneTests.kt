@@ -379,12 +379,14 @@ class PhoneTests {
             assertTrue("posted", c.responseCode in 200..299); c.disconnect()
         }
         val now0 = System.currentTimeMillis()
-        // the PC: linked, Amazon buying handed to the phone (amz = false), Who buys = phone
-        post(ch, linkedMapOf("v" to 1, "d" to "d-test", "r" to "desktop", "at" to now0 / 1000.0, "amz" to false, "bm" to "phone", "bmAt" to now0 / 1000.0 - 5,
-            "items" to emptyList<Any>()))
-        assertTrue("the PC's choice arrived", waitCycle(90_000) { DeskLink.get().cycle(); RkApp.store().settings().buyMode == "phone" })
+        // 2.3: THIS device chose "Instead of PC" itself (each device its own choice); the PC hands Amazon over (amz = false, hand = true)
+        RkApp.store().setSettings { it.copy(buyMode = "phone", buyModeAt = now0) }
+        post(ch, linkedMapOf("v" to 1, "d" to "d-test", "r" to "desktop", "at" to now0 / 1000.0, "amz" to false, "hand" to true,
+            "bm" to "pc", "bmAt" to now0 / 1000.0 + 60, "items" to emptyList<Any>()))
+        assertTrue("the PC's word arrived", waitCycle(90_000) { DeskLink.get().cycle(); DeskLink.get().pcHanded() })
+        assertEquals("a choice from the PC does not change this device", "phone", RkApp.store().settings().buyMode)
         assertTrue("the PC does not buy on Amazon", !DeskLink.get().desktopBuys())
-        assertTrue("says so", DeskLink.get().state().second.contains("signals this phone"))
+        assertTrue("says so", DeskLink.get().state().second.contains("signals this device"))
         val pr = Product(id = "go1", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true, lastCheck = System.currentTimeMillis())
         start(false, true, pr)
         RkApp.store().update("go1") { it.copy(lastCheck = System.currentTimeMillis()) }          // (not due for its own look for a minute)

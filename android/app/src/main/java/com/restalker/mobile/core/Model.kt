@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.2"
+const val APP_VERSION = "2.3"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -132,13 +132,15 @@ data class Settings(
     val ordersKnown: Map<String, List<String>> = emptyMap(),   // ASIN -> order numbers already in your Amazon orders (before a checkout)
     val runIcon: Boolean = true,          // 1.5: the "watching" notice shows its icon in the status bar (off = tucked away, no icon)
     val autoUpdate: Boolean = true,       // 1.7: new versions install by themselves
-    val buyMode: String = "pc",           // 2.2: linked - who buys on Amazon: "pc" | "phone" | "both" (the newest choice of any device wins)
-    val buyModeAt: Long = 0,
+    val buyMode: String = "pc",           // linked - who buys on Amazon here: "pc" (this device only watches) | "both" | "phone" (instead of the PC)
+    val buyModeAt: Long = 0,              //   (2.3: each device its own choice - changed here or from another linked device; the newest change wins)
+    val failover: Boolean = true,         // 2.3: "pc": this device takes over when the PC stops
+    val deviceName: String = "",          // 2.3: the name the other linked devices show (empty = the phone's model)
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
         "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown, "runIcon" to runIcon, "autoUpdate" to autoUpdate,
-        "buyMode" to buyMode, "buyModeAt" to buyModeAt)
+        "buyMode" to buyMode, "buyModeAt" to buyModeAt, "failover" to failover, "deviceName" to deviceName)
     companion object {
         const val MIN_INTERVAL = 60
         val BUY_MODES = listOf("pc", "phone", "both")
@@ -148,7 +150,8 @@ data class Settings(
                 ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["signinNeededAt"].asLong() ?: 0, m["reportTopic"].asStr() ?: "", m["autoReport"] != false, m["reportAt"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
                 (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } }, m["runIcon"] != false, m["autoUpdate"] != false,
-                (m["buyMode"].asStr() ?: "pc").takeIf { it in BUY_MODES } ?: "pc", m["buyModeAt"].asLong() ?: 0)
+                (m["buyMode"].asStr() ?: "pc").takeIf { it in BUY_MODES } ?: "pc", m["buyModeAt"].asLong() ?: 0, m["failover"] != false,
+                (m["deviceName"].asStr() ?: "").take(40))
         }
     }
 }

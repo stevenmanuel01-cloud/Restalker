@@ -46,7 +46,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
              /** 2.2: who buys on Amazon while linked - "pc" | "phone" | "both" (Settings, Who buys). */
              private val buyerMode: () -> String = { "pc" },
              /** 2.2: the PC's latest checkout news for a product on the fast channel: (started | bought | failed | busy, when ms) or null. */
-             private val pcVerdict: (String) -> Pair<String, Long>? = { null }) {
+             private val pcVerdict: (String) -> Pair<String, Long>? = { null },
+             /** 2.3 ("pc"): this device takes over when the PC stops. */
+             private val failover: () -> Boolean = { true },
+             /** 2.3: the PC does not buy on Amazon because another phone / tablet buys there instead. */
+             private val pcHanded: () -> Boolean = { false }) {
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
@@ -105,7 +109,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         offlineSince = 0
         if (wait > 0 && pictureOnce()) return
         if (wait > 20_000) page.rest()                  // 2.0: the page closed and quiet until the next look (battery)
-        if (wait > 0) { status(if (desk) (if (otherPhoneBuys()) "Another phone / tablet buys" else "The PC buys") + " · this phone stands by (a backup look every 30 min - Settings, Who buys) · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
+        if (wait > 0) { status(if (desk) (when { otherPhoneBuys() -> "Another phone / tablet buys"; desktopBuys() -> "The PC buys"; pcHanded() -> "Another device buys"
+            else -> "Not buying here" }) + " · this device stands by (a backup look every 30 min - Settings, Who buys) · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
 
@@ -259,11 +264,18 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun canAutoBuy(p: Product): Boolean {
         val st = s()
         return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold() &&
-            (overrideDesk == p.id || (!otherPhoneBuys() && (!desktopBuys() || buyerMode() == "both")))
+            (overrideDesk == p.id || mayBuyHere())
     }
 
-    /** 2.2: this phone only stands by - another phone / tablet is first in line, or the linked PC buys and Who buys is "pc". */
-    private fun standby(): Boolean = otherPhoneBuys() || (desktopBuys() && buyerMode() == "pc")
+    /** 2.3 (each device its own choice): may THIS device buy now? "both" / "phone": yes; "pc": only when the PC has stopped (not when it
+     *  handed Amazon to another device) and "takes over" is on; never while another phone / tablet is first in line (one order). */
+    private fun mayBuyHere(): Boolean = !otherPhoneBuys() && when (buyerMode()) {
+        "pc" -> failover() && !desktopBuys() && !pcHanded()
+        else -> true
+    }
+
+    /** This device only stands by (a backup look every 30 minutes). */
+    private fun standby(): Boolean = !mayBuyHere()
 
     /** 2.2 (Who buys: both): right before Place your order this phone waits for the PC's OWN try at the same product - it orders only if
      *  that try FAILED (or the PC is not trying it at all); the PC bought it / the PC's word does not come in time -> not ordered here.

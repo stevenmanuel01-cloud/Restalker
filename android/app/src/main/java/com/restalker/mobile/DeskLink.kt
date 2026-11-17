@@ -29,13 +29,22 @@ object DeskLink {
     @Volatile private var link: Link? = null
     @Synchronized fun get(): Link = link ?: Link(RkApp.store(), net, me = {
         val st = RkApp.store().settings()
-        mapOf("amz" to (st.buying && st.watching), "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (st.autoUpdate && Updater.allowed(RkApp.app)))
+        // 2.3: amz = this device may buy NOW (its own choice: "pc" only when the PC stopped and it takes over); nm = its name for the others
+        val l = link
+        val may = st.buying && st.watching && (st.buyMode != "pc" || (st.failover && l != null && !l.desktopBuys() && !l.pcHanded()))
+        mapOf("amz" to may, "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (st.autoUpdate && Updater.allowed(RkApp.app)), "nm" to name(), "vn" to com.restalker.mobile.core.APP_VERSION)
     }).also { link = it }
 
-    /** 2.2: this phone only stands by - another phone / tablet is first in line, or the PC buys and Who buys is "pc". */
+    /** 2.3: this device only stands by - another phone / tablet is first in line, or (its choice "pc") the PC buys, handed Amazon to
+     *  another device, or this one does not take over. Not linked: never. */
     fun standsBy(): Boolean = try {
-        val l = get(); l.otherPhoneBuys() || (l.desktopBuys() && RkApp.store().settings().buyMode == "pc")
+        val l = get(); val st = RkApp.store().settings()
+        l.linked() && (l.otherPhoneBuys() || (st.buyMode == "pc" && (!st.failover || l.desktopBuys() || l.pcHanded())))
     } catch (e: Exception) { false }
+
+    /** 2.3: this device's name for the other linked devices (Settings; empty = the phone's maker and model). */
+    fun name(): String = RkApp.store().settings().deviceName.ifBlank {
+        (android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() } + " " + android.os.Build.MODEL).trim().take(40) }
 
     /** Tests: a fresh link object (after the store was reset). */
     @Synchronized fun reset() { link = null }

@@ -18,6 +18,11 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.geometry.Offset
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -314,6 +319,18 @@ class ScreenTests {
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 395.0 }
         compose.onNodeWithTag("cap-B0TEST0601").assertIsDisplayed()
         shot("t16_cap_buttons")
+        // 2.3: an exact cap typed in the box next to the buttons (saved with Done), then back to 395 with the box
+        compose.onNodeWithTag("capfield-B0TEST0601").performTextReplacement("412.34")
+        compose.onNodeWithTag("capfield-B0TEST0601").performImeAction()
+        compose.waitUntil(3_000) { Math.abs(p("B0TEST0601").cap - 412.34) < 0.001 }
+        compose.onNodeWithTag("capfield-B0TEST0601").performTextReplacement("395")
+        compose.onNodeWithTag("capfield-B0TEST0601").performImeAction()
+        compose.waitUntil(3_000) { p("B0TEST0601").cap == 395.0 }
+        // 2.3: pulling the product page down looks at it now (and nothing breaks)
+        compose.onNodeWithTag("prefresh-B0TEST0601").performTouchInput { swipeDown(startY = height * 0.15f, endY = height * 0.7f) }
+        compose.waitForIdle(); Thread.sleep(500)
+        compose.onNodeWithTag("product-screen").assertExists()
+        shot("t16_cap_typed")
         // a swipe that does not start on the cap mark changes nothing
         compose.onNodeWithTag("capdrag-B0TEST0601", useUnmergedTree = true).performTouchInput { swipe(Offset(width * 0.02f, height * 0.4f), Offset(width * 0.1f, height * 0.4f), 300) }
         compose.waitForIdle(); Thread.sleep(300)
@@ -402,6 +419,47 @@ class ScreenTests {
         compose.onNodeWithTag("unlink").performScrollTo().performClick()
         compose.onNodeWithTag("unlink-yes").performClick()
         compose.waitUntil(30_000) { !DeskLink.get().linked() }
+    }
+
+    /** 2.3: swiping left / right moves between Watch, Bought, Activity and Settings; pulling down refreshes; Settings, Linked devices:
+     *  this device's own buying choice, "Buy if the PC stops" and its name. */
+    @Test fun t18_swipe_pull_linked_devices() {
+        compose.onNodeWithTag("list").assertExists()
+        compose.onNodeWithTag("pager").performTouchInput { swipeLeft() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("bought").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("pager").performTouchInput { swipeLeft() }; compose.waitForIdle()
+        compose.onNodeWithTag("pager").performTouchInput { swipeLeft() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("settings").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("pager").performTouchInput { swipeRight() }; compose.waitForIdle()
+        compose.onNodeWithTag("pager").performTouchInput { swipeRight() }; compose.waitForIdle()
+        compose.onNodeWithTag("pager").performTouchInput { swipeRight() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("list").fetchSemanticsNodes().isNotEmpty() }
+        // pull down on the home screen: refreshes, no crash
+        compose.onNodeWithTag("refresh-0").performTouchInput { swipeDown(startY = height * 0.2f, endY = height * 0.7f) }
+        compose.waitForIdle(); Thread.sleep(1_500)
+        compose.onNodeWithTag("title").assertIsDisplayed()
+        // linked: this device's own row in Linked devices
+        assertEquals(null, DeskLink.get().connect(com.restalker.mobile.core.LinkCrypto.make()))
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("dev-me").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("bm-both").performScrollTo().performClick()
+        compose.waitUntil(3_000) { RkApp.store().settings().buyMode == "both" }
+        compose.onNodeWithTag("bm-pc").performScrollTo().performClick()
+        compose.waitUntil(3_000) { RkApp.store().settings().buyMode == "pc" }
+        compose.onNodeWithTag("fo-me").performScrollTo().performClick()
+        compose.waitUntil(3_000) { !RkApp.store().settings().failover }
+        compose.onNodeWithText("Watches only, does not buy.", substring = true).assertExists()
+        compose.onNodeWithTag("fo-me").performClick()
+        compose.waitUntil(3_000) { RkApp.store().settings().failover }
+        compose.onNodeWithTag("dev-rename").performScrollTo().performClick()
+        compose.onNodeWithTag("dev-name").performTextReplacement("Test tablet")
+        compose.onNodeWithTag("dev-name-ok").performClick()
+        compose.waitUntil(3_000) { RkApp.store().settings().deviceName == "Test tablet" }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Test tablet (this device)").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("devices").performScrollTo()
+        Thread.sleep(500); shot("t18_linked_devices")
+        DeskLink.get().unlink()
+        RkApp.store().setSettings { it.copy(deviceName = "", buyMode = "pc", failover = true) }
     }
 
     @Test fun t8_turnPhoneSideways_noCrash() {
