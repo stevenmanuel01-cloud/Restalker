@@ -1,12 +1,12 @@
 {
   "notes": [
     {
-      "id": 1,
-      "at": 1794892442,
+      "id": 2,
+      "at": 1794905059,
       "for": "77f1096b2366d0cc",
-      "title": "Phone app 1.7 is ready - last manual install",
-      "text": "Tap this message, download, and install. Then open the app and tap Allow when it asks to install its own updates. After that, updates install by themselves. New: real pictures, automatic problem reports.",
-      "link": "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.7/restalker-mobile-1.7.apk"
+      "title": "Phone app 1.8 - pictures fixed",
+      "text": "Open the Restalker app and tap Allow on the yellow line at the top (only once). It then installs 1.8 by itself - and every update after it. (If you have not installed 1.7 yet: tap this message to download 1.8 instead.)",
+      "link": "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v1.8/restalker-mobile-1.8.apk"
     }
   ]
 }
