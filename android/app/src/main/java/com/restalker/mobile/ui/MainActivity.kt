@@ -66,6 +66,8 @@ import com.restalker.mobile.core.Product
 import com.restalker.mobile.core.Pics
 import com.restalker.mobile.core.PriceMarks
 import com.restalker.mobile.core.Settings
+import com.restalker.mobile.core.Buys
+import com.restalker.mobile.core.Tcg
 import com.restalker.mobile.core.asLong
 import com.restalker.mobile.core.asStr
 import java.text.SimpleDateFormat
@@ -122,14 +124,16 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (RkApp.store().settings().watching && WatchService.instance == null) try { WatchService.start(this) } catch (e: Exception) { }
-        checkUpdate()
+        checkUpdate(explicit = false)                // (2.4: opening the app does not ask again within 6 hours)
         setContent { RkTheme { Screen() } }
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); sharedText(intent) }
     override fun onResume() {
         super.onResume(); shown = true; bump(); ticker.post(tick)
-        if (update.value != null) checkUpdate()                               // (back from "allow installs": go on at once)
+        // (back from "allow installs": go on at once - 2.4: only then, NOT after Android's install question closes, which also brings
+        // the app back to the front: that asked again in a loop)
+        if (update.value != null && Updater.state.contains("allow Restalker to install") && Updater.allowed(this)) checkUpdate(explicit = true)
         if (DeskLink.get().linked()) DeskLink.cycleAsync { bump() }          // (opening the app: the desktop's latest at once)
         com.restalker.mobile.HealthRunner.tick(this)                          // 1.7: the self-check (a report by itself when something is wrong)
     }
@@ -141,8 +145,8 @@ class MainActivity : ComponentActivity() {
     }
 
     /** 1.7: the app updates itself (Updater); the screen shows what it is doing. */
-    private fun checkUpdate() = Thread {
-        Updater.tick(this, force = true)
+    private fun checkUpdate(explicit: Boolean) = Thread {
+        Updater.tick(this, force = true, explicit = explicit)
         for (k in 0 until 40) { Thread.sleep(500); if (Updater.available != null || Updater.state.isNotEmpty() && !Updater.state.startsWith("downloading")) break }
         runOnUiThread { update.value = Updater.available?.let { it.version to it.apk } }
     }.start()
@@ -414,7 +418,7 @@ class MainActivity : ComponentActivity() {
                             !Updater.allowed(this@MainActivity) -> Banner("Update v$v is ready. Let Restalker install its own updates (once) - then you never download again.", "Allow", "update-allow") {
                                 try { startActivity(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
                                 catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apk))) } }
-                            else -> Banner("Updating to v$v by itself: ${Updater.state.ifBlank { "starting" }}", "Now", "update-now") { Updater.tick(this@MainActivity, force = true) }
+                            else -> Banner("Updating to v$v by itself: ${Updater.state.ifBlank { "starting" }}", "Update now", "update-now") { Updater.tick(this@MainActivity, force = true, explicit = true) }
                         }
                     }
                     if (st.signinNeededAt > 0 && now - st.signinNeededAt < 3_600_000L) Banner("Amazon wants you to sign in again. Nothing is bought until you do.", "Sign in", "signin-banner") { openBrowser(BrowserActivity.SIGNIN_URL) }
@@ -620,52 +624,57 @@ class MainActivity : ComponentActivity() {
     fun PriceBar(p: Product, nowPr: Double?, cap: Double = p.cap, onDrag: (Double) -> Unit = {}, onDrop: (Double) -> Unit = {}) {
         // 2.2: the scale stays put while the cap mark is dragged (from the values without the dragged cap; room up to 1.6 x)
         val scale = remember(p.id, p.cap, nowPr, p.msrp, p.tcg) { CapStep.scale(nowPr, p.cap, p.msrp, p.tcg) }
-        val marks = PriceMarks.of(nowPr, cap, p.msrp, p.tcg, scale)
         val under = nowPr != null && nowPr <= cap
         val barColor = if (nowPr == null) Look.GreyText else if (under) Look.Green else Look.Red
         var last by remember { mutableStateOf(cap) }
         var grabbed by remember { mutableStateOf(false) }
-        // 2.3: the fixed prices ($0, MSRP, TCG, Now) are labelled above the line (rows so none overlap); the cap and its knob below it
-        val rowH = 18.dp
-        val lineY = rowH * marks.rows + 10.dp
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp).height(lineY + 44.dp).testTag("pricebar-${p.asin}")) {
+        // 2.4: every label is MEASURED (the phone's text size counts) - rows and row height come from the real text, so none overlap
+        val tm = androidx.compose.ui.text.rememberTextMeasurer()
+        val styleOf = { k: String -> androidx.compose.ui.text.TextStyle(fontSize = if (k == PriceMarks.NOW || k == PriceMarks.CAP) 12.sp else 11.sp,
+            fontWeight = if (k == PriceMarks.NOW || k == PriceMarks.CAP) FontWeight.Bold else FontWeight.Normal) }
+        val dens = LocalDensity.current
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp).testTag("pricebar-${p.asin}")) {
             val w = maxWidth
             val wPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
-            val valueAt = { x: Float -> CapStep.snap(scale * (x / wPx).coerceIn(0f, 1f)) }
-            // (only a drag that starts ON the cap mark moves it - a tap or a swipe elsewhere on the bar changes nothing)
-            val capPx = wPx * (cap / scale).toFloat().coerceIn(0f, 1f)
-            val grabPx = with(LocalDensity.current) { 36.dp.toPx() }
-            Box(Modifier.fillMaxSize().testTag("capdrag-${p.asin}").pointerInput(p.id, scale, p.cap) {
-                detectHorizontalDragGestures(
-                    onDragStart = { o -> grabbed = Math.abs(o.x - capPx) <= grabPx; if (grabbed) { last = valueAt(o.x); onDrag(last) } },
-                    onDragEnd = { if (grabbed) onDrop(last); grabbed = false }, onDragCancel = { if (grabbed) onDrop(last); grabbed = false },
-                    onHorizontalDrag = { ch, _ -> if (grabbed) { ch.consume(); last = valueAt(ch.position.x); onDrag(last) } })
-            })
-            Box(Modifier.offset(y = lineY).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Look.GreySoft))
-            if (nowPr != null) Box(Modifier.offset(y = lineY).width(w * marks.frac(nowPr)).height(8.dp).clip(RoundedCornerShape(4.dp)).background(barColor)
-                .testTag(if (under) "pricebar-green" else "pricebar-red"))
-            val labelW = w * PriceMarks.NEAR.toFloat()
-            for (m in marks.items) {
-                val f = marks.frac(m.value)
-                val x = w * f
-                val now = m.kind == PriceMarks.NOW
-                val isCap = m.kind == PriceMarks.CAP
-                val c = when (m.kind) { PriceMarks.NOW -> barColor; PriceMarks.CAP -> Look.Ink; else -> Look.GreyText }
-                if (m.above) {
-                    // a tick from the label's row down to the line
-                    val top = lineY - rowH * m.row - 4.dp
-                    Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = top).width(if (now) 2.dp else 1.dp).height(lineY + 8.dp - top).background(c))
-                    Text(m.label, fontSize = if (now) 12.sp else 11.sp, fontWeight = if (now) FontWeight.Bold else FontWeight.Normal, color = c,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1,
-                        modifier = Modifier.offset(x = w * PriceMarks.centre(f.toDouble()).toFloat() - labelW / 2, y = top - rowH + 2.dp).width(labelW)
-                            .testTag("tick-${m.kind}"))
-                } else if (isCap) {
-                    Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = lineY).width(2.dp).height(18.dp).background(c))
-                    Box(Modifier.offset(x = (x - 9.dp).coerceIn(0.dp, w - 18.dp), y = lineY - 5.dp).size(18.dp).clip(RoundedCornerShape(9.dp))
-                        .background(Look.Ink).border(3.dp, Color.White, RoundedCornerShape(9.dp)).testTag("capknob-${p.asin}"))
-                    Text(m.label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        maxLines = 1, modifier = Modifier.offset(x = w * PriceMarks.centre(f.toDouble()).toFloat() - labelW / 2, y = lineY + 18.dp).width(labelW)
-                            .testTag("tick-cap"))
+            val texts = PriceMarks.labels(nowPr, cap, p.msrp, p.tcg)
+            val sizes = texts.mapValues { (k, t) -> tm.measure(t, styleOf(k), maxLines = 1).size }
+            val padPx = with(dens) { 6.dp.toPx() }
+            val marks = PriceMarks.of(nowPr, cap, p.msrp, p.tcg, scale, sizes.mapValues { (_, z) -> ((z.width + padPx) / wPx).toDouble() })
+            val rowH = with(dens) { (sizes.values.maxOfOrNull { it.height } ?: 40).toDp() } + 3.dp
+            val lineY = rowH * marks.rows + 10.dp
+            Box(Modifier.fillMaxWidth().height(lineY + rowH + 26.dp)) {
+                val valueAt = { x: Float -> CapStep.snap(scale * (x / wPx).coerceIn(0f, 1f)) }
+                // (only a drag that starts ON the cap mark moves it - a tap or a swipe elsewhere on the bar changes nothing)
+                val capPx = wPx * (cap / scale).toFloat().coerceIn(0f, 1f)
+                val grabPx = with(dens) { 36.dp.toPx() }
+                Box(Modifier.fillMaxSize().testTag("capdrag-${p.asin}").pointerInput(p.id, scale, p.cap) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { o -> grabbed = Math.abs(o.x - capPx) <= grabPx; if (grabbed) { last = valueAt(o.x); onDrag(last) } },
+                        onDragEnd = { if (grabbed) onDrop(last); grabbed = false }, onDragCancel = { if (grabbed) onDrop(last); grabbed = false },
+                        onHorizontalDrag = { ch, _ -> if (grabbed) { ch.consume(); last = valueAt(ch.position.x); onDrag(last) } })
+                })
+                Box(Modifier.offset(y = lineY).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Look.GreySoft))
+                if (nowPr != null) Box(Modifier.offset(y = lineY).width(w * marks.frac(nowPr)).height(8.dp).clip(RoundedCornerShape(4.dp)).background(barColor)
+                    .testTag(if (under) "pricebar-green" else "pricebar-red"))
+                for (m in marks.items) {
+                    val x = w * marks.frac(m.value)
+                    val now = m.kind == PriceMarks.NOW
+                    val c = when (m.kind) { PriceMarks.NOW -> barColor; PriceMarks.CAP -> Look.Ink; else -> Look.GreyText }
+                    val lw = w * marks.width(m).toFloat()
+                    val lx = w * marks.centre(m).toFloat() - lw / 2
+                    if (m.above) {
+                        // a tick from the label's row down to the line
+                        val top = lineY - rowH * m.row - 4.dp
+                        Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = top).width(if (now) 2.dp else 1.dp).height(lineY + 8.dp - top).background(c))
+                        Text(m.label, style = styleOf(m.kind), color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, softWrap = false,
+                            modifier = Modifier.offset(x = lx, y = top - rowH + 1.dp).width(lw).testTag("tick-${m.kind}"))
+                    } else {
+                        Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = lineY).width(2.dp).height(18.dp).background(c))
+                        Box(Modifier.offset(x = (x - 9.dp).coerceIn(0.dp, w - 18.dp), y = lineY - 5.dp).size(18.dp).clip(RoundedCornerShape(9.dp))
+                            .background(Look.Ink).border(3.dp, Color.White, RoundedCornerShape(9.dp)).testTag("capknob-${p.asin}"))
+                        Text(m.label, style = styleOf(m.kind), color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, softWrap = false,
+                            modifier = Modifier.offset(x = lx, y = lineY + 18.dp).width(lw).testTag("tick-cap"))
+                    }
                 }
             }
         }
@@ -708,6 +717,7 @@ class MainActivity : ComponentActivity() {
         var confirmRemove by remember(p.id) { mutableStateOf(false) }
         val deskBuys = remember(r) { DeskLink.standsBy() }
         val lines = remember(r) { store.log().filter { it.contains(p.label) }.takeLast(6).asReversed() }
+        val buys = remember(r) { try { Buys.of(DeskLink.get().buys(DeskLink.name()), p.asin, p.label) } catch (e: Exception) { emptyList() } }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("product-screen")) {
             Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack, modifier = Modifier.testTag("back")) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
@@ -755,8 +765,14 @@ class MainActivity : ComponentActivity() {
                     Text("Drag the cap knob under the bar, tap − / + (\$5 steps), or type an exact cap in the box and tap Done.", color = Look.Muted, fontSize = 11.sp)
                     Text(seenText(p).ifEmpty { "Not checked yet" }.replaceFirstChar { it.uppercase() } + if (p.lastCheck > 0 && p.lastCheck >= p.dAt) " · " + p.status else "",
                         color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
-                    val ref = listOfNotNull(p.msrp?.let { "MSRP \$${Engine.money(it)}" }, p.tcg?.let { "TCG market \$${Engine.money(it)}" })
-                    if (ref.isNotEmpty()) Text(ref.joinToString(" · "), color = Look.GreyText, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp).testTag("ref-${p.asin}"))
+                    // 2.4 (owner: "include a hyperlink for the TCG price to the actual page so the use can view that"): the TCG price opens its
+                    // TCGplayer page (the one the linked PC reads it from; else TCGplayer's search for this product)
+                    FlowRow(Modifier.padding(top = 4.dp).testTag("ref-${p.asin}"), verticalArrangement = Arrangement.Center) {
+                        p.msrp?.let { Text("MSRP \$${Engine.money(it)}  ·  ", color = Look.GreyText, fontSize = 13.sp) }
+                        Text((p.tcg?.let { "TCG market \$${Engine.money(it)}" } ?: "TCG prices") + " ↗", color = Look.Link, fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                            modifier = Modifier.clickable { openOutside(Tcg.link(p)) }.testTag("tcglink-${p.asin}"))
+                    }
                 }
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
                     SwitchRow("Buy when in stock", if (deskBuys && p.buy) "The linked desktop buys it; this phone takes over if the desktop stops" else "One order, at or under your cap",
@@ -802,6 +818,13 @@ class MainActivity : ComponentActivity() {
                     Action(if (confirmRemove) "Tap again" else "Remove", "remove-${p.asin}", Modifier.weight(1f), danger = true) {
                         if (confirmRemove) { store.remove(p.id); store.log("${p.label}: removed."); onBack() } else confirmRemove = true
                     }
+                }
+                // 2.4 (owner: "individual product pages should have a "bought" section above the "latest" section which shows the activity
+                // as well"): this product's purchases on every linked device
+                if (buys.isNotEmpty()) {
+                    Text("Bought", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Look.GreyText)
+                    Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(12.dp).testTag("pbought-${p.asin}"),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)) { buys.forEach { BuyLines(it, withName = false) } }
                 }
                 if (lines.isNotEmpty()) {
                     Text("Latest", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Look.GreyText)
@@ -962,19 +985,35 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun BoughtTab(r: Int) {
-        val list = remember(r) { RkApp.store().purchases() }
+        // 2.4 (owner: 'the "bought" section of the app should include the data from the PC version as well ... time, device, price, store,
+        // and browser'): every linked device's purchases, newest first
+        val list = remember(r) { try { DeskLink.get().buys(DeskLink.name()) } catch (e: Exception) { emptyList() } }
         LazyColumn(Modifier.fillMaxSize().testTag("bought")) {
             item { TabHeader("Bought") }
-            if (list.isEmpty()) item { Text("Nothing bought by the app yet.", color = Look.Muted, modifier = Modifier.padding(horizontal = 20.dp)) }
+            if (list.isEmpty()) item { Text("Nothing bought yet (by this device or the linked PC).", color = Look.Muted, modifier = Modifier.padding(horizontal = 20.dp)) }
+            else item {
+                val total = list.mapNotNull { it.price }.sum()
+                Text("${list.size} purchase${if (list.size == 1) "" else "s"}" + (if (total > 0) " · \$${Engine.money(total)} in all" else ""),
+                    color = Look.Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp).testTag("bought-total"))
+            }
             items(list) { x ->
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().background(Color.White, Look.card).padding(14.dp)) {
-                    Text(x.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Text(SimpleDateFormat("MMM d, h:mm a", Locale.US).format(Date(x.at)) + (x.price?.let { " · \$${Engine.money(it)}" } ?: "") +
-                        (x.order?.let { " · order $it" } ?: ""), fontSize = 13.sp, color = Look.Muted)
-                    Chip(if (x.verified) "In your Amazon orders" else x.note.ifBlank { "Not found in your orders - check Amazon" },
-                        if (x.verified) Look.TealSoft else Look.AmberSoft, if (x.verified) Look.TealText else Look.AmberText, Modifier.padding(top = 6.dp))
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().background(Color.White, Look.card).padding(14.dp).testTag("buy-row")) {
+                    BuyLines(x, withName = true)
                 }
             }
+        }
+    }
+
+    /** 2.4: one purchase - when, price, store, which device and which browser bought it. */
+    @Composable
+    fun BuyLines(x: com.restalker.mobile.core.Buy, withName: Boolean) {
+        Column {
+            if (withName) Text(x.name.ifBlank { x.asin }, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 19.sp)
+            Text(SimpleDateFormat("MMM d, h:mm a", Locale.US).format(Date(x.at)) + (x.price?.let { "  ·  \$${Engine.money(it)}" } ?: ""),
+                fontSize = 13.sp, color = Look.Ink, fontWeight = if (withName) FontWeight.Normal else FontWeight.SemiBold)
+            Text("${x.store}  ·  ${x.device}" + (if (x.mine) " (this device)" else "") + "  ·  ${x.by}", fontSize = 12.sp, color = Look.Muted)
+            if (x.mine && x.verified != null) Chip(if (x.verified) "In your Amazon orders" else x.note.ifBlank { "Not found in your orders - check Amazon" },
+                if (x.verified) Look.TealSoft else Look.AmberSoft, if (x.verified) Look.TealText else Look.AmberText, Modifier.padding(top = 6.dp))
         }
     }
 
@@ -1059,7 +1098,7 @@ class MainActivity : ComponentActivity() {
                     // 1.7 (owner: "Why do i have to manually download everything still?")
                     SwitchRow("Update by itself", if (st.autoUpdate) "New versions install by themselves (never during a purchase). ${Updater.state}".trim()
                         else "Off - you are told when there is a new version", st.autoUpdate, "autoupdate") { on ->
-                        store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true) }
+                        store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true, explicit = true) }
                     HorizontalDivider(color = Look.Line)
                     SwitchRow("Running icon", (if (st.runIcon) "An icon at the top while it watches" else "No icon - the notice is tucked away at the bottom of your notifications") +
                         ". Swipe the notice away to hide it; watching goes on.",

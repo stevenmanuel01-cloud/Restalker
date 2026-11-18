@@ -1,3 +1,11 @@
+# Restalker Mobile 2.4 (2026-11-17; your notes of 5:55 PM)
+- FIX: the update question no longer comes back in a loop. When Android asks you to confirm an update (or Play Protect wants to scan
+  it), it asks at most once every 6 hours for that version; Update now asks at once. The notice clears when the question is answered.
+- Bought: every purchase of every linked device - this one, the PC and your other phones / tablets - with the time, price, store, the
+  device and the browser that bought it, and the total.
+- Product page: a Bought section (above Latest) with that product's purchases; the TCG price opens its TCGplayer page.
+- Price bar: each label's real width is measured (bigger text in the phone's settings included), so the numbers never overlap.
+
 # Restalker Mobile 2.3 (2026-11-17; your notes of this afternoon)
 - Each phone or tablet now decides its own buying. Settings -> Linked devices lists the PC and every linked phone / tablet (name,
   version, when it was last heard). Per device: PC only (watches, does not buy - optionally "Buy if the PC stops"), Both buy, or

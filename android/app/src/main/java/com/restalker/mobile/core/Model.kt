@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.3"
+const val APP_VERSION = "2.4"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -46,6 +46,7 @@ data class Product(
     val dAt: Long = 0,
     val msrp: Double? = null,
     val tcg: Double? = null,
+    val tcgUrl: String = "",              // 2.4: the TCGplayer page the TCG price is from (the linked PC sends it)
     val others: List<Map<String, Any?>> = emptyList(),
     val picTriedAt: Long = 0,             // 1.6: when its page was last opened only for its picture
     val dImg: String = "",                // 1.7: the linked desktop's picture of the product (its table's)
@@ -66,7 +67,7 @@ data class Product(
         "submittedAt" to submittedAt, "orderNumber" to orderNumber, "fails" to fails, "failEpisode" to failEpisode,
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
         "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
-        "msrp" to msrp, "tcg" to tcg, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg,
+        "msrp" to msrp, "tcg" to tcg, "tcgUrl" to tcgUrl, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg,
     )
 
     /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
@@ -95,7 +96,7 @@ data class Product(
                 // (2.0: Buy 1/2/3 is read again - 1.8 and 1.9 lost it at every start, and a linked desktop got Buy 1 back from the phone)
                 qty = ((m["qty"].asLong() ?: 1).toInt()).coerceIn(1, 3), qtySince = m["qtySince"].asLong() ?: 0,
                 overCap = m["overCap"].asBool(), dSt = m["dSt"].asStr() ?: "", dPr = m["dPr"].asDouble(), dAt = m["dAt"].asLong() ?: 0,
-                msrp = m["msrp"].asDouble(), tcg = m["tcg"].asDouble(),
+                msrp = m["msrp"].asDouble(), tcg = m["tcg"].asDouble(), tcgUrl = m["tcgUrl"].asStr()?.takeIf { Tcg.okUrl(it) } ?: "",
                 others = m["others"].asList().mapNotNull { it.asMap() }.take(8),
                 picTriedAt = if (Pics.canon(m["image"].asStr()) != null || m["image"].asStr().isNullOrBlank()) m["picTriedAt"].asLong() ?: 0 else 0,
                 dImg = Pics.desk(m["dImg"].asStr()) ?: "",
@@ -213,4 +214,15 @@ object Tokens {
     fun fromTitle(title: String): List<String> =
         title.replace(Regex("\\s+"), " ").trim().lowercase().replace(Regex("[^a-z0-9' -]"), " ").split(Regex("\\s+"))
             .filter { it.length >= 3 && it !in STOP }.take(12)
+}
+
+/** 2.4 (owner: "include a hyperlink for the TCG price to the actual page so the user can view that"): the TCGplayer page of a product -
+ *  the one the linked PC reads its price from, else TCGplayer's own search for the product's name. */
+object Tcg {
+    fun okUrl(u: String): Boolean = u.length <= 300 && Regex("^https://(www\\.)?tcgplayer\\.com/[^\\s\"<>]*$").matches(u)
+    fun link(p: Product): String = p.tcgUrl.takeIf { okUrl(it) }
+        ?: ("https://www.tcgplayer.com/search/magic/product?q=" + java.net.URLEncoder.encode(query(p.label), "UTF-8"))
+    /** The product's name without "Magic: The Gathering" and the shop's extras after a "|". */
+    fun query(name: String): String = name.replace(Regex("(?i)magic\\s*:?\\s*the\\s+gathering|\\bmtg\\b"), " ").split('|').firstOrNull { it.isNotBlank() }
+        ?.replace(Regex("\\s+"), " ")?.trim()?.trim('-', ':', ' ')?.take(100) ?: name.take(100)
 }

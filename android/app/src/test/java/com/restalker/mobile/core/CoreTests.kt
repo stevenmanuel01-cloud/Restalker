@@ -101,6 +101,9 @@ object CoreTests {
     }
 
     private val results = LinkedHashMap<String, Boolean>()
+    /** 2.4: no two labels on one row of the price bar touch (their real widths and a small gap). */
+    private fun clear(pm: PriceMarks): Boolean = pm.items.filter { it.above }.groupBy { it.row }.values.all { r ->
+        r.sortedBy { pm.centre(it) }.zipWithNext().all { (a, b) -> pm.centre(a) + pm.width(a) / 2 + PriceMarks.GAP <= pm.centre(b) - pm.width(b) / 2 + 1e-9 } }
     private fun t(name: String, f: () -> Boolean) {
         val ok = try { f() } catch (e: Throwable) { println("  $name crashed: $e"); e.printStackTrace(); false }
         results[name] = ok; println((if (ok) "PASS " else "FAIL ") + name)
@@ -588,8 +591,7 @@ object CoreTests {
         t("100_price_bar_ticks_and_rows") {
             val pm = PriceMarks.of(399.99, 380.0, 455.88, 410.0)
             val k = pm.items.map { it.kind }
-            val near = pm.items.filter { it.above }.groupBy { it.row }.values.all { r -> r.sortedBy { it.value }.zipWithNext().all { (a, b) ->
-                PriceMarks.centre(pm.frac(b.value).toDouble()) - PriceMarks.centre(pm.frac(a.value).toDouble()) >= PriceMarks.NEAR - 1e-6 } }
+            val near = clear(pm)
             k.containsAll(listOf("zero", "msrp", "tcg", "cap", "now")) && pm.items.first { it.kind == "now" }.label == "Now \$400" && pm.frac(0.0) == 0f &&
                 pm.frac(455.88) < 1f && near && PriceMarks.of(null, 90.0, null, null).items.map { it.kind } == listOf("zero", "cap") &&
                 PriceMarks.of(1299.0, 1200.0, null, null).items.first { it.kind == "cap" }.label == "Cap \$1,200" }
@@ -809,10 +811,52 @@ object CoreTests {
                 PriceMarks.of(1299.0, 1200.0, 323.88, 1250.0, 2000.0))
             all.all { pm ->
                 val below = pm.items.filter { !it.above }
-                val noOverlap = pm.items.filter { it.above }.groupBy { it.row }.values.all { r -> r.sortedBy { it.value }.zipWithNext().all { (a, b) ->
-                    PriceMarks.centre(pm.frac(b.value).toDouble()) - PriceMarks.centre(pm.frac(a.value).toDouble()) >= PriceMarks.NEAR - 1e-6 } }
+                val noOverlap = clear(pm)
                 below.map { it.kind } == listOf("cap") && noOverlap && pm.rows in 1..PriceMarks.MAX_ROWS &&
                     pm.items.filter { it.above }.map { it.kind }.toSet() == setOf("zero", "msrp", "tcg", "now") }
+        }
+        // ---- 2.4 (owner, 2026-11-17 5:55 PM): the update question not in a loop; Bought with every device's purchases; labels by real width
+        t("125_labels_of_any_width_never_overlap") {
+            // big text: every label as wide as 30-60 % of the bar - rows are added so that none touch (four at most, one per label)
+            val cases = listOf(PriceMarks.of(399.99, 380.0, 455.88, 410.0, null, mapOf("zero" to 0.3, "msrp" to 0.45, "tcg" to 0.4, "now" to 0.5, "cap" to 0.4)),
+                PriceMarks.of(400.0, 405.0, 400.0, 401.0, null, mapOf("zero" to 0.6, "msrp" to 0.6, "tcg" to 0.6, "now" to 0.6)),
+                PriceMarks.of(5.0, 600.0, 4.0, 6.0, null, mapOf("zero" to 0.1, "msrp" to 0.12, "tcg" to 0.11, "now" to 0.13)),
+                PriceMarks.of(1299.0, 1200.0, 323.88, 1250.0, 2000.0, mapOf("zero" to 0.08, "msrp" to 0.16, "tcg" to 0.16, "now" to 0.18)))
+            val small = cases[3]                                        // (narrow labels far apart: one row)
+            cases.all { clear(it) && it.items.filter { m -> m.above }.all { m -> it.centre(m) - it.width(m) / 2 >= -1e-9 && it.centre(m) + it.width(m) / 2 <= 1 + 1e-9 } } &&
+                cases[1].rows == 4 && small.rows <= 2 }
+        t("126_bought_shows_every_device_once_newest_first") {
+            val now = 1_800_000_000_000L
+            val own = listOf(Purchase(now - 60_000, "B0TEST0401", "Hobbit Collector Booster Box", 455.88, "111-1", true))
+            val pc = Buys.fromLink(Buys.clean(listOf(
+                mapOf("t" to (now - 30_000) / 1000.0, "s" to "Target", "n" to "Hobbit Collector Booster Box", "p" to 539.99, "by" to "Firefox", "a" to "target_hobbit"),
+                mapOf("t" to (now - 61_000) / 1000.0, "s" to "Amazon", "n" to "Hobbit Collector Booster Box", "p" to 455.88, "by" to "the buying browser", "a" to "B0TEST0401"),
+                mapOf("t" to "bad", "s" to "Walmart"), mapOf("t" to 5.0, "s" to "Walmart"))), "PC")
+            val all = Buys.all(listOf(Buys.mine(own, "Pixel"), pc))
+            val sent = Buys.post(own)
+            all.size == 2 && all[0].store == "Target" && all[0].device == "PC" && all[0].by == "Firefox" && all[1].mine && all[1].device == "Pixel" &&
+                pc.size == 2 && sent.single()["by"] == "the app" && sent.single()["s"] == "Amazon" &&
+                Buys.of(all, "B0TEST0401", "Hobbit Collector Booster Box").size == 2 && Buys.of(all, "B0XXXXXXXX", "Other").isEmpty() }
+        t("127_purchases_travel_over_the_link_pc_and_phones") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val (net, posts) = hub()
+            val wa = World(); val wb = World()
+            val la = Link(wa.store, net, { mapOf("amz" to true, "nm" to "Phone") }) { wa.clock.t }
+            val lb = Link(wb.store, net, { mapOf("amz" to true, "nm" to "Tablet") }) { wb.clock.t }
+            la.connect(code); lb.connect(code)
+            wb.store.addPurchase(Purchase(wb.clock.t, "B0TEST0402", "Star Trek Bundle", 59.99, null, false))
+            lb.touched(); lb.cycle()
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to wa.clock.t / 1000.0, "amz" to true, "items" to emptyList<Any>(),
+                "buys" to listOf(mapOf("t" to wa.clock.t / 1000.0 - 3600, "s" to "Walmart", "n" to "Edge of Eternities Bundle", "p" to 49.97, "by" to "Edge", "a" to "walmart_eoe"))))))
+            la.cycle()
+            val b = la.buys("Phone")
+            b.size == 2 && b.any { it.device == "PC" && it.store == "Walmart" && it.by == "Edge" } && b.any { it.device == "Tablet" && it.name == "Star Trek Bundle" && it.by == "the app" } }
+        t("128_tcg_link_the_pcs_page_or_a_search") {
+            val p = Product(id = "x", asin = "B0TEST0403", name = "Magic: The Gathering | The Hobbit Collector Booster Box | 12 Packs", cap = 1.0)
+            Tcg.link(p) == "https://www.tcgplayer.com/search/magic/product?q=The+Hobbit+Collector+Booster+Box" &&
+                Tcg.link(p.copy(tcgUrl = "https://www.tcgplayer.com/product/601234")) == "https://www.tcgplayer.com/product/601234" &&
+                Tcg.link(p.copy(tcgUrl = "https://evil.com/product/1")).startsWith("https://www.tcgplayer.com/search/") &&
+                !Tcg.okUrl("https://www.tcgplayer.com.evil.com/x") && Tcg.okUrl("https://tcgplayer.com/product/1")
         }
         return results
     }

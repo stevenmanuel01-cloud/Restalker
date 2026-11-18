@@ -235,7 +235,9 @@ class Link(private val store: Store, private val net: LinkNet,
             val d = (msg["d"].asStr() ?: "").take(20)
             if (d.isNotEmpty()) s.phones[d] = linkedMapOf("at" to (srvTime ?: now), "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(),
                 "av" to (msg["av"].asLong() ?: 0L), "nm" to (msg["nm"].asStr() ?: "").take(40), "bm" to (msg["bm"].asStr() ?: "").take(8),
-                "fo" to (msg["fo"] != false), "vn" to (msg["vn"].asStr() ?: "").take(12))
+                "fo" to (msg["fo"] != false), "vn" to (msg["vn"].asStr() ?: "").take(12),
+                // 2.4: that device's purchases (a post without them keeps the last list heard)
+                "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"], Buys.MAX_SENT) else s.phones[d]?.get("buys").asList()))
             // 2.3 (owner: "multiple devices should be able to independently determine who buys ... In settings, there should be an option
             // to see all devices linked, with options to control the above buying selection manually/remotely"): a change of THIS device's
             // choice made on another device
@@ -244,7 +246,9 @@ class Link(private val store: Store, private val net: LinkNet,
         } else {
             s.peer = linkedMapOf("d" to (msg["d"].asStr() ?: "").take(20), "r" to (msg["r"].asStr() ?: "").take(10), "at" to (srvTime ?: now),
                 "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(), "n" to (msg["items"].asList().size),
-                "hand" to msg["hand"].asBool())          // 2.3: the PC does not buy on Amazon because a phone / tablet buys instead
+                "hand" to msg["hand"].asBool(),          // 2.3: the PC does not buy on Amazon because a phone / tablet buys instead
+                // 2.4: the PC's purchase list - it sends it only when it changed (or every 6 hours): kept until then
+                "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"]) else s.peer["buys"].asList()))
         }
         if (msg["hi"].asBool()) s.dirty = true
         for (x in msg["items"].asList().take(500)) {
@@ -288,6 +292,7 @@ class Link(private val store: Store, private val net: LinkNet,
                 val at = ((m["ss"].asDouble() ?: 0.0) * 1000).toLong()
                 q = q.copy(dSt = (m["st"].asStr() ?: "").take(5), dPr = m["pr"].asDouble(), dAt = minOf(at, clockMs()),
                     msrp = m["ms"].asDouble(), tcg = m["tc"].asDouble(),
+                    tcgUrl = m["tu"].asStr()?.takeIf { Tcg.okUrl(it) } ?: q.tcgUrl,          // 2.4: the TCGplayer page of that price
                     others = m["sx"].asList().mapNotNull { it.asMap() }.take(8).map { o ->
                         linkedMapOf("s" to (o["s"].asStr() ?: "").take(20), "st" to (o["st"].asStr() ?: "").take(5), "pr" to o["pr"].asDouble(),
                             "at" to ((o["at"].asDouble() ?: 0.0) * 1000).toLong(),
@@ -296,7 +301,7 @@ class Link(private val store: Store, private val net: LinkNet,
             // 1.7: the desktop table's picture of the product
             if (m.containsKey("im")) q = q.copy(dImg = Pics.desk(m["im"].asStr()) ?: "")
             if (q != p) store.update(p.id) { cur -> cur.copy(year = q.year, set = q.set, name = q.name, dSt = q.dSt, dPr = q.dPr, dAt = q.dAt,
-                msrp = q.msrp, tcg = q.tcg, others = q.others, dImg = q.dImg) }
+                msrp = q.msrp, tcg = q.tcg, tcgUrl = q.tcgUrl, others = q.others, dImg = q.dImg) }
         }
     }
 
@@ -331,7 +336,8 @@ class Link(private val store: Store, private val net: LinkNet,
         val o = linkedMapOf<String, Any?>("v" to 1, "d" to s.dev, "r" to "phone", "at" to now, "amz" to (mine["amz"] == true && !bye),
             "av" to mine["av"], "au" to (mine["au"] == true), "items" to s.recs.values.map { it.post() },
             "bm" to store.settings().buyMode, "bmAt" to store.settings().buyModeAt / 1000.0,        // 2.3: THIS device's choice (each its own)
-            "fo" to store.settings().failover, "nm" to (mine["nm"] as? String ?: "").take(40), "vn" to (mine["vn"] as? String ?: "").take(12))
+            "fo" to store.settings().failover, "nm" to (mine["nm"] as? String ?: "").take(40), "vn" to (mine["vn"] as? String ?: "").take(12),
+            "buys" to Buys.post(store.purchases()))
         val set = pendingSet
         set?.let { o["set"] = it }
         if (bye) o["bye"] = true
@@ -433,6 +439,19 @@ class Link(private val store: Store, private val net: LinkNet,
      *  app version, heard seconds ago or -1). */
     data class Device(val id: String, val pc: Boolean, val me: Boolean, val name: String, val mode: String, val failover: Boolean, val av: Long, val agoS: Long,
                       val vn: String = "")
+
+    /** 2.4: every purchase of every linked device (Bought): this device's own, the PC's and the other phones' / tablets'. Not linked:
+     *  this device's own. */
+    fun buys(myName: String): List<Buy> {
+        val own = Buys.mine(store.purchases(), myName)
+        val sn = snap
+        if (sn == null || !sn.first) return own
+        val pc = Buys.fromLink(sn.second["buys"].asList().mapNotNull { it.asMap() }, "PC")
+        val (dev, ph) = snapPhones
+        val others = ph.filter { it.key != dev }.map { (d, v) ->
+            Buys.fromLink(v["buys"].asList().mapNotNull { it.asMap() }, (v["nm"].asStr() ?: "").ifBlank { "Phone / tablet ${d.takeLast(4)}" }) }
+        return Buys.all(listOf(own, pc) + others)
+    }
 
     fun devices(myName: String): List<Device> {
         val sn = snap ?: return emptyList()

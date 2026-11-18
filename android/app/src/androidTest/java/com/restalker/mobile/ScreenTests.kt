@@ -465,6 +465,29 @@ class ScreenTests {
         RkApp.store().setSettings { it.copy(deviceName = "", buyMode = "pc", failover = true) }
     }
 
+    /** 2.4: Bought lists this device's purchases (with price, store, device, browser); the product's page has its own Bought section above
+     *  Latest; the TCG price is a link. */
+    @Test fun t19_bought_and_tcg_link() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0701", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(msrp = 455.88, tcg = 542.98))
+        s.addPurchase(com.restalker.mobile.core.Purchase(System.currentTimeMillis() - 60_000, "B0TEST0701", "The Hobbit Collector Booster Box", 455.88, null, true))
+        compose.waitForIdle()
+        compose.onNodeWithTag("tab1").performClick(); compose.waitForIdle()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("buy-row").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Amazon  ·  ", substring = true).assertExists()
+        compose.onNodeWithTag("bought-total").assertExists()
+        shot("t19_bought")
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0701"))
+        compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle(); Thread.sleep(500)
+        compose.onNodeWithTag("tcglink-B0TEST0701").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("TCG market \$542.98", substring = true).assertExists()
+        compose.onNodeWithTag("pbought-B0TEST0701").performScrollTo().assertIsDisplayed()
+        shot("t19_product_bought")
+        compose.onNodeWithTag("back").performClick()
+    }
+
     @Test fun t8_turnPhoneSideways_noCrash() {
         val dev = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         dev.setOrientationLeft(); Thread.sleep(2_000); compose.waitForIdle()
