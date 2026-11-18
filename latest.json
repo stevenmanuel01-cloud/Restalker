@@ -1,8 +1,8 @@
 {
- "version": "v139",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v139_update.zip",
- "sha256": "2f127410c200cc4775b375fc622da03d55cf79d2d7de37b6430019b7e65ea583",
- "size": 753377,
- "notes": "The app's colors on the PC page (switches, buttons, modes); the crowd count is right at once",
+ "version": "v140",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v140_update.zip",
+ "sha256": "09d1b48e3649000337ea6b604ca2391f8e9cc8fe484840f8379e502824a51dc7",
+ "size": 753947,
+ "notes": "One ntfy alert code on the PC and every linked phone; how each phone's updates go in",
  "files": 83
 }
