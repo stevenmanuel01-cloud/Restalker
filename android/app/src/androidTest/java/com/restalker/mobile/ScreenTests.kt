@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -51,6 +52,19 @@ class ScreenTests {
 
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
+    /** 2.7: scroll the home list to [m]; if it is not there, look once more after a moment (a slow test phone may still be drawing),
+     *  and if it is still not there say what the list DID hold (what is in the app's list of products, and the list's rows) */
+    private fun toList(m: androidx.compose.ui.test.SemanticsMatcher) {
+        try { compose.onNodeWithTag("list").performScrollToNode(m); return } catch (e: AssertionError) { }
+        compose.waitForIdle(); Thread.sleep(1_500); compose.waitForIdle()
+        try { compose.onNodeWithTag("list").performScrollToNode(m) } catch (e: AssertionError) {
+            shot("fail_list")
+            val rows = try { compose.onNodeWithTag("list").printToString(maxDepth = 2) } catch (x: Throwable) { "(not readable: $x)" }
+            val ps = RkApp.store().products().joinToString { it.asin + (if (it.watch) "" else "/nowatch") }
+            throw AssertionError("not in the list: ${m.description} | products in the app: [$ps] | filter rows/the list:\n" + rows.take(3000), e)
+        }
+    }
+
     @Test fun t5_screen_titleAndAddProduct() {
         RkApp.store().products().forEach { RkApp.store().remove(it.id) }
         compose.onNodeWithTag("title").assertIsDisplayed()
@@ -72,7 +86,7 @@ class ScreenTests {
         compose.waitForIdle()
         shot("t5_screen")
         assertEquals(120.0, p("B0TEST0001").cap, 0.001)
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0001"))
+        toList(hasTestTag("product-B0TEST0001"))
         compose.onNodeWithTag("product-B0TEST0001").assertIsDisplayed()
     }
     @Test fun t6_firstRun_setupCard_andRealPurchasesNeedYes() {
@@ -153,44 +167,44 @@ class ScreenTests {
         s.add(prod("B0TEST0104", "Magic: The Gathering Nauctis: The Sunken Realm Collector Booster Display"))
         compose.waitForIdle(); Thread.sleep(500)
         shot("t10_groups")
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-hot")); compose.onNodeWithTag("grp-hot").assertIsDisplayed()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("top-B0TEST0103")); compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0101"))
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2025"))
+        toList(hasTestTag("grp-hot")); compose.onNodeWithTag("grp-hot").assertIsDisplayed()
+        toList(hasTestTag("top-B0TEST0103")); compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
+        toList(hasTestTag("product-B0TEST0101"))
+        toList(hasTestTag("grp-2025"))
         compose.onNodeWithTag("grp-2025").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("product-B0TEST0101").assertDoesNotExist()                          // folded
         assertEquals(true, s.readFile("folded.json")!!.contains("y:2025"))                         // remembered
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-Your products"))
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("set-Nauctis: The Sunken Realm"))
+        toList(hasTestTag("grp-Your products"))
+        toList(hasTestTag("set-Nauctis: The Sunken Realm"))
         compose.onNodeWithTag("set-Nauctis: The Sunken Realm").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("product-B0TEST0104").assertDoesNotExist()
         compose.onNodeWithTag("set-Nauctis: The Sunken Realm").performClick(); compose.waitForIdle()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0104"))
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2025"))
+        toList(hasTestTag("product-B0TEST0104"))
+        toList(hasTestTag("grp-2025"))
         compose.onNodeWithTag("grp-2025").performClick(); compose.waitForIdle()                    // open again
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0102"))
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter1"))
+        toList(hasTestTag("product-B0TEST0102"))
+        toList(hasTestTag("filter1"))
         compose.onNodeWithTag("filter1").performClick(); compose.waitForIdle()                     // In stock
         shot("t10_in_stock")
         compose.onNodeWithTag("product-B0TEST0101").assertDoesNotExist()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0103"))
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter2"))
+        toList(hasTestTag("product-B0TEST0103"))
+        toList(hasTestTag("filter2"))
         compose.onNodeWithTag("filter2").performClick(); compose.waitForIdle()                     // Set to buy
         compose.onNodeWithTag("product-B0TEST0104").assertDoesNotExist()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter0"))
+        toList(hasTestTag("filter0"))
         compose.onNodeWithTag("filter0").performClick(); compose.waitForIdle()
         // 1.5: In stock = for sale at ANY price (also over the cap); Watched = watched, set to buy or not
         s.add(prod("B0TEST0105", "MTG Star Trek Collector Booster Box (over)", "2025", "Star Trek", price = 499.0).copy(overCap = true, cap = 460.0, status = "for sale over your cap"))
         s.update("idB0TEST0102") { it.copy(watch = false) }
         compose.waitForIdle()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter1"))
+        toList(hasTestTag("filter1"))
         compose.onNodeWithTag("filter1").performClick(); compose.waitForIdle()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0105"))         // over the cap: in stock
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter3"))
+        toList(hasTestTag("product-B0TEST0105"))         // over the cap: in stock
+        toList(hasTestTag("filter3"))
         compose.onNodeWithTag("filter3").performClick(); compose.waitForIdle()                     // Watched
         compose.onNodeWithTag("product-B0TEST0102").assertDoesNotExist()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0104"))
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter0"))
+        toList(hasTestTag("product-B0TEST0104"))
+        toList(hasTestTag("filter0"))
         compose.onNodeWithTag("filter0").performClick(); compose.waitForIdle()
     }
 
@@ -207,7 +221,7 @@ class ScreenTests {
             others = listOf(mapOf("s" to "Best Buy", "st" to "in", "pr" to 449.99, "at" to System.currentTimeMillis(), "u" to "https://www.bestbuy.com/product/x/JJ1"),
                 mapOf("s" to "Target", "st" to "out", "pr" to null, "at" to 0L, "u" to "https://www.target.com/p/x/-/A-1"))))
         compose.waitForIdle()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0301"))
+        toList(hasTestTag("product-B0TEST0301"))
         compose.onAllNodesWithText("Over cap · \$529.99", substring = true).onFirst().assertIsDisplayed()   // the desktop's newer look (also on top: in stock)
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("pic-B0TEST0301", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }   // the picture is shown
         compose.onNodeWithTag("product-B0TEST0301").performClick(); compose.waitForIdle(); Thread.sleep(800)
@@ -245,7 +259,7 @@ class ScreenTests {
             PicCache.fetch = { throw java.io.IOException("the picture server answered 403") }
             s.add(prod("B0TEST0401", "Star Trek Collector Booster Box", "2026", "Star Trek", price = 399.99).copy(image = "https://m.media-amazon.com/images/I/T14bad.jpg"))
             compose.waitForIdle()
-            compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0401"))
+            toList(hasTestTag("product-B0TEST0401"))
             compose.waitUntil(5_000) { PicCache.failures("https://m.media-amazon.com/images/I/T14bad.jpg") >= 1 }
             compose.onNodeWithText("ST", useUnmergedTree = true).assertIsDisplayed()                 // the initials
             PicCache.get("https://m.media-amazon.com/images/I/T14bad.jpg")              // (a second failure)
@@ -268,7 +282,7 @@ class ScreenTests {
             PicCache.fetch = { u -> if (u.contains("bbystatic")) good else throw java.io.IOException("no") }
             s.add(prod("B0TEST0402", "Star Trek Beam Me Up Bundle", "2026", "Star Trek", price = 99.99).copy(dImg = "https://pisces.bbystatic.com/image2/BestBuy_US/images/products/6686/6686924_sd.jpg"))
             compose.waitForIdle()
-            compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0402"))
+            toList(hasTestTag("product-B0TEST0402"))
             compose.waitUntil(5_000) { compose.onAllNodesWithTag("pic-B0TEST0402", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             shot("t14_pictures")
             // 1.9: one picture kept for two different products is no product picture: dropped for both, never taken again
@@ -287,7 +301,7 @@ class ScreenTests {
         s.products().forEach { s.remove(it.id) }
         s.add(prod("B0TEST0501", "Star Trek Collector Booster Box", "2026", "Star Trek", buyable = true, price = 369.99).copy(msrp = 455.88, tcg = 410.0))
         compose.waitForIdle()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0501"))
+        toList(hasTestTag("product-B0TEST0501"))
         compose.onNodeWithTag("product-B0TEST0501").performClick(); compose.waitForIdle(); Thread.sleep(600)
         compose.onNodeWithTag("pricebar-green", useUnmergedTree = true).assertExists()
         shot("t15_green_bar")
@@ -310,7 +324,7 @@ class ScreenTests {
         s.products().forEach { s.remove(it.id) }
         s.add(prod("B0TEST0601", "Reality Fracture Collector Booster Box", "2026", "Reality Fracture", price = 420.0).copy(msrp = 323.88))
         compose.waitForIdle()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0601"))
+        toList(hasTestTag("product-B0TEST0601"))
         compose.onNodeWithTag("product-B0TEST0601").performClick(); compose.waitForIdle(); Thread.sleep(600)
         compose.onNodeWithTag("capup-B0TEST0601").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 405.0 }
@@ -380,7 +394,7 @@ class ScreenTests {
         s.products().forEach { s.remove(it.id) }
         s.add(prod("B0TEST0201", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 420.0))
         compose.waitForIdle()
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0201"))
+        toList(hasTestTag("product-B0TEST0201"))
         compose.onNodeWithTag("product-B0TEST0201").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("product-screen").assertIsDisplayed()
         compose.waitForIdle(); Thread.sleep(800)
@@ -492,7 +506,7 @@ class ScreenTests {
         android.util.Log.i("RkTest", "t19 step 9")
         } finally { compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }           // (back on Watch even when it failed)
         android.util.Log.i("RkTest", "t19 step 10")
-        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0701"))
+        toList(hasTestTag("product-B0TEST0701"))
         android.util.Log.i("RkTest", "t19 step 11")
         compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle(); Thread.sleep(500)
         android.util.Log.i("RkTest", "t19 step 12")
