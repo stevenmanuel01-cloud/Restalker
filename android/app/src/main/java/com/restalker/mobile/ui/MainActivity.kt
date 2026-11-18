@@ -680,18 +680,25 @@ class MainActivity : ComponentActivity() {
                 if (nowPr != null) Box(Modifier.offset(x = (w * marks.frac(nowPr) - 6.dp).coerceIn(0.dp, w - 12.dp), y = lineY - 6.dp).size(12.dp, 20.dp)
                     .clip(RoundedCornerShape(4.dp)).background(Color.White).border(2.5.dp, Look.Ink, RoundedCornerShape(4.dp))
                     .testTag(if (under) "pricebar-green" else "pricebar-red"))
+                // 2.7: every tick first, then the labels on a white backing - a tick from a higher row never crosses a lower label
+                for (m in marks.items.filter { it.above }) {
+                    val x = w * marks.frac(m.value)
+                    val c = when (m.kind) { PriceMarks.NOW -> barColor; else -> Look.GreyText }
+                    val top = lineY - rowH * m.row - 4.dp
+                    Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = top).width(if (m.kind == PriceMarks.NOW) 2.dp else 1.dp).height(lineY + 8.dp - top).background(c))
+                }
                 for (m in marks.items) {
                     val x = w * marks.frac(m.value)
-                    val now = m.kind == PriceMarks.NOW
                     val c = when (m.kind) { PriceMarks.NOW -> barColor; PriceMarks.CAP -> Look.Ink; else -> Look.GreyText }
                     val lw = w * marks.width(m).toFloat()
                     val lx = w * marks.centre(m).toFloat() - lw / 2
                     if (m.above) {
-                        // a tick from the label's row down to the line
                         val top = lineY - rowH * m.row - 4.dp
-                        Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = top).width(if (now) 2.dp else 1.dp).height(lineY + 8.dp - top).background(c))
-                        Text(m.label, style = styleOf(m.kind), color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, softWrap = false,
-                            modifier = Modifier.offset(x = lx, y = top - rowH + 1.dp).width(lw).testTag("tick-${m.kind}"))
+                        val tw = with(dens) { (sizes[m.kind]?.width ?: 0).toDp() } + 4.dp          // (the backing: just the text's width)
+                        Box(Modifier.offset(x = lx, y = top - rowH + 1.dp).width(lw), contentAlignment = Alignment.Center) {
+                            Text(m.label, style = styleOf(m.kind), color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, softWrap = false,
+                                modifier = Modifier.width(tw).background(Color.White).testTag("tick-${m.kind}"))
+                        }
                     } else {
                         Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = lineY).width(2.dp).height(18.dp).background(c))
                         Box(Modifier.offset(x = (x - 10.dp).coerceIn(0.dp, w - 20.dp), y = lineY - 6.dp).size(20.dp).clip(RoundedCornerShape(10.dp))
