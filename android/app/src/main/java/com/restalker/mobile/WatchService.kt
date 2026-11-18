@@ -39,7 +39,8 @@ class WatchService : Service() {
         engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() },
             otherPhoneBuys = { DeskLink.get().otherPhoneBuys() },
             buyerMode = { if (DeskLink.get().linked()) RkApp.store().settings().buyMode else "solo" },     // (not linked: this phone buys)
-            pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() })
+            pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() },
+            onSighting = { a, pr -> CrowdNet.share(a, pr) })                    // 2.6: the Restalker crowd hears this phone's sightings
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
@@ -55,6 +56,7 @@ class WatchService : Service() {
                 standbyCheck()
                 GoListener.check()                          // 2.2: the fast channel with the PC (Who buys: phone / both)
                 Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
+                CrowdNet.tick()                             // 2.6: the Restalker crowd (read every 2 minutes while watching)
                 tick.postDelayed(this, 60_000)
             }
         }, 30_000)

@@ -53,6 +53,6 @@ class RkApp : Application() {
         /** Tests: read everything again from the files (as when the app is started again). */
         @Synchronized fun resetStoreKeepFiles() { val d = lastDir; _store = null; store(d) }
 
-        @Synchronized fun resetForTests(dir: File) { dir.deleteRecursively(); _store = null; store(dir); DeskLink.reset() }
+        @Synchronized fun resetForTests(dir: File) { dir.deleteRecursively(); _store = null; store(dir); DeskLink.reset(); CrowdNet.reset() }
     }
 }

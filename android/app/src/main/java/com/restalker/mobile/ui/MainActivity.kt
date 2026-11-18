@@ -384,8 +384,15 @@ class MainActivity : ComponentActivity() {
             item {
                 Column(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Restalker Mobile v$APP_VERSION", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp,
-                            maxLines = 2, modifier = Modifier.weight(1f).testTag("title"))
+                        Column(Modifier.weight(1f)) {
+                            Text("Restalker Mobile v$APP_VERSION", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp,
+                                maxLines = 2, modifier = Modifier.testTag("title"))
+                            // 2.6 (owner: "small text ... the total number of workers (individual devices contributing) ... XXX total
+                            // contributors and counting")
+                            val crowdN = remember(r) { CrowdNet.count() }
+                            Text(if (!st.crowd) "Crowd sharing is off (Settings)" else if (crowdN > 1) "$crowdN total contributors and counting" else "Joining the Restalker crowd",
+                                color = Look.OnNavyDim, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp).testTag("contributors"))
+                        }
                         Button(onClick = onAdd, colors = Look.btn(),
                             contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.heightIn(min = 44.dp).testTag("add")) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
@@ -1214,7 +1221,26 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 WatchService.instance?.dataText()?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Look.Muted, fontSize = 12.sp) }
-                Text("Restalker Mobile v$APP_VERSION", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                // ---- 2.6: the Restalker crowd
+                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).testTag("crowd")) {
+                    SwitchRow("Share with the Restalker crowd", "${CrowdNet.count()} contributors so far. Shares only when a product of the central list comes in stock " +
+                        "(product, store, price, time) - nothing personal.", st.crowd, "crowd-on") { on ->
+                        store.setSettings { it.copy(crowd = on) }; store.log("Sharing with the Restalker crowd switched ${if (on) "ON" else "OFF"}.")
+                        if (on) CrowdNet.tick(force = true) }
+                }
+                // ---- 2.6 (owner: 'a section at the bottom of settings for "about" which has a brief paragraph explaining how the importance
+                // of crowdsourcing the information for everyone to share')
+                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("about")) {
+                    Text("About", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text("Restocks of sought-after Magic products often last only minutes, and no single phone or PC can look at every store all " +
+                        "the time. When you share with the Restalker crowd, each device that spots a product from the central list in stock tells " +
+                        "every other Restalker right away - so we all see more restocks, sooner, without each of us checking every store. Only the " +
+                        "product, the store, the price and the time are shared: no names, accounts, orders or addresses. A sighting from the crowd " +
+                        "only makes your device look for itself - it buys only what it sees in stock under your own cap. The more devices share, " +
+                        "the better it works for everyone.",
+                        fontSize = 13.sp, lineHeight = 19.sp, color = Look.Ink, modifier = Modifier.padding(top = 6.dp).testTag("about-text"))
+                    Text("Restalker Mobile v$APP_VERSION", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                }
             }
         }
         if (typing) {

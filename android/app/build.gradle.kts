@@ -11,8 +11,8 @@ android {
         applicationId = "com.restalker.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16 + (project.findProperty("rkCodeBump")?.toString()?.toIntOrNull() ?: 0)   // (tests: a "newer" copy to update to)
-        versionName = "2.5"
+        versionCode = 17 + (project.findProperty("rkCodeBump")?.toString()?.toIntOrNull() ?: 0)   // (tests: a "newer" copy to update to)
+        versionName = "2.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

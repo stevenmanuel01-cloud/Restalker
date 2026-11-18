@@ -491,6 +491,20 @@ class ScreenTests {
         compose.onNodeWithTag("back").performClick()
     }
 
+    /** 2.6: the contributors line under the title; Settings: the crowd switch and About at the bottom. */
+    @Test fun t20_crowd_contributors_about() {
+        compose.onNodeWithTag("contributors", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("about-text").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Restocks of sought-after Magic products", substring = true).assertExists()
+        shot("t20_about")
+        compose.onNodeWithTag("crowd-on").performScrollTo().performClick()
+        compose.waitUntil(3_000) { !RkApp.store().settings().crowd }
+        compose.onNodeWithTag("crowd-on").performClick()
+        compose.waitUntil(3_000) { RkApp.store().settings().crowd }
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+    }
+
     @Test fun t8_turnPhoneSideways_noCrash() {
         val dev = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         dev.setOrientationLeft(); Thread.sleep(2_000); compose.waitForIdle()
