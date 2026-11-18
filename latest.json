@@ -1,8 +1,8 @@
 {
- "version": "v136",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v136_update.zip",
- "sha256": "e7486e1eb001265040b32256012d1d1cffefb301c0fef54ce905bdcf35b1324e",
- "size": 743534,
- "notes": "v136: the page in the logo's colors (navy + amber; green = good to go, red = no good), like the phone app 2.5.",
- "files": 81
+ "version": "v137",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v137_update.zip",
+ "sha256": "671949c24ce5624b8e90cdf68c9e311d48bbee8fa9aa99bd5021ec8e65796df1",
+ "size": 748525,
+ "notes": "v137: the Restalker crowd - in-stock sightings shared with every Restalker (product, store, price, time; nothing personal); a crowd sighting makes this PC look itself. Contributor count under the title.",
+ "files": 82
 }
