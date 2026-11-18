@@ -26,6 +26,33 @@ object Updater {
 
     fun allowed(ctx: Context): Boolean = Build.VERSION.SDK_INT < 26 || ctx.packageManager.canRequestPackageInstalls()
 
+    /** 2.9 (owner: "App updates are still requiring manual input from me to install. There should be a way to make this fully
+     *  autonomous"): Android (12 and newer) installs an update WITHOUT asking only when the app installing it is the one that installed the
+     *  app last time ("installer of record"). A copy installed from the download page / browser / Files is theirs: the next update asks
+     *  once (tap Install), and from then on Restalker is the installer and every update goes in by itself. Installing a version from the
+     *  download page again hands it back to the browser (one more question). Android 11 and older ask for every update. */
+    fun installer(ctx: Context): String? = try {
+        if (Build.VERSION.SDK_INT >= 30) ctx.packageManager.getInstallSourceInfo(ctx.packageName).installingPackageName
+        else @Suppress("DEPRECATION") ctx.packageManager.getInstallerPackageName(ctx.packageName)
+    } catch (e: Exception) { null }
+    /** "silent" (updates go in by themselves), "once" (Android asks one more time, then never), "always" (Android 11 and older),
+     *  "off" (updating by itself is off), "allow" (Restalker may not install yet). */
+    fun mode(ctx: Context): String = when {
+        !RkApp.store().settings().autoUpdate -> "off"
+        !allowed(ctx) -> "allow"
+        Build.VERSION.SDK_INT < 31 -> "always"
+        installer(ctx) == ctx.packageName -> "silent"
+        else -> "once"
+    }
+    fun modeText(m: String): String = when (m) {
+        "silent" -> "New versions install by themselves - no tap needed (never during a purchase)."
+        "once" -> "Android asks you ONE more time: tap Install on the next update. After that every update installs by itself. " +
+            "(A version you install from the download page hands updates back to the browser - one more tap.)"
+        "always" -> "This phone runs Android 11 or older: Android asks you to tap Install for every update."
+        "allow" -> "Allow Restalker to install its updates (once) - tap Update now on the yellow line."
+        else -> "Off - you are told when there is a new version"
+    }
+
     /** 2.4 (owner: "The notification alert pops up several times and wont clear fully. It continues to pop in a loop if i accept or
      *  cancel the update"): when Android wants a tap for an update (the first self-update, or Play Protect's scan), it is asked at most
      *  once per ASK_GAP for that version - unless YOU tap Update now. 2.0-2.3 asked again every time the app came back to the front

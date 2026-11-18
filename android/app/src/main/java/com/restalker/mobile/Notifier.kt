@@ -30,6 +30,7 @@ class Notifier(private val ctx: Context) : Alerts {
             .addAction(0, "Open", openBrowser(p.url, p.id.hashCode()))
             .addAction(0, "Snooze 3 h", ActionReceiver.pending(ctx, ActionReceiver.SNOOZE, p.id))
         post(idFor("r", p.id), b.build())
+        NtfyOut.send("restock", "IN STOCK: ${p.label}", (price?.let { "\$${Engine.money(it)}" } ?: "Price not shown") + " (cap \$${Engine.money(p.cap)}) - seen by ${DeskLink.name()}", p.url)
     }
 
     override fun bought(p: Product, price: Double?, order: String?, verified: Boolean) {
@@ -37,6 +38,7 @@ class Notifier(private val ctx: Context) : Alerts {
         val text = (price?.let { "\$${Engine.money(it)}" } ?: "") + (order?.let { " - order $it" } ?: "") +
             if (verified) " - found in your Amazon orders." else " - Amazon showed the order but it is not in your order list yet. Check Amazon."
         post(idFor("b", p.id), base(CH_BUY, title, text.trim()).addAction(0, "Your orders", openBrowser(Engine.ORDERS_URL, 7)).build())
+        NtfyOut.send("bought", title, text.trim() + " (${DeskLink.name()})", Engine.ORDERS_URL)
     }
 
     override fun needYou(title: String, text: String, p: Product?) {
@@ -44,6 +46,7 @@ class Notifier(private val ctx: Context) : Alerts {
         if (title.contains("check it's you") || title.contains("Sign in")) b.addAction(0, if (title.contains("Sign in")) "Sign in" else "Show browser",
             if (title.contains("Sign in")) openBrowser(BrowserActivity.SIGNIN_URL, 9) else openBrowser(null, 8))
         post(idFor("n", title + (p?.id ?: "")), b.build())
+        NtfyOut.send("need", title, "$text (${DeskLink.name()})")
         Reporter.auto(ctx, "$title - $text")
     }
 

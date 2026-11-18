@@ -1011,6 +1011,35 @@ object CoreTests {
             val (a2, _, c2) = PriceMarks.gradient(1000.0, 0.0, 100.0, 900.0)     // (far apart: kept where they are)
             high == 610.0 && sc == 675.0 && noHigh == 620.0 && CapStep.top(540.0, 520.0, 455.88, 560.0, high) == 610.0 &&
                 c - a >= PriceMarks.SPREAD - 1e-9 && a >= 0.08 && c <= 0.95 && Math.abs(a2 - 0.1) < 1e-9 && Math.abs(c2 - 0.9) < 1e-9 }
+        // ---- 2.9 (owner, 2026-11-18 8:09 AM)
+        t("144_ntfy_alerts_one_channel_per_person_same_on_linked_devices") {
+            val mine = NtfyAlerts.make(java.util.Random(1)); val other = NtfyAlerts.make(java.util.Random(2))
+            val pcT = "phone-abcdef123456"
+            NtfyAlerts.ok(mine) && mine.startsWith("rka-") && mine.length == 24 && mine != other &&
+                NtfyAlerts.channel(mine, pcT, listOf(other)) == pcT &&                       // the PC's wins
+                NtfyAlerts.channel(mine, null, listOf(other)) == listOf(mine, other).min() &&  // phones agree on the smallest
+                NtfyAlerts.channel(other, null, listOf(mine)) == listOf(mine, other).min() &&
+                NtfyAlerts.channel("", null, emptyList()) == null && NtfyAlerts.channel("", "bad topic!", listOf("x")) == null &&
+                !NtfyAlerts.shouldSend(true, pcT, "restock", true) && NtfyAlerts.shouldSend(true, pcT, "bought", true) &&
+                NtfyAlerts.shouldSend(true, mine, "restock", false) && !NtfyAlerts.shouldSend(false, mine, "need", false) && !NtfyAlerts.shouldSend(true, null, "need", false) &&
+                NtfyAlerts.appLink(mine) == "ntfy://ntfy.sh/$mine" && NtfyAlerts.webLink(mine) == "https://ntfy.sh/$mine" }
+        t("145_alert_channel_kept_and_odd_one_dropped") {
+            val a = Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(alertTopic = "rka-abcdefghijkmnpqrstu", alertsOn = true).toMap())))
+            val b = Settings.fromMap(mapOf("alertTopic" to "has space", "alertsOn" to true))
+            a.alertTopic == "rka-abcdefghijkmnpqrstu" && a.alertsOn && b.alertTopic == "" && !Settings().alertsOn }
+        t("146_alert_channel_travels_over_the_link") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val (net, posts) = hub()
+            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true, "nt" to "rka-phoneaaaaaaaaaaaaaaa") }) { wa.clock.t }
+            la.connect(code); la.cycle()
+            val sentByPhone = posts.mapNotNull { LinkCrypto.unseal(sec, it)?.let { j -> MiniJson.obj(j) } }.any { it["nt"] == "rka-phoneaaaaaaaaaaaaaaa" }
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-pc", "r" to "desktop", "at" to wa.clock.t / 1000.0, "amz" to true,
+                "items" to emptyList<Any>(), "nt" to "phone-pcchannel123"))))
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "p-other", "r" to "phone", "at" to wa.clock.t / 1000.0, "amz" to true,
+                "items" to emptyList<Any>(), "nt" to "rka-otherbbbbbbbbbbbbbbb"))))
+            la.cycle()
+            val (pc, ph) = la.alertChannels()
+            sentByPhone && pc == "phone-pcchannel123" && ph == listOf("rka-otherbbbbbbbbbbbbbbb") }
         return results
     }
 

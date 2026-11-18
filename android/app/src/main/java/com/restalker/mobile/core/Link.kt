@@ -236,6 +236,7 @@ class Link(private val store: Store, private val net: LinkNet,
             if (d.isNotEmpty()) s.phones[d] = linkedMapOf("at" to (srvTime ?: now), "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(),
                 "av" to (msg["av"].asLong() ?: 0L), "nm" to (msg["nm"].asStr() ?: "").take(40), "bm" to (msg["bm"].asStr() ?: "").take(8),
                 "fo" to (msg["fo"] != false), "vn" to (msg["vn"].asStr() ?: "").take(12),
+                "nt" to (msg["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""),     // 2.9: that device's alerts channel
                 // 2.4: that device's purchases (a post without them keeps the last list heard)
                 "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"], Buys.MAX_SENT) else s.phones[d]?.get("buys").asList()))
             // 2.3 (owner: "multiple devices should be able to independently determine who buys ... In settings, there should be an option
@@ -250,6 +251,7 @@ class Link(private val store: Store, private val net: LinkNet,
                 // 2.4: the PC's purchase list - it sends it only when it changed (or every 6 hours): kept until then
                 "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"]) else s.peer["buys"].asList()),
                 "mst" to msg["mst"].asBool(),            // 2.7: the PC is the owner's (no purchase limit on its linked devices)
+                "nt" to (msg["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""),     // 2.9: the PC's alerts channel ("Phone: set up")
                 // 2.7: the TCG price history the PC recorded - sent only when it changed: kept until then
                 "th" to (if (msg.containsKey("th")) cleanHistory(msg["th"]) else s.peer["th"].asMap() ?: emptyMap<String, Any?>()))
         }
@@ -337,7 +339,8 @@ class Link(private val store: Store, private val net: LinkNet,
         val (ch, sec) = LinkCrypto.parse(s.code) ?: return
         val mine = try { me() } catch (e: Exception) { emptyMap() }
         val o = linkedMapOf<String, Any?>("v" to 1, "d" to s.dev, "r" to "phone", "at" to now, "amz" to (mine["amz"] == true && !bye),
-            "av" to mine["av"], "au" to (mine["au"] == true), "items" to s.recs.values.map { it.post() },
+            "av" to mine["av"], "au" to (mine["au"] == true), "um" to (mine["um"].asStr() ?: "").take(10),
+            "nt" to (mine["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""), "items" to s.recs.values.map { it.post() },
             "bm" to store.settings().buyMode, "bmAt" to store.settings().buyModeAt / 1000.0,        // 2.3: THIS device's choice (each its own)
             "fo" to store.settings().failover, "nm" to (mine["nm"] as? String ?: "").take(40), "vn" to (mine["vn"] as? String ?: "").take(12),
             "buys" to Buys.post(store.purchases()))
@@ -442,6 +445,14 @@ class Link(private val store: Store, private val net: LinkNet,
      *  app version, heard seconds ago or -1). */
     data class Device(val id: String, val pc: Boolean, val me: Boolean, val name: String, val mode: String, val failover: Boolean, val av: Long, val agoS: Long,
                       val vn: String = "")
+
+    /** 2.9: the alerts channels the linked devices use: (the PC's or null, the other phones' / tablets'). */
+    fun alertChannels(): Pair<String?, List<String>> {
+        val sn = snap
+        val pc = if (sn != null && sn.first) sn.second["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } else null
+        val ph = if (sn != null && sn.first) snapPhones.second.values.mapNotNull { it["nt"].asStr()?.takeIf { t -> NtfyAlerts.ok(t) } } else emptyList()
+        return pc to ph
+    }
 
     /** 2.7: the linked PC is the owner's (it said so within the last 30 days). */
     fun pcIsMaster(): Boolean {
