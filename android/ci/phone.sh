@@ -74,6 +74,9 @@ else
     if grep -q "$first" monkey.txt; then echo "THE SYSTEM RESTARTED AT THE SAME TAP AGAIN"; fi
   fi
   if ! grep -q "Monkey finished" monkey.txt; then echo "RANDOM TAPS DID NOT FINISH (the virtual phone dropped off?)"; fail=1
+    # 2.3: show why (an app crash / freeze, or the phone's own system) - the evidence file is not readable from outside the run
+    grep -n -B3 -A25 "CRASH\|ANR in\|System appears\|Monkey aborted" monkey.txt | head -80
+    adb shell run-as $P cat files/crash.txt 2>/dev/null | head -20 | sed 's/^/crash.txt: /'
   elif grep -q "CRASH\|ANR in\|Monkey aborted" monkey.txt; then echo "RANDOM TAPS FOUND A CRASH"; grep -A30 "CRASH\|ANR in" monkey.txt | head -60; fail=1; else echo "random taps: no crash, no freeze"; fi
 fi
 adb shell cmd connectivity airplane-mode disable 2>/dev/null || true; adb shell svc wifi enable; adb shell svc data enable
