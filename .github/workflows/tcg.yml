@@ -4,8 +4,6 @@ on:
   schedule:
     - cron: "17 10 * * *"
   workflow_dispatch:
-  push:
-    branches: [tcg-probe]
 permissions:
   contents: write
 concurrency:
@@ -18,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Read the price histories
-        run: python3 tools/tcg_history.py ${{ github.ref == 'refs/heads/tcg-probe' && '--probe' || '' }}
+        run: python3 tools/tcg_history.py
       - name: Publish (only on main, only when it changed)
         if: github.ref == 'refs/heads/main'
         run: |
