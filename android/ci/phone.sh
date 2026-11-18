@@ -13,6 +13,9 @@ up() {   # the virtual phone back and ready (it can drop off for a moment after 
 }
 adb install -r -g apk/outputs/apk/debug/app-debug.apk
 adb install -r -g apk/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+# 2.6: the phone's own log while the app tests run (when the virtual phone dies at the end, its last words are shown)
+adb logcat -c 2>/dev/null || true
+(adb logcat -v time > live_logcat.txt 2>/dev/null &)
 adb shell am instrument -w -r -e debug false $P.test/androidx.test.runner.AndroidJUnitRunner > instrument.txt 2>&1
 grep -E "^OK|FAILURES|Tests run" instrument.txt
 echo "--- failures (name + reason) ---"
@@ -36,7 +39,11 @@ judge() {
 judge instrument.txt || fail=1
 alive() { timeout 20 adb shell true >/dev/null 2>&1; }
 finish() { timeout 300 bash android/ci/evidence.sh || true; exit $fail; }
-if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP TESTS (nothing more can run on it)"; fail=1; finish; fi
+if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP TESTS (nothing more can run on it)"; fail=1
+  echo "--- how far the tests got"; grep -o "INSTRUMENTATION_STATUS: test=[a-zA-Z0-9_]*" instrument.txt | tail -4
+  echo "--- the phone's last words"; grep -E "FATAL|ANR in|Watchdog|lowmemorykiller|Low on memory|Killing|system_server|E/AndroidRuntime" live_logcat.txt | tail -30
+  tail -40 live_logcat.txt | cut -c1-220
+  finish; fi
 
 echo "=== the phone's reports, read back from outside (the way Claude reads them)"
 code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
