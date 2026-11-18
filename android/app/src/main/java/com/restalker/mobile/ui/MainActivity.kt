@@ -55,6 +55,7 @@ import com.restalker.mobile.Notifier
 import com.restalker.mobile.Reporter
 import com.restalker.mobile.RkApp
 import com.restalker.mobile.WatchService
+import com.restalker.mobile.CrowdNet
 import com.restalker.mobile.Updater
 import com.restalker.mobile.core.APP_VERSION
 import com.restalker.mobile.core.Asin
@@ -384,8 +385,15 @@ class MainActivity : ComponentActivity() {
             item {
                 Column(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Restalker Mobile v$APP_VERSION", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp,
-                            maxLines = 2, modifier = Modifier.weight(1f).testTag("title"))
+                        Column(Modifier.weight(1f)) {
+                            Text("Restalker Mobile v$APP_VERSION", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp,
+                                maxLines = 2, modifier = Modifier.testTag("title"))
+                            // 2.6 (owner: "small text ... the total number of workers (individual devices contributing) ... XXX total
+                            // contributors and counting")
+                            val crowdN = remember(r) { CrowdNet.count() }
+                            Text(if (!st.crowd) "Crowd sharing is off (Settings)" else if (crowdN > 1) "$crowdN total contributors and counting" else "Joining the Restalker crowd",
+                                color = Look.OnNavyDim, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp).testTag("contributors"))
+                        }
                         Button(onClick = onAdd, colors = Look.btn(),
                             contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.heightIn(min = 44.dp).testTag("add")) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
@@ -655,24 +663,42 @@ class MainActivity : ComponentActivity() {
                 })
                 // 2.5: the whole bar is a gradient - dark green (cheap) to dark red (very expensive); a white marker shows the price now
                 val (g1, g2, g3) = PriceMarks.gradient(marks.max, cap, p.msrp, p.tcg)
-                Box(Modifier.offset(y = lineY - 1.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(0f to Look.BarGreen, g1.toFloat() to Look.BarGreenLight, g2.toFloat() to Look.BarMid,
-                        g3.toFloat() to Look.BarRedLight, 1f to Look.BarRed)).testTag("pricebar-gradient"))
+                // (drawn as 96 thin strips of solid color - no gradient shader: the API 33 / 34 test phones' software graphics froze on one)
+                val stops = listOf(0.0 to Look.BarGreen, g1 to Look.BarGreenLight, g2 to Look.BarMid, g3 to Look.BarRedLight, 1.0 to Look.BarRed)
+                androidx.compose.foundation.Canvas(Modifier.offset(y = lineY - 1.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).testTag("pricebar-gradient")) {
+                    val n = 96
+                    val sw = size.width / n
+                    for (i in 0 until n) {
+                        val f = (i + 0.5) / n
+                        val k = stops.indexOfLast { it.first <= f }.coerceIn(0, stops.size - 2)
+                        val (f0, c0) = stops[k]; val (f1, c1) = stops[k + 1]
+                        val t = if (f1 > f0) ((f - f0) / (f1 - f0)).toFloat().coerceIn(0f, 1f) else 0f
+                        drawRect(androidx.compose.ui.graphics.lerp(c0, c1, t), topLeft = androidx.compose.ui.geometry.Offset(i * sw, 0f),
+                            size = androidx.compose.ui.geometry.Size(sw + 1f, size.height))
+                    }
+                }
                 if (nowPr != null) Box(Modifier.offset(x = (w * marks.frac(nowPr) - 6.dp).coerceIn(0.dp, w - 12.dp), y = lineY - 6.dp).size(12.dp, 20.dp)
                     .clip(RoundedCornerShape(4.dp)).background(Color.White).border(2.5.dp, Look.Ink, RoundedCornerShape(4.dp))
                     .testTag(if (under) "pricebar-green" else "pricebar-red"))
+                // 2.7: every tick first, then the labels on a white backing - a tick from a higher row never crosses a lower label
+                for (m in marks.items.filter { it.above }) {
+                    val x = w * marks.frac(m.value)
+                    val c = when (m.kind) { PriceMarks.NOW -> barColor; else -> Look.GreyText }
+                    val top = lineY - rowH * m.row - 4.dp
+                    Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = top).width(if (m.kind == PriceMarks.NOW) 2.dp else 1.dp).height(lineY + 8.dp - top).background(c))
+                }
                 for (m in marks.items) {
                     val x = w * marks.frac(m.value)
-                    val now = m.kind == PriceMarks.NOW
                     val c = when (m.kind) { PriceMarks.NOW -> barColor; PriceMarks.CAP -> Look.Ink; else -> Look.GreyText }
                     val lw = w * marks.width(m).toFloat()
                     val lx = w * marks.centre(m).toFloat() - lw / 2
                     if (m.above) {
-                        // a tick from the label's row down to the line
                         val top = lineY - rowH * m.row - 4.dp
-                        Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = top).width(if (now) 2.dp else 1.dp).height(lineY + 8.dp - top).background(c))
-                        Text(m.label, style = styleOf(m.kind), color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, softWrap = false,
-                            modifier = Modifier.offset(x = lx, y = top - rowH + 1.dp).width(lw).testTag("tick-${m.kind}"))
+                        val tw = with(dens) { (sizes[m.kind]?.width ?: 0).toDp() } + 4.dp          // (the backing: just the text's width)
+                        Box(Modifier.offset(x = lx, y = top - rowH + 1.dp).width(lw), contentAlignment = Alignment.Center) {
+                            Text(m.label, style = styleOf(m.kind), color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, softWrap = false,
+                                modifier = Modifier.width(tw).background(Color.White).testTag("tick-${m.kind}"))
+                        }
                     } else {
                         Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = lineY).width(2.dp).height(18.dp).background(c))
                         Box(Modifier.offset(x = (x - 10.dp).coerceIn(0.dp, w - 20.dp), y = lineY - 6.dp).size(20.dp).clip(RoundedCornerShape(10.dp))
@@ -681,6 +707,48 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.offset(x = lx, y = lineY + 18.dp).width(lw).testTag("tick-cap"))
                     }
                 }
+            }
+        }
+    }
+
+    /** 2.7: the TCG market price over time (one point a day, from the linked PC): a navy line on a light area, the highest and lowest
+     *  price, the first and last day, the price now; your cap as a dashed line when it is inside the range. */
+    @Composable
+    fun TcgChart(pts: List<Pair<Long, Double>>, p: Product) {
+        val lo0 = pts.minOf { it.second }; val hi0 = pts.maxOf { it.second }
+        val pad = maxOf((hi0 - lo0) * 0.12, hi0 * 0.02, 1.0)
+        val lo = lo0 - pad; val hi = hi0 + pad
+        val d0 = pts.first().first; val d1 = pts.last().first
+        val fmt = SimpleDateFormat("MMM d", Locale.US)
+        val day = { d: Long -> fmt.format(Date(d * 86_400_000L + 43_200_000L)) }
+        Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("tcgchart-${p.asin}")) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("TCG market price", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text("\$${Engine.money(pts.last().second)} now", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Look.Navy)
+            }
+            Text("Low \$${Engine.money(lo0)} · High \$${Engine.money(hi0)} · ${pts.size} days recorded by the PC", fontSize = 11.sp, color = Look.Muted,
+                modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+                val w = size.width; val h = size.height
+                val x = { d: Long -> if (d1 > d0) (d - d0).toFloat() / (d1 - d0) * w else w / 2 }
+                val y = { v: Double -> (h - ((v - lo) / (hi - lo)).toFloat() * h) }
+                for (k in 0..3) drawLine(Look.Line, androidx.compose.ui.geometry.Offset(0f, h * k / 3), androidx.compose.ui.geometry.Offset(w, h * k / 3), strokeWidth = 1f)
+                val line = androidx.compose.ui.graphics.Path(); val area = androidx.compose.ui.graphics.Path()
+                pts.forEachIndexed { i, (d, v) ->
+                    if (i == 0) { line.moveTo(x(d), y(v)); area.moveTo(x(d), h); area.lineTo(x(d), y(v)) } else { line.lineTo(x(d), y(v)); area.lineTo(x(d), y(v)) }
+                }
+                area.lineTo(x(d1), h); area.close()
+                drawPath(area, Look.Navy.copy(alpha = 0.10f))
+                drawPath(line, Look.Navy, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx()))
+                if (p.cap > lo && p.cap < hi) drawLine(Look.Accent, androidx.compose.ui.geometry.Offset(0f, y(p.cap)), androidx.compose.ui.geometry.Offset(w, y(p.cap)),
+                    strokeWidth = 2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+                drawCircle(Look.Navy, 4.dp.toPx(), androidx.compose.ui.geometry.Offset(x(d1), y(pts.last().second)))
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Text(day(d0), fontSize = 11.sp, color = Look.Muted, modifier = Modifier.weight(1f))
+                if (p.cap > lo && p.cap < hi) Text("- - your cap \$${Engine.money(p.cap)}", fontSize = 11.sp, color = Look.AmberText, modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                Text(day(d1), fontSize = 11.sp, color = Look.Muted, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
             }
         }
     }
@@ -790,9 +858,19 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.clickable { if (best.store == "Amazon") openBrowser(best.url) else openOutside(best.url) }.testTag("bestlink-${p.asin}"))
                     } else Text("Best price: not in stock anywhere right now", fontSize = 12.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp).testTag("best-${p.asin}"))
                 }
+                // 2.7 (owner: "a simple graph of the historic price from TCG on each individual product page"): what the linked PC recorded
+                val hist = remember(r) { try { DeskLink.get().tcgHistory(p.asin) } catch (e: Exception) { emptyList() } }
+                if (hist.size >= 2) TcgChart(hist, p)
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
-                    SwitchRow("Buy when in stock", if (deskBuys && p.buy) "The linked desktop buys it; this phone takes over if the desktop stops" else "One order, at or under your cap",
-                        p.buy, "buy-${p.asin}") { v ->
+                    // 2.7: at most Limit.MAX purchases of a product, every linked device counted (not on the owner's devices)
+                    val boughtN = remember(r) { DeskLink.boughtOf(p) }
+                    val isMaster = remember(r) { DeskLink.master() }
+                    val limitHit = !com.restalker.mobile.core.Limit.mayBuy(boughtN, isMaster)
+                    SwitchRow("Buy when in stock", if (limitHit) com.restalker.mobile.core.Limit.WORDS
+                        else if (deskBuys && p.buy) "The linked desktop buys it; this phone takes over if the desktop stops" else "One order, at or under your cap" +
+                        (if (!isMaster && boughtN > 0) " · bought $boughtN of ${com.restalker.mobile.core.Limit.MAX}" else ""),
+                        p.buy && !limitHit, "buy-${p.asin}") { v ->
+                        if (v && limitHit) { store.log("${p.label}: ${com.restalker.mobile.core.Limit.WORDS}"); bump(); return@SwitchRow }
                         if (v && p.cap <= 0) { onEdit(p); return@SwitchRow }            // (2.2: a product without a cap gets one first)
                         store.update(p.id) { it.copy(buy = v, watch = it.watch || v) }; store.log("${p.label}: Buy ${if (v) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
@@ -1062,6 +1140,7 @@ class MainActivity : ComponentActivity() {
         val batt = remember(r) { battOk() }
         val (linked, linkLine) = remember(r) { DeskLink.get().state() }
         var typing by remember { mutableStateOf(false) }
+        var masterAsk by remember { mutableStateOf(false) }
         var confirmUnlink by remember { mutableStateOf(false) }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settings").padding(bottom = 24.dp)) {
             TabHeader("Settings")
@@ -1214,8 +1293,46 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 WatchService.instance?.dataText()?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Look.Muted, fontSize = 12.sp) }
-                Text("Restalker Mobile v$APP_VERSION", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                // ---- 2.6: the Restalker crowd
+                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).testTag("crowd")) {
+                    SwitchRow("Share with the Restalker crowd", "${CrowdNet.count()} contributors so far. Shares only when a product of the central list comes in stock " +
+                        "(product, store, price, time) - nothing personal.", st.crowd, "crowd-on") { on ->
+                        store.setSettings { it.copy(crowd = on) }; store.log("Sharing with the Restalker crowd switched ${if (on) "ON" else "OFF"}.")
+                        if (on) CrowdNet.tick(force = true) }
+                }
+                // ---- 2.6 (owner: 'a section at the bottom of settings for "about" which has a brief paragraph explaining how the importance
+                // of crowdsourcing the information for everyone to share')
+                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("about")) {
+                    Text("About", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text("Restocks of sought-after Magic products often last only minutes, and no single phone or PC can look at every store all " +
+                        "the time. When you share with the Restalker crowd, each device that spots a product from the central list in stock tells " +
+                        "every other Restalker right away - so we all see more restocks, sooner, without each of us checking every store. Only the " +
+                        "product, the store, the price and the time are shared: no names, accounts, orders or addresses. A sighting from the crowd " +
+                        "only makes your device look for itself - it buys only what it sees in stock under your own cap. The more devices share, " +
+                        "the better it works for everyone.",
+                        fontSize = 13.sp, lineHeight = 19.sp, color = Look.Ink, modifier = Modifier.padding(top = 6.dp).testTag("about-text"))
+                    Text("Fair play: Restalker buys each product at most ${com.restalker.mobile.core.Limit.MAX} times, counting every linked device, so restocks " +
+                        "go to players rather than resellers.", fontSize = 12.sp, lineHeight = 17.sp, color = Look.Muted, modifier = Modifier.padding(top = 8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                        Text("Restalker Mobile v$APP_VERSION" + if (DeskLink.master()) " · master" else "", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f).testTag("about-version"))
+                        TextButton(onClick = { masterAsk = true }, modifier = Modifier.testTag("master-open")) { Text("Master code", fontSize = 12.sp) }
+                    }
+                }
             }
+        }
+        if (masterAsk) {
+            var mc by remember { mutableStateOf("") }
+            var wrong by remember { mutableStateOf(false) }
+            AlertDialog(onDismissRequest = { masterAsk = false }, title = { Text("Master code") }, text = {
+                Column {
+                    Text("For the owner only: no purchase limit on this device.", fontSize = 13.sp)
+                    OutlinedTextField(mc, { mc = it.take(40); wrong = false }, singleLine = true, isError = wrong, modifier = Modifier.testTag("master-code"))
+                    if (wrong) Text("That is not the master code.", color = Look.Red, fontSize = 12.sp)
+                }
+            }, confirmButton = { Button(colors = Look.btn(), onClick = {
+                if (com.restalker.mobile.core.Limit.codeOk(mc)) { store.setSettings { it.copy(masterCode = mc.trim()) }; store.log("This device is the master (no purchase limit)."); masterAsk = false }
+                else wrong = true
+            }, modifier = Modifier.testTag("master-save")) { Text("Save") } }, dismissButton = { TextButton(onClick = { masterAsk = false }) { Text("Cancel") } })
         }
         if (typing) {
             var code by remember { mutableStateOf("") }

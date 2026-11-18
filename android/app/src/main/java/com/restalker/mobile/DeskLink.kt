@@ -46,6 +46,11 @@ object DeskLink {
     fun name(): String = RkApp.store().settings().deviceName.ifBlank {
         (android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() } + " " + android.os.Build.MODEL).trim().take(40) }
 
+    /** 2.7: this device is the owner's (no purchase limit) - its report code, the master code typed here, or the owner's linked PC. */
+    fun master(): Boolean = try { com.restalker.mobile.core.Limit.isMaster(RkApp.store().settings(), get().pcIsMaster()) } catch (e: Exception) { false }
+    /** 2.7: a product's purchases on every linked device (this one, the PC, the other phones / tablets). */
+    fun boughtOf(p: com.restalker.mobile.core.Product): Int = try { com.restalker.mobile.core.Buys.of(get().buys(name()), p.asin, p.label).size } catch (e: Exception) { 0 }
+
     /** Tests: a fresh link object (after the store was reset). */
     @Synchronized fun reset() { link = null }
 

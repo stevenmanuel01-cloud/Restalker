@@ -874,6 +874,64 @@ object CoreTests {
             val amazonOnly = BestPrice.of(p.copy(others = emptyList()))!!
             b.store == "Target" && b.price == 489.99 && b.url == "https://www.target.com/p/x" && amazonOnly.store == "Amazon" &&
                 amazonOnly.url == "https://www.amazon.com/dp/B0TEST0501" && BestPrice.of(p.copy(buyable = false, others = emptyList())) == null }
+        // ---- 2.6 (owner, 2026-11-17 6:50 PM: real crowd sharing): what is sent and taken, the count, the look limits
+        t("131_crowd_sends_only_product_store_price_time") {
+            val m = Crowd.sighting("0123456789ab", "B0GXC89N66", 455.881, 1.8e9)
+            m.keys == setOf("v", "c", "k", "a", "s", "st", "t", "p") && m["p"] == 455.88 && m["s"] == "Amazon" && m["st"] == "in" &&
+                Crowd.hello("0123456789ab") == mapOf("v" to 1, "c" to "0123456789ab", "k" to "h") }
+        t("132_crowd_takes_fresh_clean_sightings_of_others_once") {
+            val w = World()
+            var t = 1_800_000_000_000L
+            val cs = CrowdState(w.store) { t }
+            val nowS = t / 1000.0
+            fun line(m: Map<String, Any?>, i: Int) = MiniJson.write(mapOf("id" to "m$i", "event" to "message", "message" to MiniJson.write(m)))
+            val msgs = listOf(
+                mapOf("v" to 1, "c" to "aaaaaaaaaaaa", "k" to "s", "a" to "B0GXC89N66", "s" to "Amazon", "st" to "in", "t" to nowS - 5, "p" to 455.88),
+                mapOf("v" to 1, "c" to "aaaaaaaaaaaa", "k" to "s", "a" to "B0GXC89N66", "s" to "Amazon", "st" to "in", "t" to nowS - 4),      // again: 2 min gap
+                mapOf("v" to 1, "c" to cs.myId(), "k" to "s", "a" to "B0HNTNV94J", "s" to "Amazon", "st" to "in", "t" to nowS),            // my own
+                mapOf("v" to 1, "c" to "bbbbbbbbbbbb", "k" to "s", "a" to "B0HNTNV94J", "s" to "Target", "st" to "in", "t" to nowS),       // not Amazon
+                mapOf("v" to 1, "c" to "cccccccccccc", "k" to "s", "a" to "B0HNTNV94J", "s" to "Amazon", "st" to "in", "t" to nowS - 7200), // old
+                mapOf("v" to 1, "c" to "dddddddddddd", "k" to "s", "a" to "B0NOTMINE0", "s" to "Amazon", "st" to "in", "t" to nowS),       // not mine
+                mapOf("v" to 1, "c" to "eeeeeeeeeeee", "k" to "h"), mapOf("v" to 2, "c" to "ffffffffffff", "k" to "h"),
+                mapOf("v" to 1, "c" to "BAD", "k" to "h"))
+            val looks = ArrayList<String>()
+            val got = cs.take(msgs.mapIndexed { i, m -> line(m, i) } + "junk", setOf("B0GXC89N66", "B0HNTNV94J")) { looks += it; true }
+            val counted = cs.count()                      // me, aaaa, bbbb, dddd, eeee (cccc's sighting is old: dropped, not counted)
+            t += 30 * 60_000L
+            val many = (0 until 60).map { line(mapOf("v" to 1, "c" to "aaaaaaaaaaaa", "k" to "s", "a" to "B0TEST${"%04d".format(it)}", "s" to "Amazon", "st" to "in", "t" to t / 1000.0), 100 + it) }
+            val cs2 = CrowdState(w.store) { t }            // (read back from the file: the same contributor number and count)
+            val lim = cs2.take(many, (0 until 60).map { "B0TEST${"%04d".format(it)}" }.toSet()) { true }
+            got == listOf("B0GXC89N66") && looks == listOf("B0GXC89N66") && counted == 5 && cs2.myId() == cs.myId() && cs2.count() == 5 &&
+                lim.size == Crowd.LOOKS_PER_HOUR && cs2.since == "m159" }
+        t("133_crowd_switch_kept_and_on_by_default") {
+            Settings().crowd && !Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(crowd = false).toMap()))).crowd && Settings.fromMap(mapOf("watching" to true)).crowd }
+        // ---- 2.7 (owner, 2026-11-17 8:35 PM): at most 3 purchases of a product ever, the owner excepted; the TCG price history
+        t("134_limit_three_purchases_master_excepted") {
+            val w = World(); w.add("B0TEST0801", 120.0, true)
+            var bought = 3; var master = false
+            val e = Engine(w.store, w.amz, w.said, w.clock, { "wifi" }, master = { master }, boughtOf = { bought })
+            e.check(w.p("B0TEST0801")); val blocked = w.amz.begins == 0
+            master = true
+            w.store.update("idB0TEST0801") { it.copy(buyable = false) }
+            e.check(w.p("B0TEST0801")); val masterBuys = w.amz.places == 1
+            blocked && masterBuys && Limit.mayBuy(2, false) && !Limit.mayBuy(3, false) && Limit.mayBuy(9, true) }
+        t("135_master_by_fingerprint_only") {
+            // (no real code is written here - this file is public; only fingerprints are in the app)
+            Limit.fp("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" && !Limit.codeOk("RKM-AAAA-BBBB-CCCC") && !Limit.codeOk("") &&
+                !Limit.isMaster(Settings(masterCode = "RKM-AAAA-BBBB-CCCC", reportTopic = "rkr-aaaaaaaaaaaaaaaaaaaa"), false) && Limit.isMaster(Settings(), true) }
+        t("136_tcg_history_and_master_flag_over_the_link") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val (net, posts) = hub()
+            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true) }) { wa.clock.t }
+            la.connect(code); la.cycle()
+            fun desk(extra: Map<String, Any?>) = posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop",
+                "at" to wa.clock.t / 1000.0, "amz" to true, "items" to emptyList<Any>()) + extra)))
+            desk(mapOf("mst" to true, "th" to mapOf("B0GXC89N66" to listOf(listOf(20400, 530.0), listOf(20401, 535.0), listOf(99, 1.0)), "bad" to listOf(listOf(20400, 1.0)))))
+            la.cycle()
+            val h1 = la.tcgHistory("B0GXC89N66")
+            desk(emptyMap()); la.cycle()                      // (a post without the history keeps the last one; the master flag comes with every post)
+            val h2 = la.tcgHistory("B0GXC89N66")
+            h1 == listOf(20400L to 530.0, 20401L to 535.0) && h2 == h1 && !la.pcIsMaster() && la.tcgHistory("bad").isEmpty() }
         return results
     }
 

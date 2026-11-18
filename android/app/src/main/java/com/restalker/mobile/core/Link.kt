@@ -248,7 +248,10 @@ class Link(private val store: Store, private val net: LinkNet,
                 "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(), "n" to (msg["items"].asList().size),
                 "hand" to msg["hand"].asBool(),          // 2.3: the PC does not buy on Amazon because a phone / tablet buys instead
                 // 2.4: the PC's purchase list - it sends it only when it changed (or every 6 hours): kept until then
-                "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"]) else s.peer["buys"].asList()))
+                "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"]) else s.peer["buys"].asList()),
+                "mst" to msg["mst"].asBool(),            // 2.7: the PC is the owner's (no purchase limit on its linked devices)
+                // 2.7: the TCG price history the PC recorded - sent only when it changed: kept until then
+                "th" to (if (msg.containsKey("th")) cleanHistory(msg["th"]) else s.peer["th"].asMap() ?: emptyMap<String, Any?>()))
         }
         if (msg["hi"].asBool()) s.dirty = true
         for (x in msg["items"].asList().take(500)) {
@@ -439,6 +442,26 @@ class Link(private val store: Store, private val net: LinkNet,
      *  app version, heard seconds ago or -1). */
     data class Device(val id: String, val pc: Boolean, val me: Boolean, val name: String, val mode: String, val failover: Boolean, val av: Long, val agoS: Long,
                       val vn: String = "")
+
+    /** 2.7: the linked PC is the owner's (it said so within the last 30 days). */
+    fun pcIsMaster(): Boolean {
+        val sn = snap ?: return false
+        if (!sn.first) return false
+        return sn.second["mst"].asBool() && nowS() - (sn.second["at"].asDouble() ?: 0.0) < 30 * 86400
+    }
+
+    /** 2.7: the TCG price history of a product (from the linked PC): [(day number, price)] oldest first, or empty. */
+    fun tcgHistory(asin: String): List<Pair<Long, Double>> {
+        val sn = snap ?: return emptyList()
+        if (!sn.first) return emptyList()
+        return sn.second["th"].asMap()?.get(asin).asList().mapNotNull { x ->
+            val l = x.asList(); val d = l.getOrNull(0).asLong(); val p = l.getOrNull(1).asDouble()
+            if (d != null && p != null) d to p else null }
+    }
+
+    private fun cleanHistory(x: Any?): Map<String, Any?> = (x.asMap() ?: emptyMap()).entries.filter { ASIN.matches(it.key) }.take(300).associate { (k, v) ->
+        k to v.asList().mapNotNull { pt -> val l = pt.asList(); val d = l.getOrNull(0).asLong(); val p = l.getOrNull(1).asDouble()
+            if (d != null && d in 10_000..40_000 && p != null && p > 0 && p < 100000) listOf(d, p) else null }.takeLast(400) }
 
     /** 2.4: every purchase of every linked device (Bought): this device's own, the PC's and the other phones' / tablets'. Not linked:
      *  this device's own. */

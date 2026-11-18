@@ -13,8 +13,24 @@ up() {   # the virtual phone back and ready (it can drop off for a moment after 
 }
 adb install -r -g apk/outputs/apk/debug/app-debug.apk
 adb install -r -g apk/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-adb shell am instrument -w -r -e debug false $P.test/androidx.test.runner.AndroidJUnitRunner > instrument.txt 2>&1
-grep -E "^OK|FAILURES|Tests run" instrument.txt
+# 2.6: the phone's own log while the app tests run (when the virtual phone dies at the end, its last words are shown)
+adb logcat -c 2>/dev/null || true
+(adb logcat -v time > live_logcat.txt 2>/dev/null &)
+# 2.6: the two groups of app tests run one after the other (the phone and link tests, then the screen tests) with a fresh app in
+# between - one long run made the API 33 / 34 virtual phones stop answering near its end
+adb shell am instrument -w -r -e debug false -e class $P.PhoneTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_a.txt 2>&1
+if ! grep -q "^OK (\|FAILURES\|Tests run" instrument_a.txt; then        # (ended without a result: say what it said, and run it once more)
+  echo "--- phone+link tests ended without a result:"; tail -15 instrument_a.txt | cut -c1-200
+  sleep 5; adb shell am instrument -w -r -e debug false -e class $P.PhoneTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_a.txt 2>&1
+fi
+adb shell am force-stop $P 2>/dev/null || true; sleep 3
+adb shell am instrument -w -r -e debug false -e class $P.ScreenTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_b.txt 2>&1
+grep -E "^OK|FAILURES|Tests run" instrument_a.txt | sed 's/^/phone+link tests: /'
+grep -E "^OK|FAILURES|Tests run" instrument_b.txt | sed 's/^/screen tests: /'
+# (one file for the checks below: both must say OK)
+if grep -q "^OK (" instrument_a.txt && grep -q "^OK (" instrument_b.txt; then cat instrument_a.txt instrument_b.txt | grep -v "^OK (" > instrument.txt; echo "OK (both groups)" >> instrument.txt
+else cat instrument_a.txt instrument_b.txt > instrument.txt; grep -q "^OK (" instrument_a.txt || grep -q "FAILURES" instrument_a.txt || echo "INSTRUMENTATION_FAILED: phone+link tests did not finish" >> instrument.txt
+  grep -q "^OK (" instrument_b.txt || grep -q "FAILURES" instrument_b.txt || echo "INSTRUMENTATION_FAILED: screen tests did not finish" >> instrument.txt; fi
 echo "--- failures (name + reason) ---"
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument.txt | cut -c1-600
 sed -n '/^There w/,/^FAILURES/p' instrument.txt | head -60
@@ -36,7 +52,12 @@ judge() {
 judge instrument.txt || fail=1
 alive() { timeout 20 adb shell true >/dev/null 2>&1; }
 finish() { timeout 300 bash android/ci/evidence.sh || true; exit $fail; }
-if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP TESTS (nothing more can run on it)"; fail=1; finish; fi
+if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP TESTS (nothing more can run on it)"; fail=1
+  echo "--- how far the tests got"; grep -o "INSTRUMENTATION_STATUS: test=[a-zA-Z0-9_]*" instrument.txt | tail -4
+  echo "--- the test's last steps"; grep "RkTest" live_logcat.txt | tail -8
+  echo "--- the phone's last words"; grep -E "FATAL|ANR in|lowmemorykiller|Low on memory|E/AndroidRuntime|estalker" live_logcat.txt | tail -30
+  tail -40 live_logcat.txt | cut -c1-220
+  finish; fi
 
 echo "=== the phone's reports, read back from outside (the way Claude reads them)"
 code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
@@ -126,6 +147,7 @@ awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATI
 grep -E "ScreenTests.kt:[0-9]+" instrument_big.txt | head -10
 # 2.4: what the screen held when a big-text test could not find something (the first failure in full)
 grep -m1 -A60 "Semantics of the node" instrument_big.txt | grep -v "^\s*at " | head -60
+grep -m1 -A50 "not in the list:" instrument_big.txt | grep -v "^\s*at " | head -50       # (2.7: what the list held instead)
 if grep -q "^OK (" instrument_big.txt; then :; elif grep -q "device offline\|not found\|Process crashed" instrument_big.txt && ! adb shell true 2>/dev/null; then echo "(the virtual phone dropped off during the big-text run)"; else judge instrument_big.txt -e shotTag _big || fail=1; fi
 fi
 

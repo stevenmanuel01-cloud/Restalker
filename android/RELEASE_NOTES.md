@@ -1,3 +1,18 @@
+# Restalker Mobile 2.7 (2026-11-17; your notes of 8:35 PM)
+- Fair play: each product is bought at most 3 times ever, counting every linked device (the PC and your phones / tablets). After that
+  it is still watched and shared with the crowd, but not bought. The owner's own devices have no limit (recognised by themselves; a
+  device linked to the owner's PC too; spare: Settings -> About -> Master code).
+- Product page: a chart of the TCG market price over time (what the linked PC recorded), with your cap as a dashed line.
+
+# Restalker Mobile 2.6 (2026-11-17; your notes of 6:50 PM)
+- The Restalker crowd: every Restalker that shares (phones and PCs) tells the others when it sees a product of the central list come in
+  stock - only the product, store, price and time (nothing personal). A sighting from the crowd makes this phone look itself at once;
+  it never buys on the crowd's word. Settings -> "Share with the Restalker crowd" (on by default).
+- Under the title: "XXX total contributors and counting" (every device heard on the crowd channel so far).
+- Settings -> About: why sharing helps everyone.
+- New logo (DH-2): the app icon and the notification icon.
+- The price bar is drawn without a gradient shader (the same look) - the Android 13 / 14 test phones froze on it.
+
 # Restalker Mobile 2.5 (2026-11-17; your notes of 6:50 PM)
 - New look (A+): the logo's navy and amber - a navy header, amber buttons and switches, a slightly darker navy-tinted background so
   the white boxes stand out. Green tint = good to go (in stock under your cap), red tint = no good (over the cap).

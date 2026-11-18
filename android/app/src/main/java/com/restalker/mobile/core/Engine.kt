@@ -50,12 +50,18 @@ class Engine(private val store: Store, private val page: Page, private val alert
              /** 2.3 ("pc"): this device takes over when the PC stops. */
              private val failover: () -> Boolean = { true },
              /** 2.3: the PC does not buy on Amazon because another phone / tablet buys there instead. */
-             private val pcHanded: () -> Boolean = { false }) {
+             private val pcHanded: () -> Boolean = { false },
+             /** 2.6: this phone's own look saw a product come IN STOCK (under or over the cap) - the crowd hears it (asin, price). */
+             private val onSighting: (String, Double?) -> Unit = { _, _ -> },
+             /** 2.7: the owner's device (no purchase limit) and a product's purchases on every linked device. */
+             private val master: () -> Boolean = { true },
+             private val boughtOf: (Product) -> Int = { 0 }) {
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
         data class Practice(val id: String) : Cmd()        // a practice checkout of this product now (stops before Place your order)
         data class PracticeAny(val asin: String) : Cmd()   // 2.0: a practice checkout of ANY Amazon item that is in stock (nothing is bought)
+        data class Crowd(val asin: String) : Cmd()          // 2.6: another Restalker saw it in stock on Amazon - look now
         data class Go(val asin: String) : Cmd()             // 2.2: the PC saw it in stock under the cap (Who buys: phone / both) - look now
         object Wake : Cmd()
         object Quit : Cmd()
@@ -126,6 +132,14 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 val p = store.products().firstOrNull { it.asin == c.asin && it.buy && it.watch } ?: return
                 if (!s().watching || !s().buying || buyerMode() == "pc" || otherPhoneBuys() || now() < s().cooldownUntil) return
                 log("${p.label}: the PC saw it in stock - looking now (Who buys: ${buyerMode()}).")
+                check(p, manual = false)
+            }
+            is Cmd.Crowd -> {
+                // 2.6: another Restalker saw it in stock on Amazon - this phone looks itself at once (it buys only what IT sees in stock
+                // under your cap; the crowd's word alone never buys anything)
+                val p = store.products().firstOrNull { it.asin == c.asin && it.watch } ?: return
+                if (!s().watching || now() < s().cooldownUntil) return
+                log("${p.label}: another Restalker saw it in stock - looking now.")
                 check(p, manual = false)
             }
             is Cmd.BuyNow -> {
@@ -209,8 +223,10 @@ class Engine(private val store: Store, private val page: Page, private val alert
             reason.contains("purchase control") -> "out of stock" + (price?.let { " (\$${money(it)} shown)" } ?: "")
             else -> reason.ifBlank { "not buyable" }
         }
-        setSeen(store.product(p.id) ?: p, text, price, eligible)
+        val before = store.product(p.id) ?: p
+        setSeen(before, text, price, eligible)
         val over = reason == "price above cap"
+        if ((eligible || over) && !(before.buyable || before.overCap)) try { onSighting(p.asin, price) } catch (e: Exception) { }
         if (over != (store.product(p.id)?.overCap ?: false)) store.update(p.id) { it.copy(overCap = over) }
         // 1.5: the product's picture (Amazon's own, from this page) - once
         if ((store.product(p.id)?.image ?: "").isBlank()) takePicture(p)
@@ -263,6 +279,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     private fun canAutoBuy(p: Product): Boolean {
         val st = s()
+        if (!Limit.mayBuy(boughtOf(p), master())) return false          // 2.7: at most Limit.MAX purchases of a product (not the owner's)
         return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold() &&
             (overrideDesk == p.id || mayBuyHere())
     }
