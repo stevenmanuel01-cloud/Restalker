@@ -496,6 +496,11 @@ class ScreenTests {
         s.add(prod("B0TEST0701", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(msrp = 455.88, tcg = 542.98))
         android.util.Log.i("RkTest", "t19 step 2")
         s.addPurchase(com.restalker.mobile.core.Purchase(System.currentTimeMillis() - 60_000, "B0TEST0701", "The Hobbit Collector Booster Box", 455.88, null, true))
+        // 2.8: TCGplayer's history from the central file (no PC linked) - the chart, and the bar's right end = the highest price seen
+        val today = System.currentTimeMillis() / 86_400_000L
+        s.writeFile(com.restalker.mobile.core.TcgHist.FILE, com.restalker.mobile.core.MiniJson.write(mapOf("v" to 2, "h" to mapOf("B0TEST0701" to
+            ((0 until 30).map { listOf(today - 87 + it * 3, 520.0 + (it % 5) * 9.5, 20 + it * 3) } + listOf(listOf(today - 40, 612.0, 90)))),
+            "y" to mapOf("B0TEST0701" to (0 until 52).map { listOf(today - 364 + it * 7, 700.0 - it * 3, 50) }))))
         android.util.Log.i("RkTest", "t19 step 3")
         compose.waitForIdle()
         android.util.Log.i("RkTest", "t19 step 4")
@@ -524,6 +529,15 @@ class ScreenTests {
         android.util.Log.i("RkTest", "t19 step 15")
         compose.onNodeWithTag("pricebar-gradient", useUnmergedTree = true).assertExists()             // 2.5: the gradient bar
         android.util.Log.i("RkTest", "t19 step 16")
+        compose.onNodeWithTag("pricebar-end-B0TEST0701").assertExists()                             // 2.8
+        compose.onNodeWithText("highest price seen, \$612.00", substring = true).assertExists()
+        compose.onNodeWithTag("tcgchart-B0TEST0701").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("TCGplayer, last 3 months", substring = true).assertExists()
+        compose.onNodeWithTag("tcgchange-B0TEST0701", useUnmergedTree = true).assertExists()
+        shot("t19_tcg_chart")
+        compose.onNodeWithTag("tcgrange-1Y").performScrollTo().performClick(); compose.waitForIdle()             // 1 year
+        compose.onNodeWithText("TCGplayer, last year", substring = true).assertExists()
+        shot("t19_tcg_chart_year")
         compose.onNodeWithTag("pbought-B0TEST0701").performScrollTo().assertIsDisplayed()
         shot("t19_product_bought")
         android.util.Log.i("RkTest", "t19 step 17")

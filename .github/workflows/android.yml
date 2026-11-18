@@ -39,6 +39,25 @@ jobs:
           mkdir -p app/build/next
           for b in 1 2; do gradle --no-daemon -q :app:assembleDebug -PrkCodeBump=$b && cp app/build/outputs/apk/debug/app-debug.apk app/build/next/next$b.apk; done
           gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Central list pictures load (2.8)
+        if: always()
+        run: |
+          # every picture of mobile/catalog.json is fetched as a phone would: it must be a real picture (JPEG/PNG/WebP, not a page or a dot)
+          python3 - <<'EOF'
+          import json, urllib.request
+          d = json.load(open("mobile/catalog.json")); ok = bad = none = 0
+          for p in d["products"]:
+              u = p.get("i")
+              if not u: none += 1; print("no picture in the list:", p["a"], p["n"][:50]); continue
+              try:
+                  r = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "RestalkerMobile", "Accept": "image/*"}), timeout=20)
+                  b = r.read(3_000_000); kind = "jpeg" if b[:3] == b"\xff\xd8\xff" else "png" if b[:4] == b"\x89PNG" else "webp" if b[8:12] == b"WEBP" else ""
+                  if r.status == 200 and kind and len(b) > 1500: ok += 1
+                  else: bad += 1; print("PICTURE NOT OK:", p["a"], p["n"][:50], r.status, len(b), kind or b[:20])
+              except Exception as e:
+                  bad += 1; print("PICTURE NOT OK:", p["a"], p["n"][:50], str(e)[:80])
+          print(f"central list pictures: {ok} load, {bad} do not, {none} have none")
+          EOF
       - name: Core test report
         if: always()
         run: |

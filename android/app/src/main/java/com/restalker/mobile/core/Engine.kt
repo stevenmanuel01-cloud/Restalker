@@ -104,7 +104,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (net == null) { offline(); status("No internet - waiting for it"); waitFor(15_000); return }
         if (st.wifiOnly && net != "wifi") { status("Wi-Fi only is on - waiting for Wi-Fi"); waitFor(30_000); return }
         val watched = store.products().filter { it.watch }
-        if (watched.isEmpty()) { status("Watching, but no product is switched on."); waitFor(30_000); return }
+        // 2.8: pictures are looked for also while no product is switched on (a new phone with the whole central list, nothing watched yet)
+        if (watched.isEmpty()) { if (pictureOnce()) return; status("Watching, but no product is switched on."); waitFor(30_000); return }
         // 2.2: standing by = the linked PC buys and Who buys is "pc" (with "both" this phone watches at its own pace too)
         val desk = standby()
         if (watched.any { it.buy } && !desk && now() - st.ordersReadAt > ORDERS_EVERY) { readOrders(); return }   // (the desktop reads them while it buys)
@@ -517,7 +518,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
      *  is time - Wi-Fi only, at most once a day per product, nothing else is done on that page. -> true when a page was opened. */
     private fun pictureOnce(): Boolean {
         // (1.7) also for a product whose picture was dropped as not a product picture
-        val p = store.products().firstOrNull { it.image.isBlank() && now() - it.picTriedAt > PIC_RETRY_MS && Asin.parse(it.asin) != null } ?: return false
+        // (2.8: not for a product that has the PC's or the central list's picture - no Amazon page is opened for those)
+        val p = store.products().firstOrNull { Pics.needsOwn(it) && now() - it.picTriedAt > PIC_RETRY_MS && Asin.parse(it.asin) != null } ?: return false
         if (network() != "wifi") return false
         store.update(p.id) { it.copy(picTriedAt = now()) }
         status("Getting the picture of ${p.label}")

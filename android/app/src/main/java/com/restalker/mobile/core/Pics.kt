@@ -64,5 +64,12 @@ object Pics {
     /** The picture to show: this phone's own (from Amazon's page), else the linked desktop's. */
     // 2.0 (owner: "Some of the app pictures dont match the PC ones (The PC ones are correct)"): the linked PC's picture first - the
     // exact picture its table shows (the PC checks the product's shape and page); this phone's own when not linked or the PC has none
-    fun shown(p: Product): List<String> = listOfNotNull(p.dImg.takeIf { validAny(it) }, p.image.takeIf { valid(it) && it != p.dImg })
+    // 2.8 (owner: "The newest member has not yet had the pictures for products loaded. Since its not linked to a PC it needs to be able
+    // to find these accurately on its own"): then the central list's picture (the same TCGplayer photo the PC shows), then this phone's own
+    fun shown(p: Product): List<String> = listOfNotNull(p.dImg.takeIf { validAny(it) }, p.cImg.takeIf { validAny(it) }, p.image.takeIf { valid(it) })
+        .distinct()
+    /** 2.8: a product that still needs a picture from its Amazon page (it has none from the PC or the central list). */
+    fun needsOwn(p: Product): Boolean = p.image.isBlank() && listOf(p.dImg, p.cImg).none { validAny(it) && !broken(it) }
+    /** 2.8: a picture address that would not load (twice) - then the product's own Amazon page is looked at after all. Set by the app. */
+    @Volatile var broken: (String) -> Boolean = { false }
 }

@@ -11,6 +11,7 @@ class RkApp : Application() {
     override fun onCreate() {
         super.onCreate()
         app = this
+        com.restalker.mobile.core.Pics.broken = { u -> Pics2.broken(u) }
         Notifier.channels(this)
         // 2.1: after an update the linked PC learns this app's version at once (it then sends no "new version" message)
         Thread {
@@ -55,4 +56,9 @@ class RkApp : Application() {
 
         @Synchronized fun resetForTests(dir: File) { dir.deleteRecursively(); _store = null; store(dir); DeskLink.reset(); CrowdNet.reset() }
     }
+}
+
+/** 2.8: a picture that failed to load twice here (any of the sizes tried). */
+internal object Pics2 {
+    fun broken(u: String): Boolean = PicCache.failures(u) >= 2
 }

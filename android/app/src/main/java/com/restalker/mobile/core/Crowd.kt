@@ -17,6 +17,9 @@ object Crowd {
     const val LOOK_GAP_MS = 120_000L
     const val LOOKS_PER_HOUR = 40
     const val SEEN_MAX = 20000
+    /** 2.8: the first read of the channel goes back 12 hours (the channel keeps 12 hours; everyone says hello every 6): the count is right
+     *  at once, not after the others' next hello. */
+    const val FIRST_SINCE = "12h"
     private val ASIN = Regex("^B[0-9A-Z]{9}$")
     private val ID = Regex("^[0-9a-f]{12}$")
 
