@@ -23,6 +23,21 @@ object CapStep {
         val m = top(now, cap, msrp, tcg, high)
         return maxOf(50.0, Math.ceil(m * ROOM / STEP) * STEP)
     }
+    /** 2.10 (owner, 2026-11-18 12:22 PM: "The app slider bar still has overlapping information. Let's make the left side start around
+     *  50% of whatever msrp price is for a product. Similarly, let's make the right side effectively double whatever the msrp price is
+     *  (these numbers can be rounded to easier readability). This should zoom us in on the bar and help prevent overlap"): the bar runs
+     *  from half the MSRP to twice the MSRP, rounded to an easy step ($5 / 10 / 25 / 50 / 100 by size). No MSRP: the same around the TCG
+     *  price, else the cap, else the price now. A price outside it sits at that end (its label still says the real price).
+     *  (2.8-2.9: $0 to the highest price seen + 10%.) */
+    fun range(now: Double?, cap: Double, msrp: Double?, tcg: Double?): Pair<Double, Double> {
+        val ok = { v: Double? -> v?.takeIf { it.isFinite() && it > 0 && it < 100000 } }
+        val base = ok(msrp) ?: ok(tcg) ?: ok(cap) ?: ok(now) ?: return 0.0 to 50.0
+        val step = when { base < 40 -> 5.0; base < 100 -> 10.0; base < 250 -> 25.0; base < 600 -> 50.0; else -> 100.0 }
+        val lo = Math.floor(base * 0.5 / step) * step
+        val hi = maxOf(Math.ceil(base * 2.0 / step) * step, lo + step)
+        return lo to hi
+    }
+
     /** The highest of them (what the bar's right end stands for). */
     fun top(now: Double?, cap: Double, msrp: Double?, tcg: Double?, high: Double? = null): Double =
         listOfNotNull(now, cap, msrp, tcg, high).filter { it.isFinite() && it > 0 && it < 100000 }.maxOrNull() ?: 0.0
