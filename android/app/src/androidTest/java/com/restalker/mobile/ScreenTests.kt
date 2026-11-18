@@ -50,7 +50,12 @@ class ScreenTests {
         } catch (e: Exception) { }
     }
 
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    /** 2.7: every screen test starts with all product groups open - groups stay folded on purpose (folded.json), and the random taps
+     *  run before the big-text pass fold some, which hid the products those tests look for */
+    @get:Rule(order = 0) val openGroups = object : org.junit.rules.ExternalResource() {
+        override fun before() { try { RkApp.store().writeFile("folded.json", "[]") } catch (e: Exception) { } }
+    }
+    @get:Rule(order = 1) val compose = createAndroidComposeRule<MainActivity>()
 
     /** 2.7: scroll the home list to [m]; if it is not there, look once more after a moment (a slow test phone may still be drawing),
      *  and if it is still not there say what the list DID hold (what is in the app's list of products, and the list's rows) */
@@ -61,7 +66,8 @@ class ScreenTests {
             shot("fail_list")
             val rows = try { compose.onNodeWithTag("list").printToString(maxDepth = 2) } catch (x: Throwable) { "(not readable: $x)" }
             val ps = RkApp.store().products().joinToString { it.asin + (if (it.watch) "" else "/nowatch") }
-            throw AssertionError("not in the list: ${m.description} | products in the app: [$ps] | filter rows/the list:\n" + rows.take(3000), e)
+            throw AssertionError("not in the list: ${m.description} | products in the app: [$ps] | folded: ${RkApp.store().readFile("folded.json")} | the list:\n" +
+                rows.lines().filter { "Tag:" in it || "Text =" in it }.joinToString("\n").take(4000), e)
         }
     }
 
