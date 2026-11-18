@@ -55,6 +55,7 @@ import com.restalker.mobile.Notifier
 import com.restalker.mobile.Reporter
 import com.restalker.mobile.RkApp
 import com.restalker.mobile.WatchService
+import com.restalker.mobile.CrowdNet
 import com.restalker.mobile.Updater
 import com.restalker.mobile.core.APP_VERSION
 import com.restalker.mobile.core.Asin
