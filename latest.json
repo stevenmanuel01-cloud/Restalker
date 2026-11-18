@@ -1,8 +1,8 @@
 {
- "version": "v134",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v134_update.zip",
- "sha256": "c498c65fbe5db449d0652bd4ff32393118ef0c39644cf389f2a8219a182d9adf",
- "size": 741899,
- "notes": "v134: each phone / tablet decides its own buying (phone app 2.3: Settings, Linked devices). The PC hands Amazon over only while a device chose Instead of PC.",
+ "version": "v135",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v135_update.zip",
+ "sha256": "a04dedcc1677b74bb13747cc15afc53351f2c4d293e2199018f0e925d341c21d",
+ "size": 742626,
+ "notes": "v135: the phone app's Bought shows this PC's purchases too (time, store, price, browser); the TCG price links to its TCGplayer page.",
  "files": 81
 }
