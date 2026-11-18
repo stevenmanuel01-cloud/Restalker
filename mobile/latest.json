@@ -1,1 +1,6 @@
-{"version": "2.10", "code": 21, "apk": "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v2.10/restalker-mobile-2.10.apk", "sha256": "09cfaac0362cd6792fa31b6ad4ff2d290c4943e410d27eb4c204eba49b1e0c85"}
+{
+ "version": "2.11",
+ "code": 22,
+ "apk": "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v2.11/restalker-mobile-2.11.apk",
+ "sha256": "5cf6f7346e847a34e7ad4ad3b4546a4766b31c4a254c95c793171308ca7df2d9"
+}
