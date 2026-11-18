@@ -2,6 +2,7 @@ package com.restalker.mobile
 
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
