@@ -413,7 +413,9 @@ class ScreenTests {
         compose.waitUntil(10_000) { DeskLink.get().linked() }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Linked with the desktop", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("OK").performClick(); compose.waitForIdle()
-        compose.onNodeWithTag("link-title").performScrollTo().assertIsDisplayed()
+        // (scroll the Settings list itself - with big text the nearest scroll could be the tab swiper)
+        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("link-title"))
+        compose.onNodeWithTag("link-title").assertIsDisplayed()
         compose.onNodeWithTag("runicon").performScrollTo().performClick()
         compose.waitUntil(3_000) { !RkApp.store().settings().runIcon }
         compose.onNodeWithTag("runicon").performClick()
