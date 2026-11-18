@@ -16,8 +16,17 @@ adb install -r -g apk/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 # 2.6: the phone's own log while the app tests run (when the virtual phone dies at the end, its last words are shown)
 adb logcat -c 2>/dev/null || true
 (adb logcat -v time > live_logcat.txt 2>/dev/null &)
-adb shell am instrument -w -r -e debug false $P.test/androidx.test.runner.AndroidJUnitRunner > instrument.txt 2>&1
-grep -E "^OK|FAILURES|Tests run" instrument.txt
+# 2.6: the two groups of app tests run one after the other (the phone and link tests, then the screen tests) with a fresh app in
+# between - one long run made the API 33 / 34 virtual phones stop answering near its end
+adb shell am instrument -w -r -e debug false -e class $P.PhoneTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_a.txt 2>&1
+adb shell am force-stop $P 2>/dev/null || true; sleep 3
+adb shell am instrument -w -r -e debug false -e class $P.ScreenTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_b.txt 2>&1
+grep -E "^OK|FAILURES|Tests run" instrument_a.txt | sed 's/^/phone+link tests: /'
+grep -E "^OK|FAILURES|Tests run" instrument_b.txt | sed 's/^/screen tests: /'
+# (one file for the checks below: both must say OK)
+if grep -q "^OK (" instrument_a.txt && grep -q "^OK (" instrument_b.txt; then cat instrument_a.txt instrument_b.txt | grep -v "^OK (" > instrument.txt; echo "OK (both groups)" >> instrument.txt
+else cat instrument_a.txt instrument_b.txt > instrument.txt; grep -q "^OK (" instrument_a.txt || grep -q "FAILURES" instrument_a.txt || echo "INSTRUMENTATION_FAILED: phone+link tests did not finish" >> instrument.txt
+  grep -q "^OK (" instrument_b.txt || grep -q "FAILURES" instrument_b.txt || echo "INSTRUMENTATION_FAILED: screen tests did not finish" >> instrument.txt; fi
 echo "--- failures (name + reason) ---"
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument.txt | cut -c1-600
 sed -n '/^There w/,/^FAILURES/p' instrument.txt | head -60
