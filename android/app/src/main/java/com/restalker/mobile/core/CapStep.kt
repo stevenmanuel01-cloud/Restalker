@@ -14,9 +14,19 @@ object CapStep {
     /** - : the next $5 mark below, never under $5 (450.01 -> 450, 450 -> 445, 7 -> 5). */
     fun down(c: Double): Double = maxOf(STEP, (Math.ceil(c / STEP - 1e-9) - 1) * STEP)
 
-    /** The bar's end while dragging: 1.6 x the highest of the price now, the cap, the MSRP and the TCG price, on a $5 mark, at least $50. */
-    fun scale(now: Double?, cap: Double, msrp: Double?, tcg: Double?): Double {
-        val m = listOfNotNull(now, cap, msrp, tcg).filter { it.isFinite() && it > 0 }.maxOrNull() ?: 0.0
-        return maxOf(50.0, Math.ceil(m * 1.6 / STEP) * STEP)
+    /** 2.8 (owner: "what value is used as the far right side of the gradient bar? it seems arbitrary, but should be related somehow to maybe
+     *  the highest price available"): the bar ends at the HIGHEST price known for the product - the price now, every store's price, the
+     *  TCG price and TCG's highest of the last 3 months [high], the cap and the MSRP - plus 10% room for the labels, on a $5 mark (at
+     *  least $50). (2.2-2.7: 1.6 x the highest of the price now, the cap, the MSRP and the TCG price - room to drag the cap.) */
+    const val ROOM = 1.10
+    fun scale(now: Double?, cap: Double, msrp: Double?, tcg: Double?, high: Double? = null): Double {
+        val m = top(now, cap, msrp, tcg, high)
+        return maxOf(50.0, Math.ceil(m * ROOM / STEP) * STEP)
     }
+    /** The highest of them (what the bar's right end stands for). */
+    fun top(now: Double?, cap: Double, msrp: Double?, tcg: Double?, high: Double? = null): Double =
+        listOfNotNull(now, cap, msrp, tcg, high).filter { it.isFinite() && it > 0 && it < 100000 }.maxOrNull() ?: 0.0
+    /** The highest price seen for [p] apart from its own listing: every store's last price and TCG's market prices of the last 3 months. */
+    fun high(p: Product, tcgHist: List<Pair<Long, Double>>): Double? =
+        (p.others.mapNotNull { it["pr"].asDouble() } + tcgHist.map { it.second } + listOfNotNull(p.dPr)).filter { it > 0 && it < 100000 }.maxOrNull()
 }

@@ -706,7 +706,7 @@ object CoreTests {
         t("116_cap_steps_of_5") {
             CapStep.up(449.99) == 450.0 && CapStep.up(450.0) == 455.0 && CapStep.down(450.01) == 450.0 && CapStep.down(450.0) == 445.0 &&
                 CapStep.down(7.0) == 5.0 && CapStep.down(5.0) == 5.0 && CapStep.up(0.0) == 5.0 && CapStep.snap(452.4) == 450.0 && CapStep.snap(452.6) == 455.0 &&
-                CapStep.snap(0.3) == 5.0 && CapStep.scale(455.88, 550.0, 455.88, null) == 880.0 && CapStep.scale(null, 0.0, null, null) == 50.0 }
+                CapStep.snap(0.3) == 5.0 && CapStep.scale(455.88, 550.0, 455.88, null) == 605.0 && CapStep.scale(null, 0.0, null, null) == 50.0 }
         t("117_price_bar_fixed_scale_and_no_cap_mark_without_a_cap") {
             val a = PriceMarks.of(500.0, 550.0, 455.88, null, 880.0)
             val b = PriceMarks.of(500.0, 0.0, 455.88, null)
@@ -863,7 +863,8 @@ object CoreTests {
             val (a, b, c) = PriceMarks.gradient(600.0, 520.0, 455.88, 542.98)
             val noRef = PriceMarks.gradient(100.0, 80.0, null, null)
             val odd = PriceMarks.gradient(100.0, 0.0, 99.0, 20.0)          // (TCG under the MSRP: still increasing, inside the bar)
-            Math.abs(a - 455.88 / 600) < 1e-9 && Math.abs(c - 542.98 / 600) < 1e-9 && b > a && b < c &&
+            // (2.8: green and red at least SPREAD apart - the light green is at or before the MSRP, the light red at or after the TCG price)
+            a <= 455.88 / 600 + 1e-9 && c >= 542.98 / 600 - 1e-9 && c - a >= PriceMarks.SPREAD - 1e-9 && b > a && b < c &&
                 listOf(noRef, odd).all { (x, y, z) -> x >= 0.1 && x < y && y < z && z <= 0.95 } }
         t("130_best_price_cheapest_in_stock_anywhere") {
             val p = Product(id = "x", asin = "B0TEST0501", cap = 520.0, lastCheck = 1, buyable = true, price = 499.99, others = listOf(
@@ -932,6 +933,75 @@ object CoreTests {
             desk(emptyMap()); la.cycle()                      // (a post without the history keeps the last one; the master flag comes with every post)
             val h2 = la.tcgHistory("B0GXC89N66")
             h1 == listOf(20400L to 530.0, 20401L to 535.0) && h2 == h1 && !la.pcIsMaster() && la.tcgHistory("bad").isEmpty() }
+        // ---- 2.8 (owner, 2026-11-17 11 PM): the newest phone (not linked to a PC) had no pictures; the device count
+        t("137_central_list_pictures_for_new_and_existing_products") {
+            val w = World(); w.add("B0TEST0901", 120.0, false)                     // (already on the phone - e.g. added by hand)
+            val T1 = "https://tcgplayer-cdn.tcgplayer.com/product/692963_in_200x200.jpg"
+            val T2 = "https://tcgplayer-cdn.tcgplayer.com/product/692971_in_200x200.jpg"
+            val json = MiniJson.write(mapOf("v" to 1, "products" to listOf(
+                mapOf("a" to "B0TEST0901", "n" to "Here already", "k" to "box", "i" to T1),
+                mapOf("a" to "B0TEST0902", "n" to "New one", "k" to "bundle", "i" to T2),
+                mapOf("a" to "B0TEST0903", "n" to "Bad picture host", "k" to "box", "i" to "https://evil.example/x.jpg"),
+                mapOf("a" to "B0TEST0904", "n" to "No picture", "k" to "box"))))
+            Catalog.import(json, w.store)
+            val newOk = w.p("B0TEST0902").cImg == T2 && w.p("B0TEST0903").cImg == "" && w.p("B0TEST0904").cImg == "" && w.p("B0TEST0901").cImg == ""
+            val n1 = Catalog.pictures(json, w.store); val n2 = Catalog.pictures(json, w.store)
+            val kept = Product.fromMap(MiniJson.obj(MiniJson.write(w.p("B0TEST0901").toMap()))!!)!!.cImg == T1
+            newOk && n1 == 1 && n2 == 0 && w.p("B0TEST0901").cImg == T1 && kept && Catalog.pictures("not json", w.store) == 0 &&
+                Product.fromMap(Product("a", "B0TEST0905", cImg = "https://evil.example/x.jpg").toMap())!!.cImg == "" }
+        t("138_picture_order_pc_then_central_list_then_own_and_fallback") {
+            val D = "https://target.scene7.com/is/image/Target/GUEST_1?wid=200"; val C = "https://tcgplayer-cdn.tcgplayer.com/product/1_in_200x200.jpg"
+            val all = Pics.shown(Product("a", "B0TEST0906", image = I, dImg = D, cImg = C))
+            val noPc = Pics.shown(Product("a", "B0TEST0906", image = I, cImg = C))
+            val needNot = !Pics.needsOwn(Product("a", "B0TEST0906", cImg = C))
+            Pics.broken = { it == C }
+            val needBroken = Pics.needsOwn(Product("a", "B0TEST0906", cImg = C))
+            Pics.broken = { false }
+            all == listOf(D, C, I) && noPc == listOf(C, I) && needNot && needBroken && Pics.needsOwn(Product("a", "B0TEST0906")) &&
+                !Pics.needsOwn(Product("a", "B0TEST0906", image = I)) }
+        t("139_pictures_looked_for_while_nothing_is_watched_not_for_central_list_ones") {
+            val w = World()
+            w.add("B0TEST0907", 0.0, false); w.store.update("idB0TEST0907") { it.copy(watch = false) }
+            w.add("B0TEST0908", 0.0, false); w.store.update("idB0TEST0908") { it.copy(watch = false, cImg = "https://tcgplayer-cdn.tcgplayer.com/product/2_in_200x200.jpg") }
+            repeat(3) { w.engine.step() }
+            Pics.valid(w.p("B0TEST0907").image) && w.p("B0TEST0907").picTriedAt > 0 && w.p("B0TEST0908").image == "" && w.p("B0TEST0908").picTriedAt == 0L &&
+                w.amz.begins == 0 }
+        t("140_first_read_of_the_crowd_goes_back_12_hours") {
+            val w = World(); Crowd.FIRST_SINCE == "12h" && CrowdState(w.store).since == "" }
+        t("141_tcg_history_from_the_central_file_for_every_phone") {
+            val w = World(); w.add("B0TEST0911", 120.0, false); w.add("B0TEST0912", 120.0, false)
+            val json = MiniJson.write(mapOf("v" to 1, "h" to mapOf(
+                "B0TEST0911" to listOf(listOf(20410, 530.0), listOf(20400, 520.5), listOf(20410, 999.0), listOf(5, 1.0), listOf(20420, -3.0)),
+                "B0TEST0912" to listOf(listOf(20400, 99.0)), "bad code" to listOf(listOf(20400, 1.0), listOf(20401, 2.0)))))
+            val m = TcgHist.parse(json)
+            w.store.writeFile(TcgHist.FILE, json)
+            val of = TcgHist.of(w.store, "B0TEST0911")
+            val unlinked = TcgHist.apply(w.store, m, false); val linked = TcgHist.apply(w.store, mapOf("B0TEST0912" to listOf(1L to 1.0, 2L to 7.0)), true)
+            val (pts, fromTcg) = TcgHist.pick(of, listOf(20000L to 1.0, 20001L to 2.0))
+            val (pts2, fromTcg2) = TcgHist.pick(emptyList(), listOf(20000L to 1.0, 20001L to 2.0))
+            m.keys == setOf("B0TEST0911") && of == listOf(20400L to 520.5, 20410L to 530.0) && unlinked == 1 && linked == 0 &&
+                w.p("B0TEST0911").tcg == 530.0 && w.p("B0TEST0912").tcg == null && fromTcg && pts == of && !fromTcg2 && pts2.size == 2 &&
+                !TcgHist.ok("{}") && !TcgHist.ok("not json") && TcgHist.ok(json) && TcgHist.of(w.store, "B0NOTHERE1").isEmpty() }
+        t("142_tcg_page_link_from_the_central_list_the_pcs_link_stays") {
+            val w = World(); w.add("B0TEST0913", 120.0, false); w.add("B0TEST0914", 120.0, false)
+            w.store.update("idB0TEST0914") { it.copy(tcgUrl = "https://www.tcgplayer.com/product/1/the-pcs-own") }
+            val json = MiniJson.write(mapOf("v" to 1, "products" to listOf(
+                mapOf("a" to "B0TEST0913", "n" to "x", "tp" to "692963"), mapOf("a" to "B0TEST0914", "n" to "y", "tp" to "692971"),
+                mapOf("a" to "B0TEST0915", "n" to "z", "tp" to "12; evil"))))
+            Catalog.pictures(json, w.store)
+            Catalog.import(MiniJson.write(mapOf("v" to 1, "products" to listOf(mapOf("a" to "B0TEST0916", "n" to "new", "tp" to "706142")))), w.store)
+            w.p("B0TEST0913").tcgUrl == "https://www.tcgplayer.com/product/692963" && w.p("B0TEST0914").tcgUrl == "https://www.tcgplayer.com/product/1/the-pcs-own" &&
+                w.p("B0TEST0916").tcgUrl == "https://www.tcgplayer.com/product/706142" && Tcg.link(w.p("B0TEST0913")) == "https://www.tcgplayer.com/product/692963" }
+        t("143_bar_ends_at_the_highest_price_seen_blend_is_gradual") {
+            val p = Product(id = "x", asin = "B0TEST0921", cap = 520.0, others = listOf(mapOf("s" to "Target", "pr" to 589.99), mapOf("s" to "Walmart", "pr" to null)))
+            val hist = listOf(20700L to 610.0, 20730L to 575.0)
+            val high = CapStep.high(p, hist)
+            val sc = CapStep.scale(540.0, 520.0, 455.88, 560.0, high)            // highest seen 610 (TCG 3 months) -> 671 -> $675
+            val noHigh = CapStep.scale(540.0, 520.0, 455.88, 560.0, CapStep.high(Product(id = "y", asin = "B0TEST0922"), emptyList()))
+            val (a, _, c) = PriceMarks.gradient(sc, 520.0, 455.88, 470.0)        // (MSRP and TCG close together: still a gradual blend)
+            val (a2, _, c2) = PriceMarks.gradient(1000.0, 0.0, 100.0, 900.0)     // (far apart: kept where they are)
+            high == 610.0 && sc == 675.0 && noHigh == 620.0 && CapStep.top(540.0, 520.0, 455.88, 560.0, high) == 610.0 &&
+                c - a >= PriceMarks.SPREAD - 1e-9 && a >= 0.08 && c <= 0.95 && Math.abs(a2 - 0.1) < 1e-9 && Math.abs(c2 - 0.9) < 1e-9 }
         return results
     }
 

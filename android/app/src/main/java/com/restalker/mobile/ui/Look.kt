@@ -55,6 +55,7 @@ object Look {
     val BarGreen = Color(0xFF15803D)
     val BarGreenLight = Color(0xFF86D9A0)
     val BarMid = Color(0xFFF3F1E6)
+    val BarWarm = Color(0xFFF6D3A8)          // 2.8: between the light middle and light red (a gradual turn)
     val BarRedLight = Color(0xFFF4A3A3)
     val BarRed = Color(0xFFB91C1C)
 

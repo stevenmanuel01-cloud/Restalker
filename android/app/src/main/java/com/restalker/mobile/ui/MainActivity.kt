@@ -137,6 +137,7 @@ class MainActivity : ComponentActivity() {
         if (update.value != null && Updater.state.contains("allow Restalker to install") && Updater.allowed(this)) checkUpdate(explicit = true)
         if (DeskLink.get().linked()) DeskLink.cycleAsync { bump() }          // (opening the app: the desktop's latest at once)
         com.restalker.mobile.HealthRunner.tick(this)                          // 1.7: the self-check (a report by itself when something is wrong)
+        try { CrowdNet.tick(force = true) } catch (e: Exception) { }          // 2.8: the contributor count and the central list's pictures, also when not watching
     }
     override fun onPause() { shown = false; ticker.removeCallbacks(tick); super.onPause() }
     override fun onDestroy() { RkApp.listeners.remove(bump); super.onDestroy() }
@@ -631,7 +632,9 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun PriceBar(p: Product, nowPr: Double?, cap: Double = p.cap, onDrag: (Double) -> Unit = {}, onDrop: (Double) -> Unit = {}) {
         // 2.2: the scale stays put while the cap mark is dragged (from the values without the dragged cap; room up to 1.6 x)
-        val scale = remember(p.id, p.cap, nowPr, p.msrp, p.tcg) { CapStep.scale(nowPr, p.cap, p.msrp, p.tcg) }
+        // 2.8: the right end = the highest price seen (every store, TCG's last 3 months) + 10% room - not an arbitrary 1.6 x
+        val high = remember(p.id, p.others, p.dPr) { CapStep.high(p, try { com.restalker.mobile.core.TcgHist.of(RkApp.store(), p.asin) } catch (e: Exception) { emptyList() }) }
+        val scale = remember(p.id, p.cap, nowPr, p.msrp, p.tcg, high) { CapStep.scale(nowPr, p.cap, p.msrp, p.tcg, high) }
         val under = nowPr != null && nowPr <= cap
         val barColor = if (nowPr == null) Look.GreyText else if (under) Look.Good else Look.BadText
         var last by remember { mutableStateOf(cap) }
@@ -664,7 +667,8 @@ class MainActivity : ComponentActivity() {
                 // 2.5: the whole bar is a gradient - dark green (cheap) to dark red (very expensive); a white marker shows the price now
                 val (g1, g2, g3) = PriceMarks.gradient(marks.max, cap, p.msrp, p.tcg)
                 // (drawn as 96 thin strips of solid color - no gradient shader: the API 33 / 34 test phones' software graphics froze on one)
-                val stops = listOf(0.0 to Look.BarGreen, g1 to Look.BarGreenLight, g2 to Look.BarMid, g3 to Look.BarRedLight, 1.0 to Look.BarRed)
+                // 2.8: a softer middle (a warm step between the light middle and red) and eased blends - green turns to red gradually
+                val stops = listOf(0.0 to Look.BarGreen, g1 to Look.BarGreenLight, g2 to Look.BarMid, (g2 + g3) / 2 to Look.BarWarm, g3 to Look.BarRedLight, 1.0 to Look.BarRed)
                 androidx.compose.foundation.Canvas(Modifier.offset(y = lineY - 1.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).testTag("pricebar-gradient")) {
                     val n = 96
                     val sw = size.width / n
@@ -672,7 +676,8 @@ class MainActivity : ComponentActivity() {
                         val f = (i + 0.5) / n
                         val k = stops.indexOfLast { it.first <= f }.coerceIn(0, stops.size - 2)
                         val (f0, c0) = stops[k]; val (f1, c1) = stops[k + 1]
-                        val t = if (f1 > f0) ((f - f0) / (f1 - f0)).toFloat().coerceIn(0f, 1f) else 0f
+                        val t0 = if (f1 > f0) ((f - f0) / (f1 - f0)).toFloat().coerceIn(0f, 1f) else 0f
+                        val t = t0 * t0 * (3f - 2f * t0)                      // (eased: no hard edge where two colors meet)
                         drawRect(androidx.compose.ui.graphics.lerp(c0, c1, t), topLeft = androidx.compose.ui.geometry.Offset(i * sw, 0f),
                             size = androidx.compose.ui.geometry.Size(sw + 1f, size.height))
                     }
@@ -709,12 +714,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        // 2.8: what the far right stands for
+        val top = CapStep.top(nowPr, p.cap, p.msrp, p.tcg, high)
+        if (top > 0) Text("Right end: the highest price seen, \$${Engine.money(top)}" + (if (high != null && high >= top) " (other stores / TCG, last 3 months)" else ""),
+            fontSize = 11.sp, color = Look.Muted, modifier = Modifier.padding(top = 2.dp).testTag("pricebar-end-${p.asin}"))
     }
 
     /** 2.7: the TCG market price over time (one point a day, from the linked PC): a navy line on a light area, the highest and lowest
      *  price, the first and last day, the price now; your cap as a dashed line when it is inside the range. */
     @Composable
-    fun TcgChart(pts: List<Pair<Long, Double>>, p: Product) {
+    fun TcgChart(pts: List<Pair<Long, Double>>, p: Product, fromTcg: Boolean = false) {
         val lo0 = pts.minOf { it.second }; val hi0 = pts.maxOf { it.second }
         val pad = maxOf((hi0 - lo0) * 0.12, hi0 * 0.02, 1.0)
         val lo = lo0 - pad; val hi = hi0 + pad
@@ -726,7 +735,7 @@ class MainActivity : ComponentActivity() {
                 Text("TCG market price", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
                 Text("\$${Engine.money(pts.last().second)} now", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Look.Navy)
             }
-            Text("Low \$${Engine.money(lo0)} · High \$${Engine.money(hi0)} · ${pts.size} days recorded by the PC", fontSize = 11.sp, color = Look.Muted,
+            Text("Low \$${Engine.money(lo0)} · High \$${Engine.money(hi0)} · " + (if (fromTcg) "TCGplayer, last ${((pts.last().first - pts.first().first + 15) / 30).coerceAtLeast(1)} month(s)" else "${pts.size} days recorded by the PC"), fontSize = 11.sp, color = Look.Muted,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
             androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(110.dp)) {
                 val w = size.width; val h = size.height
@@ -859,8 +868,12 @@ class MainActivity : ComponentActivity() {
                     } else Text("Best price: not in stock anywhere right now", fontSize = 12.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp).testTag("best-${p.asin}"))
                 }
                 // 2.7 (owner: "a simple graph of the historic price from TCG on each individual product page"): what the linked PC recorded
-                val hist = remember(r) { try { DeskLink.get().tcgHistory(p.asin) } catch (e: Exception) { emptyList() } }
-                if (hist.size >= 2) TcgChart(hist, p)
+                // 2.8 (owner: "include the tcg price graph for each product under each product page"): TCGplayer's own history
+                // (the central list's, read once a day - every phone has it, linked or not); else what the linked PC recorded
+                val (hist, fromTcg) = remember(r) { com.restalker.mobile.core.TcgHist.pick(
+                    try { com.restalker.mobile.core.TcgHist.of(store, p.asin) } catch (e: Exception) { emptyList() },
+                    try { DeskLink.get().tcgHistory(p.asin) } catch (e: Exception) { emptyList() }) }
+                if (hist.size >= 2) TcgChart(hist, p, fromTcg)
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
                     // 2.7: at most Limit.MAX purchases of a product, every linked device counted (not on the owner's devices)
                     val boughtN = remember(r) { DeskLink.boughtOf(p) }

@@ -1,3 +1,15 @@
+# Restalker Mobile 2.8 (2026-11-18; your notes of 10:58 PM)
+- Pictures without a PC: the central list now carries each product's picture (TCGplayer's photo of exactly that product - the same one
+  the PC shows), so a new phone shows them at once, with nothing to open. Products without one get their picture from their own Amazon
+  page, now also while no product is switched on.
+- TCG price chart on every product page, for every phone (linked to a PC or not): TCGplayer's own market price of the last 3 months,
+  read once a day at an off-peak hour (~2 AM Pacific) for the whole central list and published as one small file the phones read.
+  Phones without a PC also get the TCG market price and the link to the product's TCGplayer page.
+- Price bar: the right end is the highest price seen (every store's price and TCG's highest of the last 3 months) plus a little room -
+  a line under the bar says which price; green turns to red more gradually (a soft warm middle, green and red further apart).
+- The contributor count is right at once: the first read of the crowd channel goes back 12 hours (everyone says hello every 6), and the
+  count is read every time you open the app - also when not watching.
+
 # Restalker Mobile 2.7 (2026-11-17; your notes of 8:35 PM)
 - Fair play: each product is bought at most 3 times ever, counting every linked device (the PC and your phones / tablets). After that
   it is still watched and shared with the crowd, but not bought. The owner's own devices have no limit (recognised by themselves; a

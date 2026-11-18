@@ -33,12 +33,16 @@ class PriceMarks private constructor(val items: List<Mark>, val max: Double, val
          *  (signifying a very expensive price) with a light gradient in between"): where the colors change, as shares of the bar -
          *  (light green, the light middle, light red): green up to the MSRP, light around it, red past the TCG price (or past your cap /
          *  the MSRP when the TCG price is not known). Always increasing, inside the bar. */
+        const val SPREAD = 0.40
         fun gradient(max: Double, cap: Double, msrp: Double?, tcg: Double?): Triple<Double, Double, Double> {
             val f = { v: Double -> (v / max).coerceIn(0.0, 1.0) }
             val lo = msrp?.takeIf { it > 0 }?.let(f) ?: if (cap > 0) f(cap) * 0.85 else 0.45
             val hi0 = tcg?.takeIf { it > 0 }?.let(f) ?: maxOf(if (cap > 0) f(cap) else 0.0, lo * 1.25)
-            val a = lo.coerceIn(0.10, 0.80)
-            val c = hi0.coerceIn(a + 0.10, 0.95)
+            // 2.8 (owner: "the switch from green to red should also be slightly more gradual"): green and red are at least 40% of the bar
+            // apart (2.5-2.7: 10%) - widened evenly around their middle, kept inside the bar
+            var a = lo.coerceIn(0.08, 0.80)
+            var c = hi0.coerceIn(a + 0.02, 0.95)
+            if (c - a < SPREAD) { val mid = ((a + c) / 2).coerceIn(0.08 + SPREAD / 2, 0.95 - SPREAD / 2); a = mid - SPREAD / 2; c = mid + SPREAD / 2 }
             return Triple(a, (a + c) / 2, c)
         }
 

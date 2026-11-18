@@ -31,7 +31,9 @@ object Catalog {
                 linkedMapOf<String, Any?>("s" to (o["s"].asStr() ?: "").take(20), "st" to "", "pr" to null, "at" to 0L, "u" to u)
             }.take(8)
             val ms = m["ms"].asDouble()?.takeIf { it > 0 && it < 100000 }
-            store.add(Product(id = store.newId(), asin = a, name = name, cap = 0.0, kind = kind, watch = false, buy = false,
+            val pic = m["i"].asStr()?.takeIf { Pics.validAny(it) } ?: ""
+            val tp = m["tp"].asStr()?.takeIf { Regex("^[0-9]{1,9}$").matches(it) }?.let { "https://www.tcgplayer.com/product/$it" } ?: ""
+            store.add(Product(id = store.newId(), asin = a, name = name, cap = 0.0, kind = kind, watch = false, buy = false, cImg = pic, tcgUrl = tp,
                 tokens = Tokens.fromTitle(name), year = (m["gy"].asStr() ?: "").take(40), set = (m["gs"].asStr() ?: "").take(80),
                 msrp = ms, others = others, qtySince = now))
             have += a
@@ -40,5 +42,26 @@ object Catalog {
         store.log("Got all products: $added added (no cap, not watched)" + (if (already > 0) ", $already already in your list" else "") +
             ". Set a cap and switch Watch / Buy on for the ones you want.")
         return Result(added, already, bad)
+    }
+
+    /** 2.8: the central list's pictures ("i": TCGplayer's catalogue photo of exactly that product, the one the PC shows too) for every
+     *  product of this phone with that Amazon code - also products added before, and your own ones. -> how many changed. */
+    fun pictures(json: String?, store: Store): Int {
+        val root = MiniJson.obj(json ?: return 0) ?: return 0
+        val pics = HashMap<String, String>(); val tps = HashMap<String, String>()
+        for (x in root["products"].asList().take(1000)) {
+            val m = x.asMap() ?: continue
+            val a = m["a"].asStr() ?: continue
+            if (!ASIN.matches(a)) continue
+            m["i"].asStr()?.takeIf { Pics.validAny(it) }?.let { pics[a] = it }
+            m["tp"].asStr()?.takeIf { Regex("^[0-9]{1,9}$").matches(it) }?.let { tps[a] = "https://www.tcgplayer.com/product/$it" }
+        }
+        var n = 0
+        for (p in store.products()) {
+            val i = pics[p.asin] ?: p.cImg
+            val u = if (p.tcgUrl.isBlank()) tps[p.asin] ?: "" else p.tcgUrl            // (the PC's TCG link, when linked, stays)
+            if (p.cImg != i || p.tcgUrl != u) { store.update(p.id) { it.copy(cImg = i, tcgUrl = u) }; if (p.cImg != i) n++ }
+        }
+        return n
     }
 }

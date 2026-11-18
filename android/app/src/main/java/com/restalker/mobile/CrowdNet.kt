@@ -29,25 +29,50 @@ object CrowdNet {
     fun reset() { state = null; lastPoll = 0; catAt = 0; catalog = emptySet() }
     fun count(): Int = try { state().count() } catch (e: Exception) { 1 }
 
+    /** [force]: the app was opened / you asked - read the channel now (at most once a minute), also while not watching. */
     fun tick(force: Boolean = false) {
         val st = RkApp.store().settings()
-        if (!st.crowd || busy) return
+        if (busy) return
+        val now0 = System.currentTimeMillis()
+        // (2.8: the central list - its pictures too - is read every 6 hours whether sharing is on or off)
+        if (!st.crowd && now0 - catAt <= 6 * 3_600_000L && catalog.isNotEmpty()) return
         busy = true
         Thread({
             try {
                 val now = System.currentTimeMillis()
                 if (now - catAt > 6 * 3_600_000L || catalog.isEmpty()) refreshCatalog()
+                try { refreshHistory() } catch (e: Exception) { }
+                if (!st.crowd) return@Thread
                 val cs = state()
                 if (now - cs.helloAt > Crowd.HELLO_EVERY_MS) { post(Crowd.hello(cs.myId())); cs.helloAt = now; cs.save() }
-                if (force || (st.watching && now - lastPoll >= Crowd.POLL_EVERY_MS - 5_000)) { lastPoll = now; poll() }
+                // 2.8 (owner: "The app does not seem to count total devices"): read also while not watching - every time the app is opened
+                // (at most once a minute) - not only every 2 minutes while watching
+                val due = if (force) now - lastPoll >= 60_000L else st.watching && now - lastPoll >= Crowd.POLL_EVERY_MS - 5_000
+                if (due) { lastPoll = now; poll() }
                 lastError = ""
             } catch (e: Exception) { lastError = "${e.javaClass.simpleName}: ${e.message?.take(80)}" } finally { busy = false }
         }, "crowd").start()
     }
 
+    /** 2.8: TCGplayer's price history of the central list - read at most once a day (the file is made once a day, ~2 AM Pacific). */
+    private fun refreshHistory() {
+        val s = RkApp.store()
+        val at = s.readFile("tcg_history_at.txt")?.trim()?.toLongOrNull() ?: 0L
+        val now = System.currentTimeMillis()
+        if (now - at < com.restalker.mobile.core.TcgHist.EVERY_MS && s.readFile(com.restalker.mobile.core.TcgHist.FILE) != null) return
+        s.writeFile("tcg_history_at.txt", (now - com.restalker.mobile.core.TcgHist.EVERY_MS + 3_600_000L).toString())   // (a failure: again in an hour)
+        val body = try { get(com.restalker.mobile.core.TcgHist.URL) } catch (e: Exception) { return }
+        if (!com.restalker.mobile.core.TcgHist.ok(body)) return
+        s.writeFile(com.restalker.mobile.core.TcgHist.FILE, body); s.writeFile("tcg_history_at.txt", now.toString())
+        com.restalker.mobile.core.TcgHist.apply(s, com.restalker.mobile.core.TcgHist.parse(body), DeskLink.get().linked())
+    }
+
     private fun refreshCatalog() {
         try {
-            val root = MiniJson.obj(get(Catalog.URL)) ?: return
+            val body = get(Catalog.URL)
+            val root = MiniJson.obj(body) ?: return
+            val n = Catalog.pictures(body, RkApp.store())                   // 2.8: the central list's pictures
+            if (n > 0) RkApp.store().log("Pictures: $n product(s) got their picture from the central list.")
             val a = root["products"].asList().mapNotNull { it.asMap()?.get("a").asStr() }.filter { Crowd.okAsin(it) }.toSet()
             if (a.isNotEmpty()) { catalog = a; catAt = System.currentTimeMillis() }
         } catch (e: Exception) { catAt = System.currentTimeMillis() - 6 * 3_600_000L + 10 * 60_000L }
@@ -55,7 +80,7 @@ object CrowdNet {
 
     private fun poll() {
         val cs = state()
-        val since = cs.since.ifBlank { "10m" }
+        val since = cs.since.ifBlank { Crowd.FIRST_SINCE }          // 2.8: the first read hears every hello of the last 12 hours
         val body = get("${Crowd.SERVER}/$TOPIC/json?poll=1&since=$since")
         val mine = RkApp.store().products().filter { it.watch }.map { it.asin }.toSet()
         val looked = cs.take(body.lines(), mine) { a ->

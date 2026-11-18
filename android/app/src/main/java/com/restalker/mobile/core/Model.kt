@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.7"
+const val APP_VERSION = "2.8"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -50,6 +50,7 @@ data class Product(
     val others: List<Map<String, Any?>> = emptyList(),
     val picTriedAt: Long = 0,             // 1.6: when its page was last opened only for its picture
     val dImg: String = "",                // 1.7: the linked desktop's picture of the product (its table's)
+    val cImg: String = "",                // 2.8: the central list's picture (TCGplayer's catalogue photo of exactly this product)
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -67,7 +68,7 @@ data class Product(
         "submittedAt" to submittedAt, "orderNumber" to orderNumber, "fails" to fails, "failEpisode" to failEpisode,
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
         "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
-        "msrp" to msrp, "tcg" to tcg, "tcgUrl" to tcgUrl, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg,
+        "msrp" to msrp, "tcg" to tcg, "tcgUrl" to tcgUrl, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg, "cImg" to cImg,
     )
 
     /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
@@ -100,6 +101,7 @@ data class Product(
                 others = m["others"].asList().mapNotNull { it.asMap() }.take(8),
                 picTriedAt = if (Pics.canon(m["image"].asStr()) != null || m["image"].asStr().isNullOrBlank()) m["picTriedAt"].asLong() ?: 0 else 0,
                 dImg = Pics.desk(m["dImg"].asStr()) ?: "",
+                cImg = m["cImg"].asStr()?.takeIf { Pics.validAny(it) } ?: "",
             )
         }
     }
