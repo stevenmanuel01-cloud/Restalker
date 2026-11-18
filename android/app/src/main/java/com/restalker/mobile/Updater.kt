@@ -58,7 +58,7 @@ object Updater {
         if (!RkApp.store().settings().autoUpdate) { state = "v${offer.version} is available (updating by itself is off)"; return }
         if (!allowed(ctx)) { state = "v${offer.version} is ready - allow Restalker to install its updates"; return }
         // (Android asked for a tap for this version a short while ago and it was not given: not asked again by itself for 6 hours)
-        if (!mayAsk(ctx, offer.code, explicit)) { state = "v${offer.version} is ready - tap Update now to install it"; return }
+        if (!mayAsk(ctx, offer.code.toInt(), explicit)) { state = "v${offer.version} is ready - tap Update now to install it"; return }
         val f = File(ctx.cacheDir, "update-${offer.code}.apk")
         if (!(f.isFile && sha256(f) == offer.sha256)) {
             state = "downloading v${offer.version}"
@@ -68,7 +68,7 @@ object Updater {
             if (!fingerprintOk(tmp, offer.sha256)) { tmp.delete(); return }
             tmp.renameTo(f)
         }
-        install(ctx, f, offer.version, offer.code)
+        install(ctx, f, offer.version, offer.code.toInt())
     }
 
     /** The file must be exactly the released one. */

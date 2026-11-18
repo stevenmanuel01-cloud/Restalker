@@ -711,6 +711,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // =================================================================== one product
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     fun ProductScreen(p: Product, r: Int, onBack: () -> Unit, onEdit: (Product) -> Unit) {
         val store = RkApp.store()
