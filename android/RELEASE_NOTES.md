@@ -1,3 +1,10 @@
+# Restalker Mobile 2.5 (2026-11-17; your notes of 6:50 PM)
+- New look (A+): the logo's navy and amber - a navy header, amber buttons and switches, a slightly darker navy-tinted background so
+  the white boxes stand out. Green tint = good to go (in stock under your cap), red tint = no good (over the cap).
+- Price bar: one gradient from dark green (cheap) to dark red (very expensive) - green up to the MSRP, light around it, red past the
+  TCG price; a white marker shows the price now, the amber knob your cap.
+- Product page: "Best price: $___ @ store" - the cheapest place that has it in stock right now, with a link to that store.
+
 # Restalker Mobile 2.4 (2026-11-17; your notes of 5:55 PM)
 - FIX: the update question no longer comes back in a loop. When Android asks you to confirm an update (or Play Protect wants to scan
   it), it asks at most once every 6 hours for that version; Update now asks at once. The notice clears when the question is answered.

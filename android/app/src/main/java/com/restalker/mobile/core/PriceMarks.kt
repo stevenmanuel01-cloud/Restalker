@@ -7,7 +7,7 @@ package com.restalker.mobile.core
  *  dont overlap"): each label's REAL width is used (the screen measures it - bigger text in the phone's settings makes it wider; 2.3
  *  assumed a fixed width, which bigger text overflowed). Fractions are of the bar's width; the bar ends 12 % past the highest value (or
  *  at a fixed [scale]). */
-class PriceMarks private constructor(val items: List<Mark>, private val max: Double, val rows: Int, private val widths: Map<String, Double>) {
+class PriceMarks private constructor(val items: List<Mark>, val max: Double, val rows: Int, private val widths: Map<String, Double>) {
     /** [row]: 0 = the row just above the line, 1..3 higher up; the cap is always below the line (row 0 there). */
     data class Mark(val kind: String, val value: Double, val label: String, val row: Int) {
         val above: Boolean get() = kind != CAP
@@ -28,6 +28,19 @@ class PriceMarks private constructor(val items: List<Mark>, private val max: Dou
         const val MAX_ROWS = 4                      // (four labels at most above the line: they never overlap)
 
         private fun m(v: Double) = "\$" + if (v >= 1000) String.format(java.util.Locale.US, "%,.0f", v) else String.format(java.util.Locale.US, "%.0f", v)
+
+        /** 2.5 (owner: "the slider bar a gradient: dark green on the left (signifying a cheaper price) and dark red on the right
+         *  (signifying a very expensive price) with a light gradient in between"): where the colors change, as shares of the bar -
+         *  (light green, the light middle, light red): green up to the MSRP, light around it, red past the TCG price (or past your cap /
+         *  the MSRP when the TCG price is not known). Always increasing, inside the bar. */
+        fun gradient(max: Double, cap: Double, msrp: Double?, tcg: Double?): Triple<Double, Double, Double> {
+            val f = { v: Double -> (v / max).coerceIn(0.0, 1.0) }
+            val lo = msrp?.takeIf { it > 0 }?.let(f) ?: if (cap > 0) f(cap) * 0.85 else 0.45
+            val hi0 = tcg?.takeIf { it > 0 }?.let(f) ?: maxOf(if (cap > 0) f(cap) else 0.0, lo * 1.25)
+            val a = lo.coerceIn(0.10, 0.80)
+            val c = hi0.coerceIn(a + 0.10, 0.95)
+            return Triple(a, (a + c) / 2, c)
+        }
 
         fun centre(f: Double, w: Double = NEAR): Double { val h = (w / 2).coerceAtMost(0.5); return f.coerceIn(h, 1 - h) }
 

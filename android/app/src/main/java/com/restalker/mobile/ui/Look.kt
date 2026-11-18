@@ -13,38 +13,60 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 1.4: the app's look (the design the owner was shown): a dark navy header, white cards on light grey, one teal accent, amber for
- *  "needs you", soft chips for the stock state. Every text color passes the 4.5:1 contrast rule on its background. */
+/** 1.4: the app's look. 2.5 (owner, 2026-11-17: "A+ is a good mix"): the logo's colors only - navy (#1F3A5F) and amber (#F2B134) -
+ *  on a slightly darker navy-tinted grey so the white boxes stand out; amber for every button, switch and the selected tab (navy text
+ *  on amber); green tint = good to go (in stock under your cap), red tint = no good (over the cap). Every text color passes the 4.5:1
+ *  contrast rule on its background; amber is never text on white (only a fill, or text on navy). */
 object Look {
-    val Ink = Color(0xFF0F172A)
-    val Navy = Color(0xFF0E1B2C)
-    val NavyCard = Color(0xFF16283F)
-    val OnNavyDim = Color(0xFFA5B4C8)
-    val Ground = Color(0xFFF3F4F6)
-    val Line = Color(0xFFE2E8F0)
-    val Muted = Color(0xFF475569)
-    val Teal = Color(0xFF0F766E)
-    val TealBright = Color(0xFF14B8A6)
-    val TealSoft = Color(0xFFCCFBF1)
-    val TealText = Color(0xFF115E59)
-    val Mint = Color(0xFF5EEAD4)
-    val AmberSoft = Color(0xFFFEF3C7)
+    val Ink = Color(0xFF0E1B2C)
+    val Navy = Color(0xFF1F3A5F)             // the logo's navy: the header, links, the selected tab
+    val NavyCard = Color(0xFF2B4B74)
+    val OnNavyDim = Color(0xFFC9D5E3)
+    val Ground = Color(0xFFE4E9F0)           // (navy-tinted grey: the white cards pop)
+    val Line = Color(0xFFD8DFE8)
+    val Muted = Color(0xFF4A5568)
+    val Accent = Color(0xFFF2B134)           // the logo's amber: buttons, switches, the cap knob
+    val AccentSoft = Color(0xFFFDF0D3)
+    val OnNavyAccent = Color(0xFFF2B134)     // amber text on navy (7:1)
+    val Good = Color(0xFF15803D)             // green text: good to go
+    val GoodSoft = Color(0xFFDCF3E3)
+    val GoodText = Color(0xFF14532D)
+    val GoodBorder = Color(0xFF22A55B)
+    val BadSoft = Color(0xFFFBE1E1)
+    val BadText = Color(0xFF991B1B)
+    // (older names, now in the A+ colors)
+    val Teal = Navy
+    val TealBright = Accent
+    val TealSoft = GoodSoft
+    val TealText = GoodText
+    val Mint = OnNavyAccent
+    val AmberSoft = Color(0xFFFEF3C7)        // "needs you" strips
     val AmberText = Color(0xFF78350F)
     val Amber = Color(0xFF92400E)
-    val OrangeSoft = Color(0xFFFFEDD5)
-    val OrangeText = Color(0xFF9A3412)
-    val GreySoft = Color(0xFFE2E8F0)
+    val OrangeSoft = BadSoft
+    val OrangeText = BadText
+    val GreySoft = Color(0xFFEDF0F4)
     val GreyText = Color(0xFF334155)
     val Red = Color(0xFFB91C1C)
-    val Green = Color(0xFF16A34A)          // 2.0: the price bar under the cap
-    val Link = Color(0xFF0F766E)           // 2.4: a link to a web page (the TCG price)
+    val Green = Good
+    val Link = Navy                          // a link to a web page (the TCG price, Best price)
+
+    /** 2.5: the price bar - dark green (cheap) through a light middle to dark red (very expensive). */
+    val BarGreen = Color(0xFF15803D)
+    val BarGreenLight = Color(0xFF86D9A0)
+    val BarMid = Color(0xFFF3F1E6)
+    val BarRedLight = Color(0xFFF4A3A3)
+    val BarRed = Color(0xFFB91C1C)
 
     val scheme = lightColorScheme(
-        primary = Teal, onPrimary = Color.White, primaryContainer = TealSoft, onPrimaryContainer = TealText,
-        secondary = Navy, onSecondary = Color.White, secondaryContainer = TealSoft, onSecondaryContainer = TealText,
+        primary = Navy, onPrimary = Color.White, primaryContainer = AccentSoft, onPrimaryContainer = Ink,
+        secondary = Navy, onSecondary = Color.White, secondaryContainer = AccentSoft, onSecondaryContainer = Ink,
         background = Ground, onBackground = Ink, surface = Color.White, onSurface = Ink, surfaceVariant = Ground, onSurfaceVariant = Muted,
-        error = Red, outline = Color(0xFFCBD5E1),
+        error = Red, outline = Color(0xFFB8C3D1),
     )
+    /** 2.5: a filled button - amber with navy writing. */
+    @Composable fun btn() = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink, disabledContainerColor = Line, disabledContentColor = Muted)
+    @Composable fun sw() = SwitchDefaults.colors(checkedTrackColor = Accent, checkedThumbColor = Color.White, checkedBorderColor = Accent)
     val card = RoundedCornerShape(16.dp)
 }
 

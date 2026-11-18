@@ -192,7 +192,7 @@ class MainActivity : ComponentActivity() {
                     Triple("Settings", Icons.Filled.Settings, 3)).forEach { (label, icon, i) ->
                     NavigationBarItem(selected = pager.currentPage == i, onClick = { goTab(i) }, icon = { Icon(icon, contentDescription = null) },
                         label = { Text(label, maxLines = 1, fontSize = 12.sp) }, modifier = Modifier.testTag("tab$i"),
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Look.Teal, selectedTextColor = Look.Teal, indicatorColor = Look.TealSoft,
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Look.Navy, selectedTextColor = Look.Navy, indicatorColor = Look.AccentSoft,
                             unselectedIconColor = Look.Muted, unselectedTextColor = Look.Muted))
                 }
             }
@@ -223,7 +223,7 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(note, { note = it }, minLines = 3, maxLines = 6, placeholder = { Text("For example: no pictures on the Hobbit box") },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("report-note"))
                 }
-            }, confirmButton = { Button(onClick = { asking.value = false; sendReport(note) }, modifier = Modifier.testTag("report-send")) { Text("Send to Claude") } },
+            }, confirmButton = { Button(colors = Look.btn(), onClick = { asking.value = false; sendReport(note) }, modifier = Modifier.testTag("report-send")) { Text("Send to Claude") } },
                 dismissButton = { TextButton(onClick = { asking.value = false }) { Text("Cancel") } })
         }
         reportResult.value?.let { msg ->
@@ -245,7 +245,7 @@ class MainActivity : ComponentActivity() {
         }
         if (confirmReal) AlertDialog(onDismissRequest = { confirmReal = false }, title = { Text("Make real purchases?") },
             text = { Text("Products set to Buy are then really ordered on Amazon when they are in stock at or under their cap. Practice (off) stops every checkout right before \"Place your order\".") },
-            confirmButton = { Button(onClick = {
+            confirmButton = { Button(colors = Look.btn(), onClick = {
                 store.setSettings { it.copy(practice = false) }; store.log("Practice mode switched OFF (real purchases)."); confirmReal = false
             }, modifier = Modifier.testTag("confirm-real")) { Text("Yes, real purchases") } },
             dismissButton = { TextButton(onClick = { confirmReal = false }) { Text("Keep practicing") } })
@@ -331,7 +331,7 @@ class MainActivity : ComponentActivity() {
                         }
                         if (d.mode == "pc") Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Text("Buy if the PC stops", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                            Switch(d.failover, { v -> setMode(d, d.mode, v) }, Modifier.testTag(if (d.me) "fo-me" else "fo-${d.id}"))
+                            Switch(d.failover, { v -> setMode(d, d.mode, v) }, Modifier.testTag(if (d.me) "fo-me" else "fo-${d.id}"), colors = Look.sw())
                         }
                         if (!d.me) Text("The change reaches it the next time it reads the link (a few minutes; at once if it is open).",
                             fontSize = 11.sp, color = Look.Muted)
@@ -386,7 +386,7 @@ class MainActivity : ComponentActivity() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Restalker Mobile v$APP_VERSION", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp,
                             maxLines = 2, modifier = Modifier.weight(1f).testTag("title"))
-                        Button(onClick = onAdd, colors = ButtonDefaults.buttonColors(containerColor = Look.TealBright, contentColor = Look.Navy),
+                        Button(onClick = onAdd, colors = Look.btn(),
                             contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.heightIn(min = 44.dp).testTag("add")) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
                             Text("Add", fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -405,7 +405,7 @@ class MainActivity : ComponentActivity() {
                                 fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp).testTag("linkchip"))
                         }
                         Switch(checked = st.watching, onCheckedChange = { setWatching(it) }, modifier = Modifier.testTag("watching"),
-                            colors = SwitchDefaults.colors(checkedTrackColor = Look.TealBright, checkedThumbColor = Color.White))
+                            colors = Look.sw())
                     }
                 }
             }
@@ -532,7 +532,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun Step(done: Boolean, text: String, button: String?, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp)) {
-            Text(if (done) "✓" else "•", color = if (done) Look.Teal else Look.Muted, fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
+            Text(if (done) "✓" else "•", color = if (done) Look.Good else Look.Muted, fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
             Text(text, fontSize = 14.sp, modifier = Modifier.weight(1f), color = if (done) Look.Muted else Look.Ink)
             if (!done && button != null) TextButton(onClick = onClick) { Text(button) }
         }
@@ -625,7 +625,7 @@ class MainActivity : ComponentActivity() {
         // 2.2: the scale stays put while the cap mark is dragged (from the values without the dragged cap; room up to 1.6 x)
         val scale = remember(p.id, p.cap, nowPr, p.msrp, p.tcg) { CapStep.scale(nowPr, p.cap, p.msrp, p.tcg) }
         val under = nowPr != null && nowPr <= cap
-        val barColor = if (nowPr == null) Look.GreyText else if (under) Look.Green else Look.Red
+        val barColor = if (nowPr == null) Look.GreyText else if (under) Look.Good else Look.BadText
         var last by remember { mutableStateOf(cap) }
         var grabbed by remember { mutableStateOf(false) }
         // 2.4: every label is MEASURED (the phone's text size counts) - rows and row height come from the real text, so none overlap
@@ -653,8 +653,13 @@ class MainActivity : ComponentActivity() {
                         onDragEnd = { if (grabbed) onDrop(last); grabbed = false }, onDragCancel = { if (grabbed) onDrop(last); grabbed = false },
                         onHorizontalDrag = { ch, _ -> if (grabbed) { ch.consume(); last = valueAt(ch.position.x); onDrag(last) } })
                 })
-                Box(Modifier.offset(y = lineY).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Look.GreySoft))
-                if (nowPr != null) Box(Modifier.offset(y = lineY).width(w * marks.frac(nowPr)).height(8.dp).clip(RoundedCornerShape(4.dp)).background(barColor)
+                // 2.5: the whole bar is a gradient - dark green (cheap) to dark red (very expensive); a white marker shows the price now
+                val (g1, g2, g3) = PriceMarks.gradient(marks.max, cap, p.msrp, p.tcg)
+                Box(Modifier.offset(y = lineY - 1.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(
+                    androidx.compose.ui.graphics.Brush.horizontalGradient(0f to Look.BarGreen, g1.toFloat() to Look.BarGreenLight, g2.toFloat() to Look.BarMid,
+                        g3.toFloat() to Look.BarRedLight, 1f to Look.BarRed)).testTag("pricebar-gradient"))
+                if (nowPr != null) Box(Modifier.offset(x = (w * marks.frac(nowPr) - 6.dp).coerceIn(0.dp, w - 12.dp), y = lineY - 6.dp).size(12.dp, 20.dp)
+                    .clip(RoundedCornerShape(4.dp)).background(Color.White).border(2.5.dp, Look.Ink, RoundedCornerShape(4.dp))
                     .testTag(if (under) "pricebar-green" else "pricebar-red"))
                 for (m in marks.items) {
                     val x = w * marks.frac(m.value)
@@ -670,8 +675,8 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.offset(x = lx, y = top - rowH + 1.dp).width(lw).testTag("tick-${m.kind}"))
                     } else {
                         Box(Modifier.offset(x = (x - 1.dp).coerceIn(0.dp, w - 2.dp), y = lineY).width(2.dp).height(18.dp).background(c))
-                        Box(Modifier.offset(x = (x - 9.dp).coerceIn(0.dp, w - 18.dp), y = lineY - 5.dp).size(18.dp).clip(RoundedCornerShape(9.dp))
-                            .background(Look.Ink).border(3.dp, Color.White, RoundedCornerShape(9.dp)).testTag("capknob-${p.asin}"))
+                        Box(Modifier.offset(x = (x - 10.dp).coerceIn(0.dp, w - 20.dp), y = lineY - 6.dp).size(20.dp).clip(RoundedCornerShape(10.dp))
+                            .background(Look.Accent).border(3.dp, Color.White, RoundedCornerShape(10.dp)).testTag("capknob-${p.asin}"))
                         Text(m.label, style = styleOf(m.kind), color = c, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, softWrap = false,
                             modifier = Modifier.offset(x = lx, y = lineY + 18.dp).width(lw).testTag("tick-cap"))
                     }
@@ -695,7 +700,7 @@ class MainActivity : ComponentActivity() {
     fun ProductCard(p: Product, deskBuys: Boolean, tag: String = "product-${p.asin}", onClick: () -> Unit) {
         val (c, bg, fg) = chip(p)
         Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(Look.card).background(Color.White)
-            .then(if (p.inProgress || (p.stock().first == "in" && p.buy)) Modifier.border(2.dp, Look.TealBright, Look.card) else Modifier)
+            .then(if (p.inProgress || (p.stock().first == "in" && p.buy)) Modifier.border(2.dp, Look.GoodBorder, Look.card) else Modifier)
             .clickable(onClick = onClick).padding(14.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
             Thumb(p, 56)
             Column(Modifier.padding(start = 12.dp).weight(1f)) {
@@ -774,6 +779,16 @@ class MainActivity : ComponentActivity() {
                             fontWeight = FontWeight.SemiBold, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                             modifier = Modifier.clickable { openOutside(Tcg.link(p)) }.testTag("tcglink-${p.asin}"))
                     }
+                    // 2.5: the cheapest place that has it in stock right now, with a link to that store's page
+                    val best = remember(p) { com.restalker.mobile.core.BestPrice.of(p) }
+                    if (best != null) Row(Modifier.padding(top = 4.dp).testTag("best-${p.asin}"), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Best price: ", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Look.Ink)
+                        Text("\$${Engine.money(best.price)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (best.price <= p.cap) Look.Good else Look.BadText)
+                        Text(" @ ", fontSize = 13.sp, color = Look.Ink)
+                        Text(best.store + " ↗", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Look.Link,
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                            modifier = Modifier.clickable { if (best.store == "Amazon") openBrowser(best.url) else openOutside(best.url) }.testTag("bestlink-${p.asin}"))
+                    } else Text("Best price: not in stock anywhere right now", fontSize = 12.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp).testTag("best-${p.asin}"))
                 }
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
                     SwitchRow("Buy when in stock", if (deskBuys && p.buy) "The linked desktop buys it; this phone takes over if the desktop stops" else "One order, at or under your cap",
@@ -804,7 +819,7 @@ class MainActivity : ComponentActivity() {
                         Text(when { p.purchased -> "Bought${p.orderNumber?.let { " (order $it)" } ?: ""}. It is not bought again until you re-arm it."
                             p.attempted -> "An order may have been placed. Check your Amazon orders, then re-arm it if nothing was ordered."
                             else -> "Paused after failed checkouts until ${hm(p.lockedUntil)}." }, color = Look.AmberText, fontSize = 13.sp)
-                        Button(onClick = {
+                        Button(colors = Look.btn(), onClick = {
                             store.update(p.id) { it.copy(purchased = false, attempted = false, inProgress = false, fails = 0, lockedUntil = 0, orderNumber = null) }
                             store.log("${p.label}: re-armed by you (it may be bought again).")
                         }, colors = ButtonDefaults.buttonColors(containerColor = Look.Amber), modifier = Modifier.padding(top = 8.dp).testTag("rearm-${p.asin}")) { Text("Re-arm (buy again)") }
@@ -877,7 +892,7 @@ class MainActivity : ComponentActivity() {
                 if (help.isNotEmpty()) Text(help, fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp)
             }
             Switch(checked = on, onCheckedChange = set, modifier = Modifier.testTag(tag),
-                colors = SwitchDefaults.colors(checkedTrackColor = Look.Teal, checkedThumbColor = Color.White))
+                colors = Look.sw())
         }
     }
 
@@ -918,7 +933,7 @@ class MainActivity : ComponentActivity() {
                 if (busy) Text("Opening the short link...", fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                 if (err.isNotEmpty()) Text(err, color = Look.Red, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp).testTag("f-err"))
                 Spacer(Modifier.height(10.dp))
-                Button(enabled = !busy, onClick = {
+                Button(colors = Look.btn(), enabled = !busy, onClick = {
                     val c = cap.replace("$", "").replace(",", "").trim().toDoubleOrNull()
                     if (c == null || c <= 0) { err = "Enter the price cap (for example 449.99)."; return@Button }
                     if (c >= 1000 && !bigOk) { err = "A cap of \$${Engine.money(c)} - is that right? Tap Add again to keep it."; bigOk = true; return@Button }
@@ -943,7 +958,7 @@ class MainActivity : ComponentActivity() {
     fun SwitchRowPlain(label: String, help: String, on: Boolean, tag: String, set: (Boolean) -> Unit) {
         Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text(label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp); Text(help, fontSize = 12.sp, color = Look.Muted) }
-            Switch(checked = on, onCheckedChange = set, modifier = Modifier.testTag(tag), colors = SwitchDefaults.colors(checkedTrackColor = Look.Teal))
+            Switch(checked = on, onCheckedChange = set, modifier = Modifier.testTag(tag), colors = Look.sw())
         }
     }
 
@@ -970,7 +985,7 @@ class MainActivity : ComponentActivity() {
                 if (err.isNotEmpty()) Text(err, color = Look.Red, fontSize = 13.sp)
             }
         }, confirmButton = {
-            Button(onClick = {
+            Button(colors = Look.btn(), onClick = {
                 val c = cap.replace("$", "").replace(",", "").trim().toDoubleOrNull()
                 if (c == null || c <= 0) { err = "Enter the price cap (for example 449.99)."; return@Button }
                 RkApp.store().update(p.id) { it.copy(cap = c) }
@@ -1057,7 +1072,7 @@ class MainActivity : ComponentActivity() {
                     Text(if (linked) linkLine else "Link the desktop Restalker: your products stay the same on both, and only one of them buys each product. On the desktop click Link phone, then scan its code.",
                         color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp).testTag("link-state"))
                     FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { scan() }, colors = ButtonDefaults.buttonColors(containerColor = Look.TealBright, contentColor = Look.Navy),
+                        Button(onClick = { scan() }, colors = Look.btn(),
                             modifier = Modifier.heightIn(min = 44.dp).testTag("scan")) { Text(if (linked) "Scan again" else "Scan the desktop's QR code", fontWeight = FontWeight.SemiBold) }
                         TextButton(onClick = { typing = true }, modifier = Modifier.testTag("pastecode")) { Text("Type the code", color = Look.Mint) }
                         if (linked) TextButton(onClick = { confirmUnlink = true }, modifier = Modifier.testTag("unlink")) { Text("Unlink", color = Look.Mint) }
@@ -1072,7 +1087,7 @@ class MainActivity : ComponentActivity() {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Amazon account", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                            Text(if (signed) "Signed in" else "Not signed in", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (signed) Look.Teal else Look.Red)
+                            Text(if (signed) "Signed in" else "Not signed in", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (signed) Look.Good else Look.Red)
                         }
                         TextButton(onClick = { openBrowser(BrowserActivity.SIGNIN_URL) }, modifier = Modifier.testTag("signin")) { Text(if (signed) "Open" else "Sign in") }
                     }
@@ -1119,7 +1134,7 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(paLink, { paLink = it; paErr = "" }, label = { Text("Amazon link or product code") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("pa-link"))
                     if (paErr.isNotEmpty()) Text(paErr, color = Look.Red, fontSize = 12.sp, modifier = Modifier.testTag("pa-err"))
-                    Button(onClick = {
+                    Button(colors = Look.btn(), onClick = {
                         val t = paLink
                         Thread {
                             val a = Asin.resolve(t) { u -> followOnce(u) }
@@ -1139,7 +1154,7 @@ class MainActivity : ComponentActivity() {
                     Text("Adds every Magic product Restalker knows (names, Amazon codes, MSRP and other stores' links) that is not in your list yet. " +
                         "They come in WITHOUT a cap and are not watched: set a cap and switch Watch / Buy on for the ones you want.",
                         fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
-                    Button(enabled = !catBusy, onClick = {
+                    Button(colors = Look.btn(), enabled = !catBusy, onClick = {
                         catBusy = true; catMsg = "Getting the list..."
                         Thread {
                             val r = try {
@@ -1209,12 +1224,12 @@ class MainActivity : ComponentActivity() {
                     Text("On the desktop: Link phone. The code is under the QR picture (starts with RK1.).", fontSize = 13.sp)
                     OutlinedTextField(code, { code = it }, singleLine = true, label = { Text("RK1....") }, modifier = Modifier.testTag("link-code"))
                 }
-            }, confirmButton = { Button(onClick = { typing = false; linkWith(code) }, modifier = Modifier.testTag("link-save")) { Text("Link") } },
+            }, confirmButton = { Button(colors = Look.btn(), onClick = { typing = false; linkWith(code) }, modifier = Modifier.testTag("link-save")) { Text("Link") } },
                 dismissButton = { TextButton(onClick = { typing = false }) { Text("Cancel") } })
         }
         if (confirmUnlink) AlertDialog(onDismissRequest = { confirmUnlink = false }, title = { Text("Unlink the desktop?") },
             text = { Text("The phone keeps its products and buys on its own again. Products are no longer shared.") },
-            confirmButton = { Button(onClick = { confirmUnlink = false; Thread { DeskLink.get().unlink(); runOnUiThread { bump() } }.start() }, modifier = Modifier.testTag("unlink-yes")) { Text("Unlink") } },
+            confirmButton = { Button(colors = Look.btn(), onClick = { confirmUnlink = false; Thread { DeskLink.get().unlink(); runOnUiThread { bump() } }.start() }, modifier = Modifier.testTag("unlink-yes")) { Text("Unlink") } },
             dismissButton = { TextButton(onClick = { confirmUnlink = false }) { Text("Cancel") } })
     }
 

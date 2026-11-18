@@ -484,6 +484,8 @@ class ScreenTests {
         compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle(); Thread.sleep(500)
         compose.onNodeWithTag("tcglink-B0TEST0701").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("TCG market \$542.98", substring = true).assertExists()
+        compose.onNodeWithTag("best-B0TEST0701").assertExists()                                      // 2.5: Best price line
+        compose.onNodeWithTag("pricebar-gradient", useUnmergedTree = true).assertExists()             // 2.5: the gradient bar
         compose.onNodeWithTag("pbought-B0TEST0701").performScrollTo().assertIsDisplayed()
         shot("t19_product_bought")
         compose.onNodeWithTag("back").performClick()

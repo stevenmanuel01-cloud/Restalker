@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.4"
+const val APP_VERSION = "2.5"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -225,4 +225,23 @@ object Tcg {
     /** The product's name without "Magic: The Gathering" and the shop's extras after a "|". */
     fun query(name: String): String = name.replace(Regex("(?i)magic\\s*:?\\s*the\\s+gathering|\\bmtg\\b"), " ").split('|').firstOrNull { it.isNotBlank() }
         ?.replace(Regex("\\s+"), " ")?.trim()?.trim('-', ':', ' ')?.take(100) ?: name.take(100)
+}
+
+/** 2.5 (owner: 'another line of text below the MSRP which shows "Best Price: [$$$] @ [store]" with a hyperlink to the store'): the
+ *  cheapest place that has the product in stock right now - this device's or the PC's look at Amazon, or one of the other stores the
+ *  linked PC watches. (price, store, that store's page) or null when nowhere has it. Pure: CoreTests. */
+object BestPrice {
+    data class Offer(val price: Double, val store: String, val url: String)
+    fun of(p: Product): Offer? {
+        val out = ArrayList<Offer>()
+        val (st, pr, _) = p.stock()
+        if ((st == "in" || st == "over") && pr != null && pr > 0) out += Offer(pr, "Amazon", p.url)
+        for (o in p.others) {
+            val s = o["st"].asStr() ?: continue
+            val v = o["pr"].asDouble() ?: continue
+            val u = o["u"].asStr()?.takeIf { it.startsWith("https://") } ?: continue
+            if ((s == "in" || s == "over") && v > 0) out += Offer(v, (o["s"].asStr() ?: "").ifBlank { "store" }, u)
+        }
+        return out.minByOrNull { it.price }
+    }
 }

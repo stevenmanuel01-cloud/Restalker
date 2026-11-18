@@ -858,6 +858,22 @@ object CoreTests {
                 Tcg.link(p.copy(tcgUrl = "https://evil.com/product/1")).startsWith("https://www.tcgplayer.com/search/") &&
                 !Tcg.okUrl("https://www.tcgplayer.com.evil.com/x") && Tcg.okUrl("https://tcgplayer.com/product/1")
         }
+        // ---- 2.5 (owner, 2026-11-17 6:50 PM): the A+ colors, the gradient bar, Best price
+        t("129_gradient_green_to_msrp_red_past_tcg_always_increasing") {
+            val (a, b, c) = PriceMarks.gradient(600.0, 520.0, 455.88, 542.98)
+            val noRef = PriceMarks.gradient(100.0, 80.0, null, null)
+            val odd = PriceMarks.gradient(100.0, 0.0, 99.0, 20.0)          // (TCG under the MSRP: still increasing, inside the bar)
+            Math.abs(a - 455.88 / 600) < 1e-9 && Math.abs(c - 542.98 / 600) < 1e-9 && b > a && b < c &&
+                listOf(noRef, odd).all { (x, y, z) -> x >= 0.1 && x < y && y < z && z <= 0.95 } }
+        t("130_best_price_cheapest_in_stock_anywhere") {
+            val p = Product(id = "x", asin = "B0TEST0501", cap = 520.0, lastCheck = 1, buyable = true, price = 499.99, others = listOf(
+                mapOf("s" to "Target", "st" to "in", "pr" to 489.99, "u" to "https://www.target.com/p/x"),
+                mapOf("s" to "Walmart", "st" to "out", "pr" to 400.0, "u" to "https://www.walmart.com/ip/x"),
+                mapOf("s" to "GameStop", "st" to "in", "pr" to 450.0)))                                // (no page: not offered)
+            val b = BestPrice.of(p)!!
+            val amazonOnly = BestPrice.of(p.copy(others = emptyList()))!!
+            b.store == "Target" && b.price == 489.99 && b.url == "https://www.target.com/p/x" && amazonOnly.store == "Amazon" &&
+                amazonOnly.url == "https://www.amazon.com/dp/B0TEST0501" && BestPrice.of(p.copy(buyable = false, others = emptyList())) == null }
         return results
     }
 
