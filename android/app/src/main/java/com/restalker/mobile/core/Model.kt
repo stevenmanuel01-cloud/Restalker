@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.8"
+const val APP_VERSION = "2.9"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -141,11 +141,14 @@ data class Settings(
     val deviceName: String = "",          // 2.3: the name the other linked devices show (empty = the phone's model)
     val crowd: Boolean = true,            // 2.6: share in-stock sightings with the Restalker crowd (and look when the crowd sees one)
     val masterCode: String = "",          // 2.7: the owner's master code typed here (Settings, About) - no purchase limit
+    val alertTopic: String = "",          // 2.9: this phone's own ntfy alerts channel (made when you set it up; NtfyAlerts.channel picks the one used)
+    val alertsOn: Boolean = false,        // 2.9: send alerts to that channel too (Settings, "Alerts on any device")
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
         "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown, "runIcon" to runIcon, "autoUpdate" to autoUpdate,
-        "buyMode" to buyMode, "buyModeAt" to buyModeAt, "failover" to failover, "deviceName" to deviceName, "crowd" to crowd, "masterCode" to masterCode)
+        "buyMode" to buyMode, "buyModeAt" to buyModeAt, "failover" to failover, "deviceName" to deviceName, "crowd" to crowd, "masterCode" to masterCode,
+        "alertTopic" to alertTopic, "alertsOn" to alertsOn)
     companion object {
         const val MIN_INTERVAL = 60
         val BUY_MODES = listOf("pc", "phone", "both")
@@ -156,7 +159,8 @@ data class Settings(
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
                 (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } }, m["runIcon"] != false, m["autoUpdate"] != false,
                 (m["buyMode"].asStr() ?: "pc").takeIf { it in BUY_MODES } ?: "pc", m["buyModeAt"].asLong() ?: 0, m["failover"] != false,
-                (m["deviceName"].asStr() ?: "").take(40), m["crowd"] != false, (m["masterCode"].asStr() ?: "").take(40))
+                (m["deviceName"].asStr() ?: "").take(40), m["crowd"] != false, (m["masterCode"].asStr() ?: "").take(40),
+                (m["alertTopic"].asStr() ?: "").takeIf { NtfyAlerts.ok(it) } ?: "", m["alertsOn"] == true)
         }
     }
 }

@@ -1,3 +1,13 @@
+# Restalker Mobile 2.9 (2026-11-18; your notes of 8:09 AM)
+- "Bought 2×" next to each product's picture (the list and the product page) - every linked device's purchases counted.
+- TCG chart: prices along the left side, and your cap is always drawn as a labelled dashed line (the chart's range takes it in).
+- Updates: Settings says exactly whether Android will still ask on this device. Android 12+ installs an update by itself only when
+  Restalker installed the app last time - a copy installed from the download page asks once more (tap Install), then never again.
+  Android 11 and older always ask. The PC shows it per device too.
+- ntfy alerts: Settings -> "Alerts on any device (ntfy)": one alert code for you - your PC's when linked, otherwise made here and the
+  same on every phone / tablet you link. Subscribe to it in the free ntfy app on any device (code, QR or "Open in ntfy"); this device
+  sends its restocks, purchases and "needs you" alerts there (restocks your PC also alerts about are not sent twice).
+
 # Restalker Mobile 2.8 (2026-11-18; your notes of 10:58 PM)
 - Pictures without a PC: the central list now carries each product's picture (TCGplayer's photo of exactly that product - the same one
   the PC shows), so a new phone shows them at once, with nothing to open. Products without one get their picture from their own Amazon

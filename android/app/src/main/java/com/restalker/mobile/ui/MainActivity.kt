@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
@@ -57,6 +58,7 @@ import com.restalker.mobile.RkApp
 import com.restalker.mobile.WatchService
 import com.restalker.mobile.CrowdNet
 import com.restalker.mobile.Updater
+import com.restalker.mobile.NtfyOut
 import com.restalker.mobile.core.APP_VERSION
 import com.restalker.mobile.core.Asin
 import com.restalker.mobile.core.CapStep
@@ -382,6 +384,9 @@ class MainActivity : ComponentActivity() {
         val now = System.currentTimeMillis()
         val (linked, linkLine) = remember(r) { DeskLink.get().state() }
         val deskBuys = remember(r) { DeskLink.standsBy() }
+        // 2.9 (owner: "purchased x times adjacent to each product picture for quick reference"): every linked device's purchases
+        val allBuys = remember(r) { try { DeskLink.get().buys(DeskLink.name()) } catch (e: Exception) { emptyList() } }
+        val boughtN = { p: Product -> try { Buys.of(allBuys, p.asin, p.label).size } catch (e: Exception) { 0 } }
         LazyColumn(Modifier.fillMaxSize().testTag("list"), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
                 Column(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)) {
@@ -470,7 +475,7 @@ class MainActivity : ComponentActivity() {
             val hot = shown.filter { it.inStock && !it.purchased }
             if (filter.intValue == 0 && hot.isNotEmpty()) {
                 item(key = "hdr-hot") { GroupHeader("In stock now", hot.size, null, false, "grp-hot") {} }
-                items(hot, key = { "hot-" + it.id }) { p -> ProductCard(p, deskBuys, "top-${p.asin}") { onOpen(p) } }
+                items(hot, key = { "hot-" + it.id }) { p -> ProductCard(p, deskBuys, "top-${p.asin}", boughtN(p)) { onOpen(p) } }
             }
             if (products.isNotEmpty() && shown.isEmpty()) item { Text(when (filter.intValue) { 1 -> "Nothing is in stock right now."; 2 -> "No product is set to buy."; else -> "No product is watched." },
                 color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) }
@@ -483,7 +488,7 @@ class MainActivity : ComponentActivity() {
                     val sKey = "s:$year|$set"
                     if (inYear.size > 1 || set != year) item(key = sKey) { SetHeader(set, inSet.size, sKey in folded, "set-$set") { fold(sKey) } }
                     if (sKey in folded) continue
-                    items(inSet, key = { it.id }) { p -> ProductCard(p, deskBuys) { onOpen(p) } }
+                    items(inSet, key = { it.id }) { p -> ProductCard(p, deskBuys, bought = boughtN(p)) { onOpen(p) } }
                 }
             }
         }
@@ -732,11 +737,18 @@ class MainActivity : ComponentActivity() {
         val pts = ser?.pts ?: pts0
         val sold = ser?.sold ?: emptyList()
         val lo0 = pts.minOf { it.second }; val hi0 = pts.maxOf { it.second }
-        val pad = maxOf((hi0 - lo0) * 0.12, hi0 * 0.02, 1.0)
-        val lo = lo0 - pad; val hi = hi0 + pad
+        // 2.9 (owner: "The price graph needs y-axis reference. Also consider adding another horizontal line to signify the user cap"):
+        // the range always takes in your cap, so its line is always there; prices along the left side
+        val withCap = listOf(lo0, hi0) + listOfNotNull(p.cap.takeIf { it > 0 })
+        val loA = withCap.min(); val hiA = withCap.max()
+        val pad = maxOf((hiA - loA) * 0.10, hiA * 0.02, 1.0)
+        val lo = maxOf(0.0, loA - pad); val hi = hiA + pad
         val d0 = pts.first().first; val d1 = pts.last().first
         val fmt = SimpleDateFormat("MMM d", Locale.US)
         val day = { d: Long -> fmt.format(Date(d * 86_400_000L + 43_200_000L)) }
+        val tm = androidx.compose.ui.text.rememberTextMeasurer()
+        val axisStyle = androidx.compose.ui.text.TextStyle(fontSize = 10.sp, color = Look.Muted)
+        val capStyle = androidx.compose.ui.text.TextStyle(fontSize = 10.sp, color = Look.AmberText, fontWeight = FontWeight.SemiBold)
         val maxSold = (sold.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
         val chg = if (pts.first().second > 0) (pts.last().second / pts.first().second - 1) * 100 else null
         Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("tcgchart-${p.asin}")) {
@@ -749,34 +761,44 @@ class MainActivity : ComponentActivity() {
             Text("Low \$${Engine.money(lo0)} · High \$${Engine.money(hi0)} · " + (if (fromTcg) "TCGplayer, last " + (if (year && yr != null) "year" else "3 months") +
                 (if (sold.any { it.second > 0 }) " · bars: items sold" else "") else "${pts.size} days recorded by the PC"), fontSize = 11.sp, color = Look.Muted,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
-            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(120.dp)) {
-                val w = size.width; val h = size.height
-                val x = { d: Long -> if (d1 > d0) (d - d0).toFloat() / (d1 - d0) * w else w / 2 }
-                val y = { v: Double -> (h - ((v - lo) / (hi - lo)).toFloat() * h) }
-                for (k in 0..3) drawLine(Look.Line, androidx.compose.ui.geometry.Offset(0f, h * k / 3), androidx.compose.ui.geometry.Offset(w, h * k / 3), strokeWidth = 1f)
+            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(140.dp).testTag("tcgplot-${p.asin}")) {
+                val lp = 44.dp.toPx()                                   // (the prices along the left side)
+                val top = 6.dp.toPx(); val w = size.width - lp; val h = size.height - top
+                val x = { d: Long -> lp + (if (d1 > d0) (d - d0).toFloat() / (d1 - d0) * w else w / 2) }
+                val y = { v: Double -> top + (h - ((v - lo) / (hi - lo)).toFloat() * h) }
+                for (k in 0..3) {
+                    val v = hi - (hi - lo) * k / 3; val yy = y(v)
+                    drawLine(Look.Line, androidx.compose.ui.geometry.Offset(lp, yy), androidx.compose.ui.geometry.Offset(lp + w, yy), strokeWidth = 1f)
+                    val t = tm.measure("\$" + (if (v >= 100) String.format(Locale.US, "%,.0f", v) else Engine.money(v)), axisStyle)
+                    drawText(t, topLeft = androidx.compose.ui.geometry.Offset(lp - t.size.width - 6.dp.toPx(), (yy - t.size.height / 2f).coerceIn(0f, size.height - t.size.height)))
+                }
                 // (the items sold: light bars from the bottom, up to 70% of the height - like TCGplayer's own chart)
                 if (sold.size >= 2) {
                     val bw = (w / sold.size * 0.72f).coerceAtLeast(2f)
                     for ((d, q) in sold) if (q > 0) {
                         val bh = h * 0.70f * q / maxSold
-                        drawRect(Look.BarSold, topLeft = androidx.compose.ui.geometry.Offset((x(d) - bw / 2).coerceIn(0f, w - bw), h - bh), size = androidx.compose.ui.geometry.Size(bw, bh))
+                        drawRect(Look.BarSold, topLeft = androidx.compose.ui.geometry.Offset((x(d) - bw / 2).coerceIn(lp, lp + w - bw), top + h - bh), size = androidx.compose.ui.geometry.Size(bw, bh))
                     }
                 }
                 val line = androidx.compose.ui.graphics.Path(); val area = androidx.compose.ui.graphics.Path()
                 pts.forEachIndexed { i, (d, v) ->
-                    if (i == 0) { line.moveTo(x(d), y(v)); area.moveTo(x(d), h); area.lineTo(x(d), y(v)) } else { line.lineTo(x(d), y(v)); area.lineTo(x(d), y(v)) }
+                    if (i == 0) { line.moveTo(x(d), y(v)); area.moveTo(x(d), top + h); area.lineTo(x(d), y(v)) } else { line.lineTo(x(d), y(v)); area.lineTo(x(d), y(v)) }
                 }
-                area.lineTo(x(d1), h); area.close()
+                area.lineTo(x(d1), top + h); area.close()
                 if (sold.size < 2) drawPath(area, Look.Navy.copy(alpha = 0.10f))
                 drawPath(line, Look.Navy, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx()))
-                if (p.cap > lo && p.cap < hi) drawLine(Look.Accent, androidx.compose.ui.geometry.Offset(0f, y(p.cap)), androidx.compose.ui.geometry.Offset(w, y(p.cap)),
-                    strokeWidth = 2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+                if (p.cap > 0) {
+                    drawLine(Look.Accent, androidx.compose.ui.geometry.Offset(lp, y(p.cap)), androidx.compose.ui.geometry.Offset(lp + w, y(p.cap)),
+                        strokeWidth = 2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+                    val t = tm.measure("your cap \$" + Engine.money(p.cap), capStyle)
+                    val ty = y(p.cap) - t.size.height - 2.dp.toPx()
+                    drawRect(Color.White.copy(alpha = 0.85f), topLeft = androidx.compose.ui.geometry.Offset(lp + 4.dp.toPx(), ty.coerceAtLeast(0f)), size = androidx.compose.ui.geometry.Size(t.size.width.toFloat(), t.size.height.toFloat()))
+                    drawText(t, topLeft = androidx.compose.ui.geometry.Offset(lp + 4.dp.toPx(), ty.coerceAtLeast(0f)))
+                }
                 drawCircle(Look.Navy, 4.dp.toPx(), androidx.compose.ui.geometry.Offset(x(d1), y(pts.last().second)))
             }
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = 44.dp, top = 4.dp)) {
                 Text(day(d0), fontSize = 11.sp, color = Look.Muted, modifier = Modifier.weight(1f))
-                if (p.cap > lo && p.cap < hi) Text("- - your cap \$${Engine.money(p.cap)}", fontSize = 11.sp, color = Look.AmberText, modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 Text(day(d1), fontSize = 11.sp, color = Look.Muted, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
             }
             // 3 months / 1 year (when TCGplayer's year is there)
@@ -801,12 +823,15 @@ class MainActivity : ComponentActivity() {
     private fun openOutside(u: String) = try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } catch (e: Exception) { }
 
     @Composable
-    fun ProductCard(p: Product, deskBuys: Boolean, tag: String = "product-${p.asin}", onClick: () -> Unit) {
+    fun ProductCard(p: Product, deskBuys: Boolean, tag: String = "product-${p.asin}", bought: Int = 0, onClick: () -> Unit) {
         val (c, bg, fg) = chip(p)
         Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(Look.card).background(Color.White)
             .then(if (p.inProgress || (p.stock().first == "in" && p.buy)) Modifier.border(2.dp, Look.GoodBorder, Look.card) else Modifier)
             .clickable(onClick = onClick).padding(14.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
-            Thumb(p, 56)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Thumb(p, 56)
+                BoughtBadge(bought, Modifier.padding(top = 4.dp).testTag("boughtn-$tag"))
+            }
             Column(Modifier.padding(start = 12.dp).weight(1f)) {
                 Text(p.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 5.dp)) {
@@ -817,6 +842,14 @@ class MainActivity : ComponentActivity() {
                     fontWeight = if (p.inProgress) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
             }
         }
+    }
+
+    /** 2.9: "Bought 2×" under / on a product's picture (every linked device counted); nothing when never bought. */
+    @Composable
+    fun BoughtBadge(n: Int, modifier: Modifier = Modifier, big: Boolean = false) {
+        if (n <= 0) return
+        Text("Bought ${n}×", color = Color.White, fontSize = if (big) 13.sp else 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+            modifier = modifier.background(Look.Navy, RoundedCornerShape(8.dp)).padding(horizontal = if (big) 9.dp else 6.dp, vertical = 2.dp))
     }
 
     // =================================================================== one product
@@ -836,7 +869,9 @@ class MainActivity : ComponentActivity() {
             }
             Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 // 2.0 (owner: "the picture to be much larger (you can place the product title underneath it instead of on the side)")
-                BigPicture(p)
+                Box { BigPicture(p)
+                    val n = remember(r) { DeskLink.boughtOf(p) }
+                    BoughtBadge(n, Modifier.align(Alignment.TopEnd).padding(8.dp).testTag("pboughtn-${p.asin}"), big = true) }
                 Column {
                     Text(p.label, fontWeight = FontWeight.Bold, fontSize = 19.sp, lineHeight = 23.sp, modifier = Modifier.testTag("ptitle-${p.asin}"))
                     Text("Amazon · ${p.asin} · ${p.kind}", color = Look.Muted, fontSize = 12.sp)
@@ -1231,8 +1266,8 @@ class MainActivity : ComponentActivity() {
                     HorizontalDivider(color = Look.Line)
                     // 1.5 (owner: "We can keep a single icon at the top to indicate that its running, but it should be clearable by user option")
                     // 1.7 (owner: "Why do i have to manually download everything still?")
-                    SwitchRow("Update by itself", if (st.autoUpdate) "New versions install by themselves (never during a purchase). ${Updater.state}".trim()
-                        else "Off - you are told when there is a new version", st.autoUpdate, "autoupdate") { on ->
+                    // 2.9: says exactly whether Android will still ask (and why) - see Updater.mode
+                    SwitchRow("Update by itself", (Updater.modeText(Updater.mode(this@MainActivity)) + " " + Updater.state).trim(), st.autoUpdate, "autoupdate") { on ->
                         store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true, explicit = true) }
                     HorizontalDivider(color = Look.Line)
                     SwitchRow("Running icon", (if (st.runIcon) "An icon at the top while it watches" else "No icon - the notice is tucked away at the bottom of your notifications") +
@@ -1333,6 +1368,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 WatchService.instance?.dataText()?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Look.Muted, fontSize = 12.sp) }
+                // ---- 2.9 (owner: "a way to connect the user to ntfy alerts. This code should be unique for each user, but identical to all
+                // devices used by the user if the devices are linked")
+                AlertsCard(r)
                 // ---- 2.6: the Restalker crowd
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card).testTag("crowd")) {
                     SwitchRow("Share with the Restalker crowd", "${CrowdNet.count()} contributors so far. Shares only when a product of the central list comes in stock " +
@@ -1388,6 +1426,52 @@ class MainActivity : ComponentActivity() {
             text = { Text("The phone keeps its products and buys on its own again. Products are no longer shared.") },
             confirmButton = { Button(colors = Look.btn(), onClick = { confirmUnlink = false; Thread { DeskLink.get().unlink(); runOnUiThread { bump() } }.start() }, modifier = Modifier.testTag("unlink-yes")) { Text("Unlink") } },
             dismissButton = { TextButton(onClick = { confirmUnlink = false }) { Text("Cancel") } })
+    }
+
+    /** 2.9: Settings - the person's ntfy alerts channel: set it up once; the code, a QR for other devices, open in the ntfy app, a test. */
+    @Composable
+    fun AlertsCard(r: Int) {
+        val store = RkApp.store()
+        val st = store.settings()
+        val ch = remember(r, st.alertTopic) { DeskLink.alertChannel() }
+        val fromPc = remember(r) { DeskLink.pcHasChannel() }
+        Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("alerts")) {
+            Text("Alerts on any device (ntfy)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            if (ch == null) {
+                Text("Get your restock, purchase and \"needs you\" alerts on any phone, tablet or PC with the free ntfy app - one code for you, " +
+                    "the same on every device you link.", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp))
+                Button(onClick = {
+                    store.setSettings { it.copy(alertTopic = com.restalker.mobile.core.NtfyAlerts.make(), alertsOn = true) }
+                    store.log("ntfy alerts set up (your own alert code - linked devices use the same one)."); bump()
+                }, colors = Look.btn(), modifier = Modifier.padding(top = 10.dp).heightIn(min = 44.dp).testTag("alerts-setup")) { Text("Set up ntfy alerts", fontWeight = FontWeight.SemiBold) }
+                return@Column
+            }
+            Text("Your alert code" + (if (fromPc) " (from your PC)" else "") + " - every device linked with you uses this same one:", fontSize = 13.sp,
+                color = Look.Muted, modifier = Modifier.padding(top = 4.dp))
+            Text(ch, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Look.Navy,
+                modifier = Modifier.padding(top = 4.dp).testTag("alerts-code"))
+            val qr = remember(ch) { qrBitmap(com.restalker.mobile.core.NtfyAlerts.webLink(ch), 360) }
+            if (qr != null) androidx.compose.foundation.Image(qr.asImageBitmap(), contentDescription = "QR code of your alert code",
+                modifier = Modifier.padding(top = 8.dp).size(140.dp).testTag("alerts-qr"))
+            Text("On another device: install ntfy, tap +, and enter the code (or scan this QR).", fontSize = 12.sp, color = Look.Muted)
+            Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.restalker.mobile.core.NtfyAlerts.appLink(ch)))) }
+                    catch (e: Exception) { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=io.heckel.ntfy"))) }
+                        catch (e2: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.restalker.mobile.core.NtfyAlerts.webLink(ch)))) } }
+                }, colors = Look.btn(), modifier = Modifier.heightIn(min = 44.dp).testTag("alerts-open")) { Text("Open in ntfy", fontWeight = FontWeight.SemiBold) }
+                OutlinedButton(onClick = {
+                    (getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("Restalker alert code", ch))
+                }, modifier = Modifier.heightIn(min = 44.dp).testTag("alerts-copy")) { Text("Copy") }
+                OutlinedButton(onClick = {
+                    NtfyOut.send("test", "Restalker test alert", "Alerts from ${DeskLink.name()} reach this channel.", force = true)
+                    store.log("ntfy alerts: a test alert was sent.")
+                }, modifier = Modifier.heightIn(min = 44.dp).testTag("alerts-test")) { Text("Test") }
+            }
+            SwitchRow("Send this device's alerts there", if (fromPc) "Your PC sends its own alerts there too; this device adds its purchases and the ones that need you."
+                else "Restocks, purchases and \"needs you\" from this device.", st.alertsOn, "alerts-on") { on ->
+                store.setSettings { it.copy(alertsOn = on) }; store.log("ntfy alerts switched ${if (on) "ON" else "OFF"}."); bump() }
+        }
     }
 
     /** 2.0: a QR code picture (ZXing, already in the app for scanning). */

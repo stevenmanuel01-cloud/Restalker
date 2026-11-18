@@ -32,7 +32,7 @@ object DeskLink {
         // 2.3: amz = this device may buy NOW (its own choice: "pc" only when the PC stopped and it takes over); nm = its name for the others
         val l = link
         val may = st.buying && st.watching && (st.buyMode != "pc" || (st.failover && l != null && !l.desktopBuys() && !l.pcHanded()))
-        mapOf("amz" to may, "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (st.autoUpdate && Updater.allowed(RkApp.app)), "nm" to name(), "vn" to com.restalker.mobile.core.APP_VERSION)
+        mapOf("amz" to may, "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (Updater.mode(RkApp.app) == "silent"), "um" to Updater.mode(RkApp.app), "nt" to (alertChannel() ?: ""), "nm" to name(), "vn" to com.restalker.mobile.core.APP_VERSION)
     }).also { link = it }
 
     /** 2.3: this device only stands by - another phone / tablet is first in line, or (its choice "pc") the PC buys, handed Amazon to
@@ -50,6 +50,14 @@ object DeskLink {
     fun master(): Boolean = try { com.restalker.mobile.core.Limit.isMaster(RkApp.store().settings(), get().pcIsMaster()) } catch (e: Exception) { false }
     /** 2.7: a product's purchases on every linked device (this one, the PC, the other phones / tablets). */
     fun boughtOf(p: com.restalker.mobile.core.Product): Int = try { com.restalker.mobile.core.Buys.of(get().buys(name()), p.asin, p.label).size } catch (e: Exception) { 0 }
+
+    /** 2.9: the person's one ntfy alerts channel (the linked PC's, else the same one on every linked phone) - null when none yet. */
+    fun alertChannel(): String? = try {
+        val (pc, ph) = if (get().linked()) get().alertChannels() else (null to emptyList())
+        com.restalker.mobile.core.NtfyAlerts.channel(RkApp.store().settings().alertTopic, pc, ph)
+    } catch (e: Exception) { null }
+    /** 2.9: the linked PC has its own alerts channel (it sends its own restock alerts there). */
+    fun pcHasChannel(): Boolean = try { get().linked() && com.restalker.mobile.core.NtfyAlerts.ok(get().alertChannels().first) } catch (e: Exception) { false }
 
     /** Tests: a fresh link object (after the store was reset). */
     @Synchronized fun reset() { link = null }

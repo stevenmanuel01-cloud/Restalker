@@ -2,6 +2,7 @@ package com.restalker.mobile
 
 import android.content.Context
 import android.graphics.Bitmap
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -519,7 +520,11 @@ class ScreenTests {
         android.util.Log.i("RkTest", "t19 step 10")
         toList(hasTestTag("product-B0TEST0701"))
         android.util.Log.i("RkTest", "t19 step 11")
+        compose.onNodeWithTag("boughtn-product-B0TEST0701", useUnmergedTree = true).assertExists()            // 2.9: "Bought 1x" by the picture
+        // (the count includes earlier tests' purchases of the same product, matched by name - so: a count is shown, not which one)
+        compose.onNodeWithTag("boughtn-product-B0TEST0701", useUnmergedTree = true).assert(androidx.compose.ui.test.hasText("Bought ", substring = true))
         compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle(); Thread.sleep(500)
+        compose.onNodeWithTag("pboughtn-B0TEST0701", useUnmergedTree = true).assertExists()
         android.util.Log.i("RkTest", "t19 step 12")
         compose.onNodeWithTag("tcglink-B0TEST0701").performScrollTo().assertIsDisplayed()
         android.util.Log.i("RkTest", "t19 step 13")
@@ -542,6 +547,24 @@ class ScreenTests {
         shot("t19_product_bought")
         android.util.Log.i("RkTest", "t19 step 17")
         compose.onNodeWithTag("back").performClick()
+    }
+
+    /** 2.9: Settings - ntfy alerts: set up once, the code shown (the same on linked devices), switch kept. */
+    @Test fun t21_ntfy_alerts_setup() {
+        RkApp.store().setSettings { it.copy(alertTopic = "", alertsOn = false) }
+        compose.waitUntil(30_000) { compose.onAllNodesWithTag("tab3").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        try {
+            compose.onNodeWithTag("alerts-setup").performScrollTo().performClick(); compose.waitForIdle(); Thread.sleep(600)
+            val st = RkApp.store().settings()
+            assertTrue("a channel was made and switched on", com.restalker.mobile.core.NtfyAlerts.ok(st.alertTopic) && st.alertsOn)
+            compose.onNodeWithTag("alerts-code").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(st.alertTopic).assertExists()
+            compose.onNodeWithTag("alerts-qr").assertExists()
+            shot("t21_alerts")
+            compose.onNodeWithTag("alerts-on").performScrollTo().performClick(); compose.waitForIdle()
+            compose.waitUntil(3_000) { !RkApp.store().settings().alertsOn }
+        } finally { RkApp.store().setSettings { it.copy(alertsOn = false) }; compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }
     }
 
     /** 2.6: the contributors line under the title; Settings: the crowd switch and About at the bottom. */
