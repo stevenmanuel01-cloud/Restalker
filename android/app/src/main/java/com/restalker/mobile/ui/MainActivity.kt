@@ -912,9 +912,9 @@ class MainActivity : ComponentActivity() {
                     val capNow = drag ?: p.cap
                     Row(Modifier.padding(top = 8.dp).testTag("best-${p.asin}"), verticalAlignment = Alignment.Bottom) {
                         Text(nowPr?.let { "\$${Engine.money(it)}" + if (elsewhere) "*" else "" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp)
-                        if (elsewhere) Text("  @ ${best!!.store} ↗", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Look.Link,
+                        if (elsewhere) Text("@ ${best!!.store} ↗", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Look.Link,
                             textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                            modifier = Modifier.padding(bottom = 5.dp).clickable { openOutside(best.url) }.testTag("bestlink-${p.asin}"))
+                            modifier = Modifier.padding(start = 8.dp, bottom = 5.dp).clickable { openOutside(best.url) }.testTag("bestlink-${p.asin}"))
                     }
                     if (elsewhere) Text("* Buy it yourself at ${best!!.store} - Restalker buys on Amazon only (for now). Amazon: " +
                         (amz?.let { "\$${Engine.money(it)}" } ?: "not in stock"), color = Look.Muted, fontSize = 12.sp, lineHeight = 16.sp,

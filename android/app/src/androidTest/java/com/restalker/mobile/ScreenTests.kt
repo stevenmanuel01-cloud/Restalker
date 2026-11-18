@@ -76,7 +76,8 @@ class ScreenTests {
         RkApp.store().products().forEach { RkApp.store().remove(it.id) }
         compose.onNodeWithTag("title").assertIsDisplayed()
         compose.onNodeWithTag("logo").assertIsDisplayed()                                          // 2.11: the logo in the header
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("mascot-note").fetchSemanticsNodes().isNotEmpty() }   // 2.11: the mascot, no products yet
+        compose.waitForIdle(); toList(hasTestTag("mascot-note"))                                   // 2.11: the mascot, no products yet
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
         // the whole title, version included, is shown (not cut off) - with normal and with big text
         val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
         compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
@@ -240,7 +241,7 @@ class ScreenTests {
         compose.onNodeWithTag("bigpic-img-B0TEST0301", useUnmergedTree = true).assertIsDisplayed()      // 2.0: the large picture, the title under it
         compose.onNodeWithTag("ptitle-B0TEST0301").assertIsDisplayed()
         // 2.0: the price bar - $529.99 (the desktop's) is over the $400 cap: red; every tick there
-        compose.onNodeWithTag("pricebar-B0TEST0301").assertIsDisplayed()
+        compose.onNodeWithTag("pricebar-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("pricebar-red", useUnmergedTree = true).assertExists()
         for (k in listOf("zero", "msrp", "tcg", "cap", "now")) compose.onNodeWithTag("tick-$k", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("ref-B0TEST0301").performScrollTo().assertIsDisplayed()
