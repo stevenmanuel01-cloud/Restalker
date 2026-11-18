@@ -19,6 +19,10 @@ adb logcat -c 2>/dev/null || true
 # 2.6: the two groups of app tests run one after the other (the phone and link tests, then the screen tests) with a fresh app in
 # between - one long run made the API 33 / 34 virtual phones stop answering near its end
 adb shell am instrument -w -r -e debug false -e class $P.PhoneTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_a.txt 2>&1
+if ! grep -q "^OK (\|FAILURES\|Tests run" instrument_a.txt; then        # (ended without a result: say what it said, and run it once more)
+  echo "--- phone+link tests ended without a result:"; tail -15 instrument_a.txt | cut -c1-200
+  sleep 5; adb shell am instrument -w -r -e debug false -e class $P.PhoneTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_a.txt 2>&1
+fi
 adb shell am force-stop $P 2>/dev/null || true; sleep 3
 adb shell am instrument -w -r -e debug false -e class $P.ScreenTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_b.txt 2>&1
 grep -E "^OK|FAILURES|Tests run" instrument_a.txt | sed 's/^/phone+link tests: /'
