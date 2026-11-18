@@ -75,6 +75,9 @@ class ScreenTests {
     @Test fun t5_screen_titleAndAddProduct() {
         RkApp.store().products().forEach { RkApp.store().remove(it.id) }
         compose.onNodeWithTag("title").assertIsDisplayed()
+        compose.onNodeWithTag("logo").assertIsDisplayed()                                          // 2.11: the logo in the header
+        compose.waitForIdle(); toList(hasTestTag("mascot-note"))                                   // 2.11: the mascot, no products yet
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
         // the whole title, version included, is shown (not cut off) - with normal and with big text
         val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
         compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
@@ -178,6 +181,7 @@ class ScreenTests {
         toList(hasTestTag("top-B0TEST0103")); compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
         toList(hasTestTag("product-B0TEST0101"))
         toList(hasTestTag("grp-2025"))
+        shot("t10_groups_amber")                                                                    // 2.11: amber fold buttons in view
         compose.onNodeWithTag("grp-2025").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("product-B0TEST0101").assertDoesNotExist()                          // folded
         assertEquals(true, s.readFile("folded.json")!!.contains("y:2025"))                         // remembered
@@ -237,15 +241,20 @@ class ScreenTests {
         compose.onNodeWithTag("bigpic-img-B0TEST0301", useUnmergedTree = true).assertIsDisplayed()      // 2.0: the large picture, the title under it
         compose.onNodeWithTag("ptitle-B0TEST0301").assertIsDisplayed()
         // 2.0: the price bar - $529.99 (the desktop's) is over the $400 cap: red; every tick there
-        compose.onNodeWithTag("pricebar-B0TEST0301").assertIsDisplayed()
+        compose.onNodeWithTag("pricebar-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("pricebar-red", useUnmergedTree = true).assertExists()
         for (k in listOf("zero", "msrp", "tcg", "cap", "now")) compose.onNodeWithTag("tick-$k", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("ref-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("others-B0TEST0301").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Best Buy").assertIsDisplayed()
-        // 2.2: in stock at a store -> Open (that store's own page); out of stock -> no Open
+        // 2.11: every store with a page -> Open (in stock or not)
         compose.onNodeWithTag("open-Best Buy").performScrollTo().assertIsDisplayed()
-        assertTrue("no Open for a store without stock", compose.onAllNodesWithTag("open-Target").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("open-Target").performScrollTo().assertIsDisplayed()
+        // 2.11: the lowest price anywhere is the headline - Best Buy $449.99* (Amazon $529.99), with the note to buy it there yourself
+        compose.onNodeWithTag("lowest-note-B0TEST0301").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("capfield-B0TEST0301").performScrollTo(); compose.waitForIdle(); shot("t13_lowest_and_cap")
+        compose.onNodeWithText("\$449.99*", substring = true).assertExists()
+        compose.onNodeWithTag("latest-B0TEST0301").performScrollTo().assertIsDisplayed()        // 2.11: Latest, a fixed-size box
         shot("t13_other_stores_bottom")
         compose.onNodeWithTag("qty-B0TEST0301-2").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0301").qty == 2 && p("B0TEST0301").qtySince > 0 }

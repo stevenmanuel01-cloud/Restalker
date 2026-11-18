@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -391,6 +392,9 @@ class MainActivity : ComponentActivity() {
             item {
                 Column(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 2.11 (owner: "I want to incorporate the logo into the app and not just as the icon to open")
+                        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_launcher), contentDescription = "Restalker",
+                            modifier = Modifier.padding(end = 12.dp).size(48.dp).clip(RoundedCornerShape(12.dp)).testTag("logo"))
                         Column(Modifier.weight(1f)) {
                             Text("Restalker Mobile v$APP_VERSION", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp,
                                 maxLines = 2, modifier = Modifier.testTag("title"))
@@ -456,13 +460,12 @@ class MainActivity : ComponentActivity() {
                 if (products.any { it.watch }) TextButton(onClick = {
                     WatchService.cmd(this@MainActivity, "checkall"); store.log("Check all now: every watched product is looked at now.")
                 }, modifier = Modifier.padding(start = 8.dp).testTag("checkall")) { Text("Check all now (${products.count { it.watch }})") }
-                if (products.isEmpty()) Text("No products yet. Tap Add, or open a product in the Amazon app, tap Share and choose Restalker." +
-                    if (!linked) " Or link the desktop (Settings) to get its products." else "",
-                    color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                if (products.isEmpty()) MascotNote("No products yet. Tap Add, or open a product in the Amazon app, tap Share and choose Restalker." +
+                    if (!linked) " Or link the desktop (Settings) to get its products." else "")
                 else Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("All", "In stock", "Set to buy", "Watched").forEachIndexed { i, l ->
                         FilterChip(filter.intValue == i, { filter.intValue = i }, { Text(l) }, modifier = Modifier.testTag("filter$i"),
-                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.TealSoft, selectedLabelColor = Look.TealText))
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.Accent, selectedLabelColor = Look.Ink))   // (2.11: amber)
                     }
                 }
             }
@@ -477,8 +480,7 @@ class MainActivity : ComponentActivity() {
                 item(key = "hdr-hot") { GroupHeader("In stock now", hot.size, null, false, "grp-hot") {} }
                 items(hot, key = { "hot-" + it.id }) { p -> ProductCard(p, deskBuys, "top-${p.asin}", boughtN(p)) { onOpen(p) } }
             }
-            if (products.isNotEmpty() && shown.isEmpty()) item { Text(when (filter.intValue) { 1 -> "Nothing is in stock right now."; 2 -> "No product is set to buy."; else -> "No product is watched." },
-                color = Look.Muted, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) }
+            if (products.isNotEmpty() && shown.isEmpty()) item { MascotNote(when (filter.intValue) { 1 -> "Nothing is in stock right now - still watching."; 2 -> "No product is set to buy."; else -> "No product is watched." }) }
             val years = shown.groupBy { Groups.of(it).first }.toList().sortedBy { Groups.yearRank(it.first) }
             for ((year, inYear) in years) {
                 val yKey = "y:$year"
@@ -512,7 +514,10 @@ class MainActivity : ComponentActivity() {
             Text("  $count", color = Look.Muted, fontSize = 13.sp)
             if (hot != null && hot > 0) Chip("$hot in stock", Look.TealSoft, Look.TealText, Modifier.padding(start = 8.dp))
             Spacer(Modifier.weight(1f))
-            if (hot != null) Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide", tint = Look.Muted)
+            // 2.11 (owner: "incorporate a bit more amber coloring ... buttons associated with the product name and year (for minimizing).
+            // Once we scroll, we completely lose the amber"): the fold button of every year is an amber circle
+            if (hot != null) Box(Modifier.size(28.dp).background(Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide", tint = Look.Ink, modifier = Modifier.size(20.dp)) }
         }
     }
 
@@ -520,10 +525,21 @@ class MainActivity : ComponentActivity() {
     fun SetHeader(title: String, count: Int, isFolded: Boolean, tag: String, onClick: () -> Unit) {
         Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 24.dp, end = 16.dp, top = 6.dp, bottom = 2.dp).heightIn(min = 32.dp).testTag(tag),
             verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide",
-                tint = Look.Muted, modifier = Modifier.size(20.dp))
+            Box(Modifier.size(22.dp).background(Look.AccentSoft, CircleShape).border(1.5.dp, Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
+                Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide",
+                    tint = Look.Ink, modifier = Modifier.size(16.dp)) }
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Look.GreyText, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 4.dp))
             Text("$count", color = Look.Muted, fontSize = 13.sp)
+        }
+    }
+
+    /** 2.11 (owner: "The hat and eyes can become our mascot for branding throughout (I dont want to overdo it, but I want it to be
+     *  recognizable)"): the mascot beside the "nothing here" notes (no products, nothing in stock, nothing bought) and in About. */
+    @Composable
+    fun MascotNote(text: String) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp).testTag("mascot-note"), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_mascot), contentDescription = null, modifier = Modifier.size(44.dp))
+            Text(text, color = Look.Muted, fontSize = 14.sp, lineHeight = 19.sp, modifier = Modifier.padding(start = 12.dp))
         }
     }
 
@@ -863,7 +879,7 @@ class MainActivity : ComponentActivity() {
         val store = RkApp.store()
         var confirmRemove by remember(p.id) { mutableStateOf(false) }
         val deskBuys = remember(r) { DeskLink.standsBy() }
-        val lines = remember(r) { store.log().filter { it.contains(p.label) }.takeLast(6).asReversed() }
+        val lines = remember(r) { store.log().filter { it.contains(p.label) }.takeLast(60).asReversed() }
         val buys = remember(r) { try { Buys.of(DeskLink.get().buys(DeskLink.name()), p.asin, p.label) } catch (e: Exception) { emptyList() } }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("product-screen")) {
             Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -882,13 +898,27 @@ class MainActivity : ComponentActivity() {
                 }
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp)) {
                     val (c, bg, fg) = chip(p)
-                    Row(verticalAlignment = Alignment.CenterVertically) { Text("Now", color = Look.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f)); Chip(c, bg, fg) }
-                    val nowPr = p.stock().second
+                    // 2.11 (owner: "It should still reflect the lowest price (walmart) but have an asterisk to note the user has to purchase
+                    // manually (until we integrate other stores)"): the headline is the lowest price seen in stock anywhere lately; when that is
+                    // not Amazon it carries * and a line under it says where (buy it there yourself) and what Amazon asks
+                    val amz = p.stock().second
+                    val best = remember(p) { com.restalker.mobile.core.BestPrice.of(p) }
+                    val elsewhere = best != null && best.store != "Amazon" && (amz == null || best.price < amz)
+                    val nowPr = if (elsewhere) best!!.price else amz
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text(if (elsewhere) "Lowest now" else "Now", color = Look.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f)); Chip(c, bg, fg) }
                     // 2.2 (owner: "the ability to change the cap higher on the page, closer to where the price indicator bar is ... a slider option
                     // for the bar to change the cap - limited to $5 increments"): drag the cap mark on the bar, or - / + $5
                     var drag by remember(p.id, p.cap) { mutableStateOf<Double?>(null) }
                     val capNow = drag ?: p.cap
-                    Text(nowPr?.let { "\$${Engine.money(it)}" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp, modifier = Modifier.padding(top = 8.dp))
+                    Row(Modifier.padding(top = 8.dp).testTag("best-${p.asin}"), verticalAlignment = Alignment.Bottom) {
+                        Text(nowPr?.let { "\$${Engine.money(it)}" + if (elsewhere) "*" else "" } ?: "—", fontWeight = FontWeight.Bold, fontSize = 30.sp)
+                        if (elsewhere) Text("@ ${best!!.store} ↗", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Look.Link,
+                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                            modifier = Modifier.padding(start = 8.dp, bottom = 5.dp).clickable { openOutside(best.url) }.testTag("bestlink-${p.asin}"))
+                    }
+                    if (elsewhere) Text("* Buy it yourself at ${best!!.store} - Restalker buys on Amazon only (for now). Amazon: " +
+                        (amz?.let { "\$${Engine.money(it)}" } ?: "not in stock"), color = Look.Muted, fontSize = 12.sp, lineHeight = 16.sp,
+                        modifier = Modifier.padding(top = 2.dp).testTag("lowest-note-${p.asin}"))
                     PriceBar(p, nowPr, capNow, onDrag = { drag = it }, onDrop = { v -> drag = null; saveCap(p, v) })
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text(if (capNow > 0) "Your cap" else "No cap yet", fontWeight = FontWeight.SemiBold,
@@ -898,18 +928,22 @@ class MainActivity : ComponentActivity() {
                         var capText by remember(p.id, capNow) { mutableStateOf(if (capNow > 0) Engine.money(capNow).removeSuffix(".00") else "") }
                         val focus = LocalFocusManager.current
                         val typed = capText.toDoubleOrNull()?.takeIf { it > 0 && it < 100000 }
-                        OutlinedTextField(value = capText, onValueChange = { t -> capText = t.filter { it.isDigit() || it == '.' }.take(8) },
-                            prefix = { Text("\$") }, singleLine = true, isError = capText.isNotEmpty() && typed == null,
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold),
+                        // 2.11 (owner: "Leaving all text sizes the same, reduce the box sizes by approximately 50%"): a slim box and small round
+                        // buttons - the same text sizes (the touch area of the buttons stays finger-sized)
+                        val bad = capText.isNotEmpty() && typed == null
+                        androidx.compose.foundation.text.BasicTextField(value = capText, onValueChange = { t -> capText = t.filter { it.isDigit() || it == '.' }.take(8) },
+                            singleLine = true, textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Look.Ink),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { typed?.let { saveCap(p, Math.round(it * 100) / 100.0) }; focus.clearFocus() }),
-                            modifier = Modifier.width(112.dp).testTag("capfield-${p.asin}"))
+                            modifier = Modifier.width(84.dp).height(32.dp).testTag("capfield-${p.asin}"),
+                            decorationBox = { inner -> Row(Modifier.fillMaxSize().border(if (bad) 2.dp else 1.dp, if (bad) Look.Red else Color(0xFFB8C3D1), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) { Text("\$", fontSize = 15.sp, color = Look.Muted); Spacer(Modifier.width(2.dp)); inner() } })
                         Spacer(Modifier.width(8.dp))
                         OutlinedButton(onClick = { saveCap(p, CapStep.down(p.cap)) }, enabled = p.cap > CapStep.STEP, contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(48.dp).testTag("capdown-${p.asin}")) { Text("−", fontSize = 20.sp) }
+                            modifier = Modifier.size(32.dp).testTag("capdown-${p.asin}")) { Text("−", fontSize = 20.sp) }
                         Spacer(Modifier.width(8.dp))
                         OutlinedButton(onClick = { saveCap(p, CapStep.up(p.cap)) }, contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(48.dp).testTag("capup-${p.asin}")) { Text("+", fontSize = 20.sp) }
+                            modifier = Modifier.size(32.dp).testTag("capup-${p.asin}")) { Text("+", fontSize = 20.sp) }
                     }
                     Text("Drag the cap knob under the bar, tap − / + (\$5 steps), or type an exact cap in the box and tap Done.", color = Look.Muted, fontSize = 11.sp)
                     Text(seenText(p).ifEmpty { "Not checked yet" }.replaceFirstChar { it.uppercase() } + if (p.lastCheck > 0 && p.lastCheck >= p.dAt) " · " + p.status else "",
@@ -922,16 +956,7 @@ class MainActivity : ComponentActivity() {
                             fontWeight = FontWeight.SemiBold, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
                             modifier = Modifier.clickable { openOutside(Tcg.link(p)) }.testTag("tcglink-${p.asin}"))
                     }
-                    // 2.5: the cheapest place that has it in stock right now, with a link to that store's page
-                    val best = remember(p) { com.restalker.mobile.core.BestPrice.of(p) }
-                    if (best != null) Row(Modifier.padding(top = 4.dp).testTag("best-${p.asin}"), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Best price: ", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Look.Ink)
-                        Text("\$${Engine.money(best.price)}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (best.price <= p.cap) Look.Good else Look.BadText)
-                        Text(" @ ", fontSize = 13.sp, color = Look.Ink)
-                        Text(best.store + " ↗", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Look.Link,
-                            textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
-                            modifier = Modifier.clickable { if (best.store == "Amazon") openBrowser(best.url) else openOutside(best.url) }.testTag("bestlink-${p.asin}"))
-                    } else Text("Best price: not in stock anywhere right now", fontSize = 12.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp).testTag("best-${p.asin}"))
+                    // (2.11: the lowest price is the headline above - the separate "Best price" line of 2.5-2.10 is gone)
                 }
                 // 2.7 (owner: "a simple graph of the historic price from TCG on each individual product page"): what the linked PC recorded
                 // 2.8 (owner: "include the tcg price graph for each product under each product page"): TCGplayer's own history
@@ -999,10 +1024,23 @@ class MainActivity : ComponentActivity() {
                     Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(12.dp).testTag("pbought-${p.asin}"),
                         verticalArrangement = Arrangement.spacedBy(10.dp)) { buys.forEach { BuyLines(it, withName = false) } }
                 }
-                if (lines.isNotEmpty()) {
-                    Text("Latest", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Look.GreyText)
-                    Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 2.11 (owner: "Limit the size of the "latest" section to be no bigger than its current size (consider standardizing this across
+                // all products regardless of the amount of information to display) and provide a scroll bar"): the same height on every
+                // product, the newest first, older lines by scrolling (a thin amber bar shows where you are)
+                Text("Latest", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Look.GreyText)
+                val ls = rememberScrollState()
+                Box(Modifier.fillMaxWidth().height(160.dp).background(Color.White, RoundedCornerShape(14.dp)).testTag("latest-${p.asin}")) {
+                    Column(Modifier.fillMaxSize().verticalScroll(ls).padding(start = 12.dp, end = 18.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (lines.isEmpty()) Text("Nothing yet.", fontSize = 12.sp, color = Look.Muted)
                         lines.forEach { Text(it.replace(p.label + ": ", ""), fontSize = 12.sp, lineHeight = 16.sp) }
+                    }
+                    if (ls.maxValue > 0) androidx.compose.foundation.Canvas(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(10.dp).padding(vertical = 10.dp, horizontal = 3.dp).testTag("latest-bar-${p.asin}")) {
+                        val total = size.height; val view = 160.dp.toPx()
+                        val thumb = (total * view / (view + ls.maxValue)).coerceAtLeast(18.dp.toPx())
+                        val y = (total - thumb) * ls.value / ls.maxValue
+                        drawRoundRect(Look.Line, size = size, cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width / 2))
+                        drawRoundRect(Look.Accent, topLeft = androidx.compose.ui.geometry.Offset(0f, y), size = androidx.compose.ui.geometry.Size(size.width, thumb),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.width / 2))
                     }
                 }
                 // 1.5: the product's other stores, as the linked desktop sees them. 2.2 (owner: "the information for "other stores" to be placed
@@ -1011,7 +1049,7 @@ class MainActivity : ComponentActivity() {
                 if (p.others.isNotEmpty()) Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("others-${p.asin}"),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Other stores", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text("What the linked PC sees there. In stock: Open takes you to that store to buy it yourself (this app buys on Amazon only).",
+                    Text("What the linked PC sees there. Open takes you to that store's page - to buy it yourself, or to save it to a list there (this app buys on Amazon only).",
                         color = Look.Muted, fontSize = 11.sp, lineHeight = 15.sp)
                     p.others.forEach { o ->
                         val st = o["st"] as? String ?: ""; val pr = (o["pr"] as? Number)?.toDouble(); val at = (o["at"] as? Number)?.toLong() ?: 0L
@@ -1025,7 +1063,9 @@ class MainActivity : ComponentActivity() {
                             val (t, bg, fg) = when (st) { "in" -> Triple("In stock", Look.TealSoft, Look.TealText); "over" -> Triple("Over cap", Look.OrangeSoft, Look.OrangeText)
                                 "out" -> Triple("Out of stock", Look.GreySoft, Look.GreyText); else -> Triple("Not read yet", Look.GreySoft, Look.GreyText) }
                             Chip(t + (pr?.let { " · \$${Engine.money(it)}" } ?: ""), bg, fg)
-                            if (u != null && (st == "in" || st == "over")) TextButton(onClick = { openOutside(u) }, modifier = Modifier.testTag("open-$name")) { Text("Open") }
+                            // 2.11 (owner: "Provide links to all stores even if out of stock (in case the user wants to watch it separately, add to
+                            // favorites, wishlists, etc)")
+                            if (u != null) TextButton(onClick = { openOutside(u) }, modifier = Modifier.testTag("open-$name")) { Text("Open") }
                         }
                     }
                 }
@@ -1163,7 +1203,7 @@ class MainActivity : ComponentActivity() {
         val list = remember(r) { try { DeskLink.get().buys(DeskLink.name()) } catch (e: Exception) { emptyList() } }
         LazyColumn(Modifier.fillMaxSize().testTag("bought")) {
             item { TabHeader("Bought") }
-            if (list.isEmpty()) item { Text("Nothing bought yet (by this device or the linked PC).", color = Look.Muted, modifier = Modifier.padding(horizontal = 20.dp)) }
+            if (list.isEmpty()) item { MascotNote("Nothing bought yet (by this device or the linked PC).") }
             else item {
                 val total = list.mapNotNull { it.price }.sum()
                 Text("${list.size} purchase${if (list.size == 1) "" else "s"}" + (if (total > 0) " · \$${Engine.money(total)} in all" else ""),
@@ -1385,7 +1425,10 @@ class MainActivity : ComponentActivity() {
                 // ---- 2.6 (owner: 'a section at the bottom of settings for "about" which has a brief paragraph explaining how the importance
                 // of crowdsourcing the information for everyone to share')
                 Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("about")) {
-                    Text("About", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_mascot), contentDescription = null, modifier = Modifier.size(32.dp))
+                        Text("About", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
+                    }
                     Text("Restocks of sought-after Magic products often last only minutes, and no single phone or PC can look at every store all " +
                         "the time. When you share with the Restalker crowd, each device that spots a product from the central list in stock tells " +
                         "every other Restalker right away - so we all see more restocks, sooner, without each of us checking every store. Only the " +
