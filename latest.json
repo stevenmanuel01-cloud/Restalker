@@ -1,8 +1,8 @@
 {
- "version": "v137",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v137_update.zip",
- "sha256": "671949c24ce5624b8e90cdf68c9e311d48bbee8fa9aa99bd5021ec8e65796df1",
- "size": 748525,
- "notes": "v137: the Restalker crowd - in-stock sightings shared with every Restalker (product, store, price, time; nothing personal); a crowd sighting makes this PC look itself. Contributor count under the title.",
- "files": 82
+ "version": "v138",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v138_update.zip",
+ "sha256": "cf0f5012457ba592f6bc0491552b16040a8f883013328b514b87b92eff316d60",
+ "size": 752966,
+ "notes": "v138: at most 3 purchases of each product ever (the owner's own Restalker excepted); the TCG price history goes to the phone; the new logo.",
+ "files": 83
 }
