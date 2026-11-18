@@ -663,9 +663,20 @@ class MainActivity : ComponentActivity() {
                 })
                 // 2.5: the whole bar is a gradient - dark green (cheap) to dark red (very expensive); a white marker shows the price now
                 val (g1, g2, g3) = PriceMarks.gradient(marks.max, cap, p.msrp, p.tcg)
-                Box(Modifier.offset(y = lineY - 1.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(
-                    androidx.compose.ui.graphics.Brush.horizontalGradient(0f to Look.BarGreen, g1.toFloat() to Look.BarGreenLight, g2.toFloat() to Look.BarMid,
-                        g3.toFloat() to Look.BarRedLight, 1f to Look.BarRed)).testTag("pricebar-gradient"))
+                // (drawn as 96 thin strips of solid color - no gradient shader: the API 33 / 34 test phones' software graphics froze on one)
+                val stops = listOf(0.0 to Look.BarGreen, g1 to Look.BarGreenLight, g2 to Look.BarMid, g3 to Look.BarRedLight, 1.0 to Look.BarRed)
+                androidx.compose.foundation.Canvas(Modifier.offset(y = lineY - 1.dp).fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).testTag("pricebar-gradient")) {
+                    val n = 96
+                    val sw = size.width / n
+                    for (i in 0 until n) {
+                        val f = (i + 0.5) / n
+                        val k = stops.indexOfLast { it.first <= f }.coerceIn(0, stops.size - 2)
+                        val (f0, c0) = stops[k]; val (f1, c1) = stops[k + 1]
+                        val t = if (f1 > f0) ((f - f0) / (f1 - f0)).toFloat().coerceIn(0f, 1f) else 0f
+                        drawRect(androidx.compose.ui.graphics.lerp(c0, c1, t), topLeft = androidx.compose.ui.geometry.Offset(i * sw, 0f),
+                            size = androidx.compose.ui.geometry.Size(sw + 1f, size.height))
+                    }
+                }
                 if (nowPr != null) Box(Modifier.offset(x = (w * marks.frac(nowPr) - 6.dp).coerceIn(0.dp, w - 12.dp), y = lineY - 6.dp).size(12.dp, 20.dp)
                     .clip(RoundedCornerShape(4.dp)).background(Color.White).border(2.5.dp, Look.Ink, RoundedCornerShape(4.dp))
                     .testTag(if (under) "pricebar-green" else "pricebar-red"))

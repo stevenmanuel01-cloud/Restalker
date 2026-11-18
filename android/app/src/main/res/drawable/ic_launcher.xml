@@ -1,7 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 2.7 (owner, 2026-11-17: "Lets implement DH-2 for the logo"): the R with the wider leg gap, the amber dot (thin black ring) with its
+     eyes looking at the R, and the small detective hat. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
     <path android:fillColor="#1F3A5F" android:pathData="M0,0h108v108h-108z" />
-    <path android:fillColor="#FFFFFF" android:pathData="M30,28h30a16,16 0,0 1,0 32h-6l20,22h-14l-19,-22h-1v22h-10z M40,38v12h19a6,6 0,0 0,0 -12z" />
-    <path android:fillColor="#F2B134" android:pathData="M70,72a6,6 0,1 0,12 0a6,6 0,1 0,-12 0z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M30,28h30a16,16 0,0 1,0 32l20,22h-14l-15.5,-22h-10.5v22h-10z M40,38v12h19a6,6 0,0 0,0 -12z" />
+    <group android:pivotX="80" android:pivotY="74" android:scaleX="0.75" android:scaleY="0.75">
+        <path android:fillColor="#F2B134" android:strokeColor="#000000" android:strokeWidth="1.33" android:pathData="M67.00,74.00a13.00,13.00 0 1,0 26.00,0a13.00,13.00 0 1,0 -26.00,0z" />
+        <path android:fillColor="#FFFFFF" android:strokeColor="#000000" android:strokeWidth="0.7" android:pathData="M69.07,71.00a4.50,7.50 0 1,0 9.00,0a4.50,7.50 0 1,0 -9.00,0z" />
+        <path android:fillColor="#0E1B2C" android:pathData="M69.21,69.80a2.70,2.70 0 1,0 5.40,0a2.70,2.70 0 1,0 -5.40,0z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M70.07,68.58a0.89,0.89 0 1,0 1.78,0a0.89,0.89 0 1,0 -1.78,0z" />
+        <path android:fillColor="#FFFFFF" android:strokeColor="#000000" android:strokeWidth="0.7" android:pathData="M79.12,71.00a4.50,7.50 0 1,0 9.00,0a4.50,7.50 0 1,0 -9.00,0z" />
+        <path android:fillColor="#0E1B2C" android:pathData="M79.26,69.80a2.70,2.70 0 1,0 5.40,0a2.70,2.70 0 1,0 -5.40,0z" />
+        <path android:fillColor="#FFFFFF" android:pathData="M80.13,68.58a0.89,0.89 0 1,0 1.78,0a0.89,0.89 0 1,0 -1.78,0z" />
+    </group>
+    <group android:translateX="78.6" android:translateY="65.5" android:rotation="-7" android:scaleX="0.92" android:scaleY="0.92">
+        <path android:fillColor="#0B0F14" android:pathData="M-9,0 C-9.6,-6 -8.4,-11 -4.2,-12.2 Q0,-9.6 4.2,-12.2 C8.4,-11 9.6,-6 9,0 Z" />
+        <path android:fillColor="#1F3A5F" android:pathData="M-9.1,-3.6h18.2v2.4h-18.2z" />
+        <path android:fillColor="#0B0F14" android:pathData="M-15.50,0.00a15.50,2.70 0 1,0 31.00,0a15.50,2.70 0 1,0 -31.00,0z" />
+    </group>
 </vector>

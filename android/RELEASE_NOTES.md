@@ -4,6 +4,8 @@
   it never buys on the crowd's word. Settings -> "Share with the Restalker crowd" (on by default).
 - Under the title: "XXX total contributors and counting" (every device heard on the crowd channel so far).
 - Settings -> About: why sharing helps everyone.
+- New logo (DH-2): the app icon and the notification icon.
+- The price bar is drawn without a gradient shader (the same look) - the Android 13 / 14 test phones froze on it.
 
 # Restalker Mobile 2.5 (2026-11-17; your notes of 6:50 PM)
 - New look (A+): the logo's navy and amber - a navy header, amber buttons and switches, a slightly darker navy-tinted background so
