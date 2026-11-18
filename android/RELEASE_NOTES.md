@@ -1,3 +1,13 @@
+# Restalker Mobile 2.11 (2026-11-18; your notes of 1:18 PM)
+- Product page: the big price is the LOWEST price seen in stock anywhere lately. When that is another store, it has a * and says where
+  ("$639.20* @ Walmart"), with a line under it: buy it yourself there - Restalker buys on Amazon only (for now) - and Amazon's price.
+- The cap box and the - / + buttons are about half their size (the same text size).
+- "Latest" is the same size on every product; older lines scroll inside it, with an amber scroll bar.
+- Other stores: Open on every store, in stock or not (to watch it there, or save it to a list).
+- The logo in the header; the mascot (the dot with its eyes and hat) in About and beside "nothing here" notes.
+- More amber on the Watch page: every year's fold button is an amber circle, every set's an amber ring, the chosen filter is amber -
+  so the brand color stays in view while you scroll.
+
 # Restalker Mobile 2.10 (2026-11-18; your notes of 12:22 PM)
 - Price bar zoomed in: it runs from half the MSRP to twice the MSRP (rounded - e.g. $200 to $950 for a $455.88 box), so the labels
   have more room. A line under it says the range. A price outside it sits at that end; its label still shows the real price.
