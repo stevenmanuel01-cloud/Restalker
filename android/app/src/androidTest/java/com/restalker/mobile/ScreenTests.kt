@@ -341,6 +341,9 @@ class ScreenTests {
         compose.onNodeWithTag("prefresh-B0TEST0601").performTouchInput { swipeDown(startY = height * 0.15f, endY = height * 0.7f) }
         compose.waitForIdle(); Thread.sleep(500)
         compose.onNodeWithTag("product-screen").assertExists()
+        // (the pull started the watching service for that one look - stopped again, as the other screen tests run without it)
+        Thread.sleep(1_500)
+        InstrumentationRegistry.getInstrumentation().targetContext.let { it.stopService(android.content.Intent(it, WatchService::class.java)) }
         // no cap -> Buy asks for one first
         s.update("idB0TEST0601") { it.copy(cap = 0.0, buy = false) }; compose.waitForIdle(); Thread.sleep(400)
         compose.onNodeWithTag("buy-B0TEST0601").performScrollTo().performClick()
