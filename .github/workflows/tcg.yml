@@ -1,0 +1,27 @@
+# Restalker 2.8: TCGplayer's price history of the central list, once a day at an off-peak hour (~2 AM Pacific) -> mobile/tcg_history.json
+name: tcg-history
+on:
+  schedule:
+    - cron: "17 10 * * *"
+  workflow_dispatch:
+  push:
+    branches: [tcg-probe]
+permissions:
+  contents: write
+concurrency:
+  group: tcg-history
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the price histories
+        run: python3 tools/tcg_history.py ${{ github.ref == 'refs/heads/tcg-probe' && '--probe' || '' }}
+      - name: Publish (only on main, only when it changed)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git diff --quiet -- mobile/tcg_history.json && git ls-files --error-unmatch mobile/tcg_history.json >/dev/null 2>&1 && { echo "no change"; exit 0; }
+          git config user.name "restalker-bot"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/tcg_history.json && git commit -m "TCG price history $(date -u +%F) [skip ci]" && git push

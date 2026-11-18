@@ -1,6 +1,6 @@
 {
 "v": 1,
-"made": "2026-11-17",
+"made": "2026-11-18",
 "products": [
 {
 "a": "B07VQ2NF7D",
@@ -8,7 +8,8 @@
 "k": "box",
 "gy": "2019",
 "gs": "Throne of Eldraine",
-"sx": []
+"sx": [],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/194907_in_200x200.jpg"
 },
 {
 "a": "B08D1NXYCS",
@@ -21,7 +22,8 @@
 "s": "Walmart",
 "u": "https://www.walmart.com/ip/Magic-The-Gathering-Zendikar-Rising-Collector-Booster-Box/579460549"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/220423_in_200x200.jpg"
 },
 {
 "a": "B08N25VNL5",
@@ -34,7 +36,8 @@
 "s": "Walmart",
 "u": "https://www.walmart.com/ip/Magic-The-Gathering-Kaldheim-Collector-Booster-Box/679053070"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/228249_in_200x200.jpg"
 },
 {
 "a": "B09VB14M3X",
@@ -56,7 +59,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-commander-legends-battle-for-baldurs-gate-collector-booster-box/347335.html"
 }
 ],
-"ms": 284.99
+"ms": 284.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/267023_in_200x200.jpg"
 },
 {
 "a": "B09ZJS2TM2",
@@ -73,7 +77,8 @@
 "s": "Walmart",
 "u": "https://www.walmart.com/ip/Magic-The-Gathering-Dominaria-United-Collector-Booster-Box/1730826412"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/275412_in_200x200.jpg"
 },
 {
 "a": "B09ZJBSD6F",
@@ -90,7 +95,8 @@
 "s": "Best Buy",
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-double-masters-collector-booster-box-4-packs/6507686.p?skuId=6507686"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/271509_in_200x200.jpg"
 },
 {
 "a": "B09M8WPGK1",
@@ -112,7 +118,8 @@
 "u": "https://www.gamestop.com/toys-games/card-games/products/magic-the-gathering---kamigawa-neon-dynasty-collector-booster-box/333298.html"
 }
 ],
-"ms": 205.99
+"ms": 205.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/257563_in_200x200.jpg"
 },
 {
 "a": "B09SVPC9BH",
@@ -138,7 +145,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/wizards-of-the-coast-magic-the-gathering-streets-of-new-capenna-collector-booster-box/341937.html"
 }
 ],
-"ms": 217.99
+"ms": 217.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/264767_in_200x200.jpg"
 },
 {
 "a": "B0B8445Q39",
@@ -156,7 +164,8 @@
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-the-brothers-war-collector-booster-box/6516485.p?skuId=6516485"
 }
 ],
-"ms": 285.99
+"ms": 285.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/282224_in_200x200.jpg"
 },
 {
 "a": "B09LM4YVG3",
@@ -174,7 +183,8 @@
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-unfinity-collector-booster-box/6516355.p?skuId=6516355"
 }
 ],
-"ms": 247.99
+"ms": 247.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/275406_in_200x200.jpg"
 },
 {
 "a": "B0BVTSXHG6",
@@ -191,7 +201,8 @@
 "s": "Best Buy",
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-mtg-commander-masters-collector-booster-box-4-packs/6545887.p?skuId=6545887"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/484929_in_200x200.jpg"
 },
 {
 "a": "B0BVT771M5",
@@ -212,7 +223,8 @@
 "s": "Best Buy",
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-commander-masters-set-booster-box/6545886.p?skuId=6545886"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/484927_in_200x200.jpg"
 },
 {
 "a": "B0B9NJWP7M",
@@ -229,7 +241,8 @@
 "s": "Best Buy",
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-mtg-dominaria-remastered-collector-booster-box-12-packs/6527964.p?skuId=6527964"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/449559_in_200x200.jpg"
 },
 {
 "a": "B0C3T4VZN8",
@@ -247,7 +260,8 @@
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-wilds-of-eldraine-collector-booster-box-12-packs/6550323.p?skuId=6550323"
 }
 ],
-"ms": 259.99
+"ms": 259.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/496041_in_200x200.jpg"
 },
 {
 "a": "B0CTKW15QS",
@@ -265,7 +279,8 @@
 "u": "https://www.bestbuy.com/product/wizards-of-the-coast-magic-the-gathering-assassins-creed-collector-booster-box-12-packs-120-magic-cards/JJ8VP7QWJ9"
 }
 ],
-"ms": 279.99
+"ms": 279.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/541225_in_200x200.jpg"
 },
 {
 "a": "B0D9MX1LMZ",
@@ -274,7 +289,8 @@
 "gy": "2024",
 "gs": "Foundations",
 "sx": [],
-"ms": 299.88
+"ms": 299.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/562122_in_200x200.jpg"
 },
 {
 "a": "B0CTLL4PMF",
@@ -287,7 +303,8 @@
 "s": "Best Buy",
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-modern-horizons-3-collector-booster-box-12-packs-180-magic-cards/6577578.p?skuId=6577578"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/541179_in_200x200.jpg"
 },
 {
 "a": "B0CTLT5DJQ",
@@ -304,7 +321,8 @@
 "s": "Best Buy",
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-modern-horizons-3-play-booster-box-36-packs-504-magic-cards/6577582.p?skuId=6577582"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/541164_in_200x200.jpg"
 },
 {
 "a": "B0DNV4FC7Y",
@@ -321,7 +339,8 @@
 "s": "Best Buy",
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-aetherdrift-collector-booster-box-12-packs-2-card-box-topper/6611598.p?skuId=6611598"
 }
-]
+],
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/604253_in_200x200.jpg"
 },
 {
 "a": "B0DTRPG4NC",
@@ -339,7 +358,8 @@
 "u": "https://www.bestbuy.com/site/wizards-of-the-coast-magic-the-gathering-edge-of-eternities-collector-booster-box-12-packs/6620416.p?skuId=6620416"
 }
 ],
-"ms": 299.88
+"ms": 299.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/619672_in_200x200.jpg"
 },
 {
 "a": "B0DTS76B5L",
@@ -361,7 +381,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-final-fantasy-collecter-booster-box/423025.html"
 }
 ],
-"ms": 455.88
+"ms": 455.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/618893_in_200x200.jpg"
 },
 {
 "a": "B0DSR23QV1",
@@ -383,7 +404,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-tarkir-dragonstorm-collector-booster-box/20020697.html"
 }
 ],
-"ms": 299.88
+"ms": 299.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/619649_in_200x200.jpg"
 },
 {
 "a": "B0FP44WBMF",
@@ -409,7 +431,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-lorwyn-eclipsed-collector-booster-box/20028151.html"
 }
 ],
-"ms": 323.88
+"ms": 323.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/656322_in_200x200.jpg"
 },
 {
 "a": "B0GXCC47X5",
@@ -435,7 +458,8 @@
 "u": "https://www.walmart.com/ip/Magic-The-Gathering-Reality-Fracture-Collector-Booster-Pack-15-Cards/20889710464?conditionGroupCode=4&classType=REGULAR&from=/search"
 }
 ],
-"ms": 26.99
+"ms": 26.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/692982_in_200x200.jpg"
 },
 {
 "a": "B0GXC667JV",
@@ -461,7 +485,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-reality-fracture-collector-booster-box/450611.html"
 }
 ],
-"ms": 323.88
+"ms": 323.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/692983_in_200x200.jpg"
 },
 {
 "a": "B0GXCKVJ6W",
@@ -487,7 +512,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-reality-fracture-secret-lair-bundle/20037511.html"
 }
 ],
-"ms": 89.99
+"ms": 89.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/692991_in_200x200.jpg"
 },
 {
 "a": "B0GFDD1RLS",
@@ -509,7 +535,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-secrets-of-strixhaven-collector-booster-box/20033176.html"
 }
 ],
-"ms": 323.88
+"ms": 323.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/675558_in_200x200.jpg"
 },
 {
 "a": "B0H6H8KS14",
@@ -535,7 +562,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-beam-me-up-bundle-box/20036547.html"
 }
 ],
-"ms": 99.99
+"ms": 99.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/706154_in_200x200.jpg"
 },
 {
 "a": "B0H6H4TXPZ",
@@ -561,7 +589,8 @@
 "u": "https://www.walmart.com/ip/MTG-STAR-TREK-COLLECTOR-BOOSTER-OMEGA/21055869180?conditionGroupCode=4&classType=REGULAR&from=/search"
 }
 ],
-"ms": 37.99
+"ms": 37.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/706141_in_200x200.jpg"
 },
 {
 "a": "B0H6H2VXJB",
@@ -583,7 +612,8 @@
 "u": "https://www.walmart.com/ip/Magic-The-Gathering-Star-Trek-Collector-Booster-Box-12-Packs/21183806474?conditionGroupCode=4&classType=REGULAR&from=/search"
 }
 ],
-"ms": 455.88
+"ms": 455.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/706142_in_200x200.jpg"
 },
 {
 "a": "B0GWS9J9VT",
@@ -609,7 +639,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-the-hobbit-collector-booster-omega/446233.html"
 }
 ],
-"ms": 37.99
+"ms": 37.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/692962_in_200x200.jpg"
 },
 {
 "a": "B0GXC89N66",
@@ -635,7 +666,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-the-hobbit-collector-booster-box/446252.html"
 }
 ],
-"ms": 455.88
+"ms": 455.88,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/692963_in_200x200.jpg"
 },
 {
 "a": "B0GWS8DC8C",
@@ -661,7 +693,8 @@
 "u": "https://www.gamestop.com/toys-games/trading-cards/products/magic-the-gathering-the-hobbit-gift-bundle/20035029.html"
 }
 ],
-"ms": 89.99
+"ms": 89.99,
+"i": "https://tcgplayer-cdn.tcgplayer.com/product/692971_in_200x200.jpg"
 },
 {
 "a": "B0HNTNV94J",
