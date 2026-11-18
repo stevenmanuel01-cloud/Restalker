@@ -1,8 +1,8 @@
 {
- "version": "v133",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v133_update.zip",
- "sha256": "d20820837e0a979cf399fbca1cfe820248699b23d71a9c3909bfa2089b27e376",
- "size": 741426,
- "notes": "The same automatic problem report goes out at most once per 6 hours.",
+ "version": "v134",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v134_update.zip",
+ "sha256": "c498c65fbe5db449d0652bd4ff32393118ef0c39644cf389f2a8219a182d9adf",
+ "size": 741899,
+ "notes": "v134: each phone / tablet decides its own buying (phone app 2.3: Settings, Linked devices). The PC hands Amazon over only while a device chose Instead of PC.",
  "files": 81
 }
