@@ -819,7 +819,7 @@ class MainActivity : ComponentActivity() {
                         Text(when { p.purchased -> "Bought${p.orderNumber?.let { " (order $it)" } ?: ""}. It is not bought again until you re-arm it."
                             p.attempted -> "An order may have been placed. Check your Amazon orders, then re-arm it if nothing was ordered."
                             else -> "Paused after failed checkouts until ${hm(p.lockedUntil)}." }, color = Look.AmberText, fontSize = 13.sp)
-                        Button(colors = Look.btn(), onClick = {
+                        Button(onClick = {
                             store.update(p.id) { it.copy(purchased = false, attempted = false, inProgress = false, fails = 0, lockedUntil = 0, orderNumber = null) }
                             store.log("${p.label}: re-armed by you (it may be bought again).")
                         }, colors = ButtonDefaults.buttonColors(containerColor = Look.Amber), modifier = Modifier.padding(top = 8.dp).testTag("rearm-${p.asin}")) { Text("Re-arm (buy again)") }
