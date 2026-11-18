@@ -52,7 +52,10 @@ class Engine(private val store: Store, private val page: Page, private val alert
              /** 2.3: the PC does not buy on Amazon because another phone / tablet buys there instead. */
              private val pcHanded: () -> Boolean = { false },
              /** 2.6: this phone's own look saw a product come IN STOCK (under or over the cap) - the crowd hears it (asin, price). */
-             private val onSighting: (String, Double?) -> Unit = { _, _ -> }) {
+             private val onSighting: (String, Double?) -> Unit = { _, _ -> },
+             /** 2.7: the owner's device (no purchase limit) and a product's purchases on every linked device. */
+             private val master: () -> Boolean = { true },
+             private val boughtOf: (Product) -> Int = { 0 }) {
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
@@ -276,6 +279,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     private fun canAutoBuy(p: Product): Boolean {
         val st = s()
+        if (!Limit.mayBuy(boughtOf(p), master())) return false          // 2.7: at most Limit.MAX purchases of a product (not the owner's)
         return st.buying && p.buy && !p.attempted && !p.purchased && p.cap > 0 && now() >= p.lockedUntil && !signinHold() &&
             (overrideDesk == p.id || mayBuyHere())
     }

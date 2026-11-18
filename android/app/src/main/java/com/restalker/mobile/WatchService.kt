@@ -40,7 +40,8 @@ class WatchService : Service() {
             otherPhoneBuys = { DeskLink.get().otherPhoneBuys() },
             buyerMode = { if (DeskLink.get().linked()) RkApp.store().settings().buyMode else "solo" },     // (not linked: this phone buys)
             pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() },
-            onSighting = { a, pr -> CrowdNet.share(a, pr) })                    // 2.6: the Restalker crowd hears this phone's sightings
+            onSighting = { a, pr -> CrowdNet.share(a, pr) },                    // 2.6: the Restalker crowd hears this phone's sightings
+            master = { DeskLink.master() }, boughtOf = { p -> DeskLink.boughtOf(p) })        // 2.7: at most 3 purchases of a product
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }

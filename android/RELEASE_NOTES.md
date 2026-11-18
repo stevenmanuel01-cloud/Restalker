@@ -1,3 +1,9 @@
+# Restalker Mobile 2.7 (2026-11-17; your notes of 8:35 PM)
+- Fair play: each product is bought at most 3 times ever, counting every linked device (the PC and your phones / tablets). After that
+  it is still watched and shared with the crowd, but not bought. The owner's own devices have no limit (recognised by themselves; a
+  device linked to the owner's PC too; spare: Settings -> About -> Master code).
+- Product page: a chart of the TCG market price over time (what the linked PC recorded), with your cap as a dashed line.
+
 # Restalker Mobile 2.6 (2026-11-17; your notes of 6:50 PM)
 - The Restalker crowd: every Restalker that shares (phones and PCs) tells the others when it sees a product of the central list come in
   stock - only the product, store, price and time (nothing personal). A sighting from the crowd makes this phone look itself at once;

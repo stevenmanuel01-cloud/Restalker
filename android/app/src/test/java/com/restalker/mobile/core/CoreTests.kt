@@ -905,6 +905,33 @@ object CoreTests {
                 lim.size == Crowd.LOOKS_PER_HOUR && cs2.since == "m159" }
         t("133_crowd_switch_kept_and_on_by_default") {
             Settings().crowd && !Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(crowd = false).toMap()))).crowd && Settings.fromMap(mapOf("watching" to true)).crowd }
+        // ---- 2.7 (owner, 2026-11-17 8:35 PM): at most 3 purchases of a product ever, the owner excepted; the TCG price history
+        t("134_limit_three_purchases_master_excepted") {
+            val w = World(); w.add("B0TEST0801", 120.0, true)
+            var bought = 3; var master = false
+            val e = Engine(w.store, w.amz, w.said, w.clock, { "wifi" }, master = { master }, boughtOf = { bought })
+            e.check(w.p("B0TEST0801")); val blocked = w.amz.begins == 0
+            master = true
+            w.store.update("idB0TEST0801") { it.copy(buyable = false) }
+            e.check(w.p("B0TEST0801")); val masterBuys = w.amz.places == 1
+            blocked && masterBuys && Limit.mayBuy(2, false) && !Limit.mayBuy(3, false) && Limit.mayBuy(9, true) }
+        t("135_master_by_fingerprint_only") {
+            // (no real code is written here - this file is public; only fingerprints are in the app)
+            Limit.fp("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" && !Limit.codeOk("RKM-AAAA-BBBB-CCCC") && !Limit.codeOk("") &&
+                !Limit.isMaster(Settings(masterCode = "RKM-AAAA-BBBB-CCCC", reportTopic = "rkr-aaaaaaaaaaaaaaaaaaaa"), false) && Limit.isMaster(Settings(), true) }
+        t("136_tcg_history_and_master_flag_over_the_link") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val (net, posts) = hub()
+            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true) }) { wa.clock.t }
+            la.connect(code); la.cycle()
+            fun desk(extra: Map<String, Any?>) = posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop",
+                "at" to wa.clock.t / 1000.0, "amz" to true, "items" to emptyList<Any>()) + extra)))
+            desk(mapOf("mst" to true, "th" to mapOf("B0GXC89N66" to listOf(listOf(20400, 530.0), listOf(20401, 535.0), listOf(99, 1.0)), "bad" to listOf(listOf(20400, 1.0)))))
+            la.cycle()
+            val h1 = la.tcgHistory("B0GXC89N66")
+            desk(emptyMap()); la.cycle()                      // (a post without the history keeps the last one; the master flag comes with every post)
+            val h2 = la.tcgHistory("B0GXC89N66")
+            h1 == listOf(20400L to 530.0, 20401L to 535.0) && h2 == h1 && !la.pcIsMaster() && la.tcgHistory("bad").isEmpty() }
         return results
     }
 
