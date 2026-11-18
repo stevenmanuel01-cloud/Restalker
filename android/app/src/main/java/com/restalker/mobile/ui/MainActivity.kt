@@ -69,6 +69,7 @@ import com.restalker.mobile.core.MiniJson
 import com.restalker.mobile.core.Product
 import com.restalker.mobile.core.Pics
 import com.restalker.mobile.core.PriceMarks
+import com.restalker.mobile.core.RefreshTiming
 import com.restalker.mobile.core.Settings
 import com.restalker.mobile.core.Buys
 import com.restalker.mobile.core.Tcg
@@ -256,19 +257,36 @@ class MainActivity : ComponentActivity() {
             dismissButton = { TextButton(onClick = { confirmReal = false }) { Text("Keep practicing") } })
     }
 
-    /** 2.3: pull down to refresh: the PC link is read, an update is looked for, the screen is redrawn. */
+    /** 2.3: pull down to refresh: the PC link is read, an update is looked for, the screen is redrawn.
+     *  2.12 (owner: "the little arrow should be animated and continue rotating. When it stops currently, it gives the impression that the
+     *  app is frozen. It should also disappear when the refresh is complete (it currently doesn't go away until I switch to a different
+     *  tab)"): 2.3-2.11 only STARTED the link round and the update check (both run on their own threads) and said "done" a moment later -
+     *  so quickly that the screen never saw the refresh begin: the arrow stayed where the finger left it, frozen, until the page was left.
+     *  Now the turning circle stays until the link round and the update check have really finished (at least 0.8 s so it is seen turning,
+     *  at most 15 s), then goes away by itself. */
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun Refreshable(tag: String, content: @Composable () -> Unit) {
         var busy by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
         PullToRefreshBox(isRefreshing = busy, onRefresh = {
-            busy = true
-            Thread {
-                try { if (DeskLink.get().linked()) DeskLink.cycleAsync() } catch (e: Exception) { }
+            if (!busy) { busy = true; scope.launch {
+                val t0 = System.currentTimeMillis()
+                var linkDone = true
+                try { if (DeskLink.get().linked()) { linkDone = false; DeskLink.cycleAsync { linkDone = true } } } catch (e: Exception) { linkDone = true }
                 try { Updater.tick(this@MainActivity, force = true) } catch (e: Exception) { }
-                runOnUiThread { busy = false; bump() }
-            }.start()
-        }, modifier = Modifier.fillMaxSize().testTag(tag)) { content() }
+                while (true) {
+                    val el = System.currentTimeMillis() - t0
+                    val working = (!linkDone && DeskLink.running) || Updater.running
+                    if (el >= RefreshTiming.MAX_MS || (el >= RefreshTiming.MIN_MS && !working)) break
+                    kotlinx.coroutines.delay(100)
+                }
+                busy = false; bump()
+            } }
+        }, modifier = Modifier.fillMaxSize().testTag(tag)) {
+            content()
+            if (busy) Box(Modifier.size(1.dp).testTag("busy-$tag"))          // (for the screen test: the refresh is running)
+        }
     }
 
     /** 2.3 (owner: "For each individual product page, there should be an option to swipe down and refresh all pages for that item,
@@ -278,10 +296,13 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun ProductRefresh(p: Product, r: Int, content: @Composable () -> Unit) {
         var since by remember(p.id) { mutableLongStateOf(0L) }
-        val busy = since > 0 && p.lastCheck < since && System.currentTimeMillis() - since < 60_000
+        // (2.12: shown turning for at least 0.8 s - a quick look never leaves a frozen arrow behind)
+        var minUntil by remember(p.id) { mutableLongStateOf(0L) }
+        LaunchedEffect(minUntil) { if (minUntil > 0) { kotlinx.coroutines.delay(RefreshTiming.MIN_MS); minUntil = 0L } }
+        val busy = minUntil > 0 || (since > 0 && p.lastCheck < since && System.currentTimeMillis() - since < 60_000)
         LaunchedEffect(since) { if (since > 0) { kotlinx.coroutines.delay(60_000); bump() } }
         PullToRefreshBox(isRefreshing = busy, onRefresh = {
-            since = System.currentTimeMillis()
+            since = System.currentTimeMillis(); minUntil = since
             WatchService.cmd(this@MainActivity, "check", p.id)
             try { if (DeskLink.get().linked()) DeskLink.cycleAsync { bump() } } catch (e: Exception) { }
         }, modifier = Modifier.fillMaxSize().testTag("prefresh-${p.asin}")) { content() }
@@ -300,12 +321,12 @@ class MainActivity : ComponentActivity() {
     /** 2.3: Settings - the PC, this device and every other linked phone / tablet; each one's buying choice can be changed here. */
     @OptIn(ExperimentalLayoutApi::class)
     @Composable
-    fun LinkedDevices(st: com.restalker.mobile.core.Settings, r: Int) {
+    fun LinkedDevices(st: com.restalker.mobile.core.Settings, r: Int, inSection: Boolean = false) {
         val store = RkApp.store()
         val list = remember(r, st) { try { DeskLink.get().devices(DeskLink.name()) } catch (e: Exception) { emptyList() } }
         var renaming by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("devices")) {
-            Text("Linked devices", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Column(Modifier.fillMaxWidth().then(if (inSection) Modifier else Modifier.background(Color.White, Look.card)).padding(16.dp).testTag("devices")) {
+            if (!inSection) Text("Linked devices", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Text("Each phone or tablet has its own buying choice. Changing one here changes only that device.",
                 fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
             for (d in list) {
@@ -1261,27 +1282,34 @@ class MainActivity : ComponentActivity() {
         var typing by remember { mutableStateOf(false) }
         var masterAsk by remember { mutableStateOf(false) }
         var confirmUnlink by remember { mutableStateOf(false) }
+        val devCount = remember(r, st) { if (!linked) 0 else try { DeskLink.get().devices(DeskLink.name()).size } catch (e: Exception) { 0 } }
+        val alertCh = remember(r, st.alertTopic) { DeskLink.alertChannel() }
+        // 2.12 (owner: "Settings should be organized into a hierarchy where the full options aren't displayed until they are selected. This
+        // holds true for pretty much everything on that tab"): each part is one line - its name and where it stands - and opens when tapped
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("settings").padding(bottom = 24.dp)) {
             TabHeader("Settings")
-            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // ---- the desktop link
-                Column(Modifier.fillMaxWidth().background(Look.Navy, Look.card).padding(16.dp)) {
-                    Text(if (linked) "Desktop: linked" else "Desktop: not linked", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.testTag("link-title"))
-                    Text(if (linked) linkLine else "Link the desktop Restalker: your products stay the same on both, and only one of them buys each product. On the desktop click Link phone, then scan its code.",
-                        color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(top = 4.dp).testTag("link-state"))
-                    FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { scan() }, colors = Look.btn(),
-                            modifier = Modifier.heightIn(min = 44.dp).testTag("scan")) { Text(if (linked) "Scan again" else "Scan the desktop's QR code", fontWeight = FontWeight.SemiBold) }
-                        TextButton(onClick = { typing = true }, modifier = Modifier.testTag("pastecode")) { Text("Type the code", color = Look.Mint) }
-                        if (linked) TextButton(onClick = { confirmUnlink = true }, modifier = Modifier.testTag("unlink")) { Text("Unlink", color = Look.Mint) }
+                Section("desk", if (linked) "Desktop: linked" else "Desktop: not linked",
+                    if (linked) linkLine else "Tap to link the desktop Restalker", navy = true, titleTag = "link-title", summaryTag = "link-state") {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        if (!linked) Text("Link the desktop Restalker: your products stay the same on both, and only one of them buys each product. On the desktop click Link phone, then scan its code.",
+                            color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 18.sp)
+                        FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { scan() }, colors = Look.btn(),
+                                modifier = Modifier.heightIn(min = 44.dp).testTag("scan")) { Text(if (linked) "Scan again" else "Scan the desktop's QR code", fontWeight = FontWeight.SemiBold) }
+                            TextButton(onClick = { typing = true }, modifier = Modifier.testTag("pastecode")) { Text("Type the code", color = Look.Mint) }
+                            if (linked) TextButton(onClick = { confirmUnlink = true }, modifier = Modifier.testTag("unlink")) { Text("Unlink", color = Look.Mint) }
+                        }
                     }
                 }
-                // ---- 2.3: every linked device and its own buying choice (owner: "each mobile device should only control its own buying ...
-                // in settings, there should be an option to see all devices linked, with options to control the above buying selection
-                // manually/remotely")
-                if (linked) LinkedDevices(st, r)
+                // ---- 2.3: every linked device and its own buying choice
+                if (linked) Section("devices", "Linked devices", "$devCount devices · each has its own buying choice") { LinkedDevices(st, r, inSection = true) }
                 // ---- Amazon and buying
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
+                Section("amazon", "Amazon and buying", listOf(if (signed) "Signed in" else "Not signed in",
+                    if (!st.buying) "buying off" else if (st.practice) "practice (nothing is bought)" else "real purchases",
+                    "looks every ${if (st.intervalSec >= 180) "3 min" else "${st.intervalSec} s"}").joinToString(" · "),
+                    summaryColor = if (signed) Look.Muted else Look.Red) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Amazon account", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
@@ -1307,88 +1335,92 @@ class MainActivity : ComponentActivity() {
                     }
                     HorizontalDivider(color = Look.Line)
                     SwitchRow("Wi-Fi only", "Saves mobile data", st.wifiOnly, "wifionly") { on -> store.setSettings { it.copy(wifiOnly = on) }; store.log("Wi-Fi only switched ${if (on) "ON" else "OFF"}.") }
-                    HorizontalDivider(color = Look.Line)
-                    // 1.5 (owner: "We can keep a single icon at the top to indicate that its running, but it should be clearable by user option")
-                    // 1.7 (owner: "Why do i have to manually download everything still?")
-                    // 2.9: says exactly whether Android will still ask (and why) - see Updater.mode
+                }
+                // ---- 2.12: notifications - which kinds, and the watching notice
+                Section("notes", "Notifications", if (!notes) "Not allowed on this phone - tap to fix" else com.restalker.mobile.core.NotifyPrefs.summary(st),
+                    summaryColor = if (notes) Look.Muted else Look.Red, summaryTag = "notes-summary") {
+                    NotificationsBody(st, notes)
+                }
+                // ---- 2.9: ntfy alerts on any device
+                Section("ntfy", "Alerts on other devices (ntfy)",
+                    if (alertCh == null) "Not set up" else if (st.alertsOn) "On · $alertCh" else "Set up · this device does not send") { AlertsCard(r, inSection = true) }
+                // ---- this phone
+                Section("phone", "This phone", listOf(if (st.autoUpdate) "updates by itself" else "updates off",
+                    if (batt) "watching all day allowed" else "battery not allowed").joinToString(" · ").replaceFirstChar { it.uppercase() },
+                    summaryColor = if (batt) Look.Muted else Look.Red) {
+                    // 1.7 (owner: "Why do i have to manually download everything still?") / 2.9: says exactly whether Android will still ask (and why)
                     SwitchRow("Update by itself", (Updater.modeText(Updater.mode(this@MainActivity)) + " " + Updater.state).trim(), st.autoUpdate, "autoupdate") { on ->
                         store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true, explicit = true) }
                     HorizontalDivider(color = Look.Line)
-                    SwitchRow("Running icon", (if (st.runIcon) "An icon at the top while it watches" else "No icon - the notice is tucked away at the bottom of your notifications") +
-                        ". Swipe the notice away to hide it; watching goes on.",
-                        st.runIcon, "runicon") { on ->
-                        store.setSettings { it.copy(runIcon = on) }; store.log("Running icon switched ${if (on) "ON" else "OFF"}.")
-                        WatchService.instance?.notifier?.status(WatchService.instance?.notifier?.lastStatus ?: "")
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        Step(batt, "Watching all day allowed (battery)", "Allow") { openBattery() }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = { openBrowser(null) }, modifier = Modifier.testTag("browser")) { Text("Show browser") }
+                            TextButton(onClick = {
+                                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                                    .putExtra(Intent.EXTRA_SUBJECT, "Restalker Mobile diagnostics").putExtra(Intent.EXTRA_TEXT, Diag.text(this@MainActivity)), "Send diagnostics"))
+                            }, modifier = Modifier.testTag("diag")) { Text("Send diagnostics") }
+                        }
+                        WatchService.instance?.dataText()?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp)) }
                     }
                 }
                 // ---- 2.0: a practice checkout with ANY Amazon item in stock (nothing is bought)
                 var paLink by remember { mutableStateOf("") }
                 var paErr by remember { mutableStateOf("") }
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("practice-any")) {
-                    Text("Practice checkout", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Text("Tests the whole checkout on this phone, without the PC: paste a link of ANY Amazon item that is in stock (a cheap one is fine). " +
-                        "It goes all the way to \"Place your order\" and stops there - nothing is bought, and the item is not added to your list.",
-                        fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
-                    OutlinedTextField(paLink, { paLink = it; paErr = "" }, label = { Text("Amazon link or product code") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("pa-link"))
-                    if (paErr.isNotEmpty()) Text(paErr, color = Look.Red, fontSize = 12.sp, modifier = Modifier.testTag("pa-err"))
-                    Button(colors = Look.btn(), onClick = {
-                        val t = paLink
-                        Thread {
-                            val a = Asin.resolve(t) { u -> followOnce(u) }
-                            runOnUiThread {
-                                if (a == null) paErr = "That is not an Amazon product link or code."
-                                else { paErr = ""; WatchService.cmd(this@MainActivity, "practiceany", a); store.log("Practice checkout asked for $a.") }
-                            }
-                        }.start()
-                    }, modifier = Modifier.padding(top = 8.dp).testTag("pa-go")) { Text("Run the practice") }
-                    if (!signed) Text("Sign in to Amazon first (above).", color = Look.AmberText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                Section("practice", "Practice checkout", "Test a whole checkout - nothing is bought") {
+                    Column(Modifier.fillMaxWidth().padding(16.dp).testTag("practice-any")) {
+                        Text("Tests the whole checkout on this phone, without the PC: paste a link of ANY Amazon item that is in stock (a cheap one is fine). " +
+                            "It goes all the way to \"Place your order\" and stops there - nothing is bought, and the item is not added to your list.",
+                            fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp)
+                        OutlinedTextField(paLink, { paLink = it; paErr = "" }, label = { Text("Amazon link or product code") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("pa-link"))
+                        if (paErr.isNotEmpty()) Text(paErr, color = Look.Red, fontSize = 12.sp, modifier = Modifier.testTag("pa-err"))
+                        Button(colors = Look.btn(), onClick = {
+                            val t = paLink
+                            Thread {
+                                val a = Asin.resolve(t) { u -> followOnce(u) }
+                                runOnUiThread {
+                                    if (a == null) paErr = "That is not an Amazon product link or code."
+                                    else { paErr = ""; WatchService.cmd(this@MainActivity, "practiceany", a); store.log("Practice checkout asked for $a.") }
+                                }
+                            }.start()
+                        }, modifier = Modifier.padding(top = 8.dp).testTag("pa-go")) { Text("Run the practice") }
+                        if (!signed) Text("Sign in to Amazon first (Amazon and buying).", color = Look.AmberText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
                 // ---- 2.2: all products from the central list (no caps, nothing watched)
                 var catMsg by remember { mutableStateOf("") }
                 var catBusy by remember { mutableStateOf(false) }
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("catalog")) {
-                    Text("Get all products", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Text("Adds every Magic product Restalker knows (names, Amazon codes, MSRP and other stores' links) that is not in your list yet. " +
-                        "They come in WITHOUT a cap and are not watched: set a cap and switch Watch / Buy on for the ones you want.",
-                        fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
-                    Button(colors = Look.btn(), enabled = !catBusy, onClick = {
-                        catBusy = true; catMsg = "Getting the list..."
-                        Thread {
-                            val r = try {
-                                val c = java.net.URL(com.restalker.mobile.core.Catalog.URL + "?t=" + System.currentTimeMillis() / 60_000).openConnection() as java.net.HttpURLConnection
-                                c.connectTimeout = 15_000; c.readTimeout = 20_000; c.setRequestProperty("User-Agent", "RestalkerMobile")
-                                val body = try { c.inputStream.bufferedReader().use { it.readText().take(2_000_000) } } finally { c.disconnect() }
-                                com.restalker.mobile.core.Catalog.import(body, store)
-                            } catch (e: Exception) { null }
-                            runOnUiThread {
-                                catBusy = false
-                                catMsg = when {
-                                    r == null -> "The list could not be read - check the internet and try again."
-                                    r.added == 0 -> "Nothing new - you have every product already (${r.already})."
-                                    else -> "${r.added} products added (no cap, not watched). Open one, set its cap, then switch Watch / Buy on."
+                Section("catalog", "Get all products", "Add every product Restalker knows") {
+                    Column(Modifier.fillMaxWidth().padding(16.dp).testTag("catalog")) {
+                        Text("Adds every Magic product Restalker knows (names, Amazon codes, MSRP and other stores' links) that is not in your list yet. " +
+                            "They come in WITHOUT a cap and are not watched: set a cap and switch Watch / Buy on for the ones you want.",
+                            fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp)
+                        Button(colors = Look.btn(), enabled = !catBusy, onClick = {
+                            catBusy = true; catMsg = "Getting the list..."
+                            Thread {
+                                val r = try {
+                                    val c = java.net.URL(com.restalker.mobile.core.Catalog.URL + "?t=" + System.currentTimeMillis() / 60_000).openConnection() as java.net.HttpURLConnection
+                                    c.connectTimeout = 15_000; c.readTimeout = 20_000; c.setRequestProperty("User-Agent", "RestalkerMobile")
+                                    val body = try { c.inputStream.bufferedReader().use { it.readText().take(2_000_000) } } finally { c.disconnect() }
+                                    com.restalker.mobile.core.Catalog.import(body, store)
+                                } catch (e: Exception) { null }
+                                runOnUiThread {
+                                    catBusy = false
+                                    catMsg = when {
+                                        r == null -> "The list could not be read - check the internet and try again."
+                                        r.added == 0 -> "Nothing new - you have every product already (${r.already})."
+                                        else -> "${r.added} products added (no cap, not watched). Open one, set its cap, then switch Watch / Buy on."
+                                    }
+                                    bump()
                                 }
-                                bump()
-                            }
-                        }.start()
-                    }, modifier = Modifier.padding(top = 8.dp).testTag("catalog-go")) { Text("Get all products") }
-                    if (catMsg.isNotEmpty()) Text(catMsg, fontSize = 12.sp, color = Look.TealText, modifier = Modifier.padding(top = 4.dp).testTag("catalog-msg"))
-                }
-                // ---- 2.0: share the app (its download page)
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("share"), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Share Restalker", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.fillMaxWidth())
-                    Text("Another phone scans this code to download the app. (Your own tablet: install it there, then link it to the desktop the same way - all stay the same, and only one of them buys.)",
-                        fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(vertical = 4.dp))
-                    val qr = remember { qrBitmap(SHARE_URL, 480) }
-                    if (qr != null) androidx.compose.foundation.Image(qr.asImageBitmap(), contentDescription = "Download page QR code",
-                        modifier = Modifier.size(180.dp).testTag("share-qr"))
-                    TextButton(onClick = {
-                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
-                            .putExtra(Intent.EXTRA_TEXT, "Restalker for Android: $SHARE_URL"), "Share Restalker"))
-                    }, modifier = Modifier.testTag("share-link")) { Text("Share the link") }
+                            }.start()
+                        }, modifier = Modifier.padding(top = 8.dp).testTag("catalog-go")) { Text("Get all products") }
+                        if (catMsg.isNotEmpty()) Text(catMsg, fontSize = 12.sp, color = Look.TealText, modifier = Modifier.padding(top = 4.dp).testTag("catalog-msg"))
+                    }
                 }
                 // ---- problems
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card)) {
+                Section("problems", "Problems", if (st.autoReport) "Sent to Claude by themselves" else "Sent only when you report them") {
                     SwitchRow("Send problems to Claude", "Automatic, at most every 30 min", st.autoReport, "autoreport") { on ->
                         store.setSettings { it.copy(autoReport = on) }; store.log("Automatic problem reports switched ${if (on) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
@@ -1398,49 +1430,45 @@ class MainActivity : ComponentActivity() {
                         Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Look.Muted)
                     }
                 }
-                // ---- the phone
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Step(notes, "Notifications allowed", "Allow") { openNotifSettings() }
-                    Step(batt, "Watching all day allowed (battery)", "Allow") { openBattery() }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { Notifier.test(this@MainActivity); store.log("Test message sent.") }, modifier = Modifier.testTag("testmsg")) { Text("Test message") }
-                        TextButton(onClick = { openBrowser(null) }, modifier = Modifier.testTag("browser")) { Text("Show browser") }
+                // ---- 2.6: the Restalker crowd
+                Section("crowd", "Restalker crowd", (if (st.crowd) "Sharing" else "Not sharing") + " · ${CrowdNet.count()} contributors") {
+                    Column(Modifier.fillMaxWidth().testTag("crowd")) {
+                        SwitchRow("Share with the Restalker crowd", "${CrowdNet.count()} contributors so far. Shares only when a product of the central list comes in stock " +
+                            "(product, store, price, time) - nothing personal.", st.crowd, "crowd-on") { on ->
+                            store.setSettings { it.copy(crowd = on) }; store.log("Sharing with the Restalker crowd switched ${if (on) "ON" else "OFF"}.")
+                            if (on) CrowdNet.tick(force = true) }
+                    }
+                }
+                // ---- 2.0: share the app (its download page)
+                Section("share", "Share Restalker", "A QR code and a link to the download page") {
+                    Column(Modifier.fillMaxWidth().padding(16.dp).testTag("share"), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Another phone scans this code to download the app. (Your own tablet: install it there, then link it to the desktop the same way - all stay the same, and only one of them buys.)",
+                            fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(bottom = 4.dp))
+                        val qr = remember { qrBitmap(SHARE_URL, 480) }
+                        if (qr != null) androidx.compose.foundation.Image(qr.asImageBitmap(), contentDescription = "Download page QR code",
+                            modifier = Modifier.size(180.dp).testTag("share-qr"))
                         TextButton(onClick = {
                             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
-                                .putExtra(Intent.EXTRA_SUBJECT, "Restalker Mobile diagnostics").putExtra(Intent.EXTRA_TEXT, Diag.text(this@MainActivity)), "Send diagnostics"))
-                        }, modifier = Modifier.testTag("diag")) { Text("Send diagnostics") }
+                                .putExtra(Intent.EXTRA_TEXT, "Restalker for Android: $SHARE_URL"), "Share Restalker"))
+                        }, modifier = Modifier.testTag("share-link")) { Text("Share the link") }
                     }
                 }
-                WatchService.instance?.dataText()?.takeIf { it.isNotEmpty() }?.let { Text(it, color = Look.Muted, fontSize = 12.sp) }
-                // ---- 2.9 (owner: "a way to connect the user to ntfy alerts. This code should be unique for each user, but identical to all
-                // devices used by the user if the devices are linked")
-                AlertsCard(r)
-                // ---- 2.6: the Restalker crowd
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).testTag("crowd")) {
-                    SwitchRow("Share with the Restalker crowd", "${CrowdNet.count()} contributors so far. Shares only when a product of the central list comes in stock " +
-                        "(product, store, price, time) - nothing personal.", st.crowd, "crowd-on") { on ->
-                        store.setSettings { it.copy(crowd = on) }; store.log("Sharing with the Restalker crowd switched ${if (on) "ON" else "OFF"}.")
-                        if (on) CrowdNet.tick(force = true) }
-                }
-                // ---- 2.6 (owner: 'a section at the bottom of settings for "about" which has a brief paragraph explaining how the importance
-                // of crowdsourcing the information for everyone to share')
-                Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("about")) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_mascot), contentDescription = null, modifier = Modifier.size(32.dp))
-                        Text("About", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(start = 8.dp))
-                    }
-                    Text("Restocks of sought-after Magic products often last only minutes, and no single phone or PC can look at every store all " +
-                        "the time. When you share with the Restalker crowd, each device that spots a product from the central list in stock tells " +
-                        "every other Restalker right away - so we all see more restocks, sooner, without each of us checking every store. Only the " +
-                        "product, the store, the price and the time are shared: no names, accounts, orders or addresses. A sighting from the crowd " +
-                        "only makes your device look for itself - it buys only what it sees in stock under your own cap. The more devices share, " +
-                        "the better it works for everyone.",
-                        fontSize = 13.sp, lineHeight = 19.sp, color = Look.Ink, modifier = Modifier.padding(top = 6.dp).testTag("about-text"))
-                    Text("Fair play: Restalker buys each product at most ${com.restalker.mobile.core.Limit.MAX} times, counting every linked device, so restocks " +
-                        "go to players rather than resellers.", fontSize = 12.sp, lineHeight = 17.sp, color = Look.Muted, modifier = Modifier.padding(top = 8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                        Text("Restalker Mobile v$APP_VERSION" + if (DeskLink.master()) " · master" else "", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f).testTag("about-version"))
-                        TextButton(onClick = { masterAsk = true }, modifier = Modifier.testTag("master-open")) { Text("Master code", fontSize = 12.sp) }
+                // ---- 2.6 (owner: 'a section at the bottom of settings for "about"')
+                Section("about", "About", "Restalker Mobile v$APP_VERSION" + if (DeskLink.master()) " · master" else "", mascot = true) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp).testTag("about")) {
+                        Text("Restocks of sought-after Magic products often last only minutes, and no single phone or PC can look at every store all " +
+                            "the time. When you share with the Restalker crowd, each device that spots a product from the central list in stock tells " +
+                            "every other Restalker right away - so we all see more restocks, sooner, without each of us checking every store. Only the " +
+                            "product, the store, the price and the time are shared: no names, accounts, orders or addresses. A sighting from the crowd " +
+                            "only makes your device look for itself - it buys only what it sees in stock under your own cap. The more devices share, " +
+                            "the better it works for everyone.",
+                            fontSize = 13.sp, lineHeight = 19.sp, color = Look.Ink, modifier = Modifier.testTag("about-text"))
+                        Text("Fair play: Restalker buys each product at most ${com.restalker.mobile.core.Limit.MAX} times, counting every linked device, so restocks " +
+                            "go to players rather than resellers.", fontSize = 12.sp, lineHeight = 17.sp, color = Look.Muted, modifier = Modifier.padding(top = 8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                            Text("Restalker Mobile v$APP_VERSION" + if (DeskLink.master()) " · master" else "", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f).testTag("about-version"))
+                            TextButton(onClick = { masterAsk = true }, modifier = Modifier.testTag("master-open")) { Text("Master code", fontSize = 12.sp) }
+                        }
                     }
                 }
             }
@@ -1475,15 +1503,97 @@ class MainActivity : ComponentActivity() {
             dismissButton = { TextButton(onClick = { confirmUnlink = false }) { Text("Cancel") } })
     }
 
+    /** 2.12: the Settings parts that are open (all start folded: one line each - its name and where it stands). */
+    private val openSecs = mutableStateListOf<String>()
+
+    /** 2.12: one folding part of Settings - tap the line to open or close it. */
+    @Composable
+    fun Section(key: String, title: String, summary: String, navy: Boolean = false, summaryColor: Color = Look.Muted, mascot: Boolean = false,
+                titleTag: String? = null, summaryTag: String? = null, content: @Composable ColumnScope.() -> Unit) {
+        val open = key in openSecs
+        Column(Modifier.fillMaxWidth().background(if (navy) Look.Navy else Color.White, Look.card).testTag("sec-$key")) {
+            Row(Modifier.fillMaxWidth().clickable { if (open) openSecs.remove(key) else openSecs.add(key) }
+                .padding(horizontal = 16.dp, vertical = 12.dp).heightIn(min = 44.dp).testTag("sech-$key"), verticalAlignment = Alignment.CenterVertically) {
+                if (mascot) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_mascot), contentDescription = null,
+                    modifier = Modifier.size(32.dp).padding(end = 8.dp))
+                Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                    Text(title, fontWeight = FontWeight.SemiBold, fontSize = if (navy) 16.sp else 15.sp, color = if (navy) Color.White else Look.Ink,
+                        modifier = if (titleTag != null) Modifier.testTag(titleTag) else Modifier)
+                    Text(summary, fontSize = 12.sp, lineHeight = 16.sp, color = if (navy) Look.OnNavyDim else summaryColor, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp).then(if (summaryTag != null) Modifier.testTag(summaryTag) else Modifier))
+                }
+                Box(Modifier.size(28.dp).background(Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(if (open) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight, contentDescription = if (open) "Close" else "Open",
+                        tint = Look.Ink, modifier = Modifier.size(20.dp))
+                }
+            }
+            if (open) {
+                HorizontalDivider(color = if (navy) Look.NavyCard else Look.Line)
+                content()
+            }
+        }
+    }
+
+    /** 2.12 (owner: "a series of settings that allow the user to decide if they want all notifications, restock only, price drop alerts,
+     *  purchase alerts, etc." and "We do not need a constant notification that the app is running and watching"): the kinds of message
+     *  (a quick choice and a switch for each), the watching notice, a test. */
+    @OptIn(ExperimentalLayoutApi::class)
+    @Composable
+    fun NotificationsBody(st: Settings, notes: Boolean) {
+        val store = RkApp.store()
+        val NP = com.restalker.mobile.core.NotifyPrefs
+        if (!notes) Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { Step(false, "Notifications are not allowed on this phone", "Allow") { openNotifSettings() } }
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp)) {
+            Text("Which messages", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val cur = NP.preset(st)
+                listOf(NP.ALL to "All", NP.RESTOCKS to "Restocks only", NP.BUYS to "Purchases only").forEach { (k, l) ->
+                    FilterChip(cur == k, { store.setSettings { NP.apply(it, k) }; store.log("Notifications: $l.") }, { Text(l, fontSize = 13.sp) },
+                        Modifier.testTag("np-$k"), colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.Accent, selectedLabelColor = Look.Ink))
+                }
+                if (cur == NP.CUSTOM || cur == NP.NONE) FilterChip(true, { }, { Text(if (cur == NP.NONE) "None" else "Custom", fontSize = 13.sp) }, Modifier.testTag("np-custom"),
+                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.Accent, selectedLabelColor = Look.Ink))
+            }
+        }
+        SwitchRow("Restocks", "In stock at or under your cap (when it is not bought by itself)", st.nRestock, "n-restock") { on ->
+            store.setSettings { it.copy(nRestock = on) }; store.log("Restock messages switched ${if (on) "ON" else "OFF"}.") }
+        HorizontalDivider(color = Look.Line)
+        SwitchRow("Price drops", "For sale over your cap, but at least 5% cheaper than before", st.nDrop, "n-drop") { on ->
+            store.setSettings { it.copy(nDrop = on) }; store.log("Price drop messages switched ${if (on) "ON" else "OFF"}.") }
+        HorizontalDivider(color = Look.Line)
+        SwitchRow("Purchases", "Bought (or not), and practice checkouts", st.nBuy, "n-buy") { on ->
+            store.setSettings { it.copy(nBuy = on) }; store.log("Purchase messages switched ${if (on) "ON" else "OFF"}.") }
+        HorizontalDivider(color = Look.Line)
+        SwitchRow("When it needs you", if (st.nNeed) "Sign in, Amazon's \"is it you\" check, an order to look at" else "Off: a sign-in or a robot check can then stop it without you knowing",
+            st.nNeed, "n-need") { on -> store.setSettings { it.copy(nNeed = on) }; store.log("\"Needs you\" messages switched ${if (on) "ON" else "OFF"}.") }
+        HorizontalDivider(color = Look.Line)
+        // the watching notice (1.5 / 2.0 / 2.12): Android requires a notice while an app watches all day - it can be tucked away completely
+        SwitchRow("Show a \"watching\" icon", if (st.runIcon) "An icon at the top while it watches" else
+            "No icon, no sound, not on the lock screen - just a line at the very bottom of your notifications (swipe it away and it stays away)",
+            st.runIcon, "runicon") { on ->
+            store.setSettings { it.copy(runIcon = on, noticeHidden = if (on) false else it.noticeHidden) }; store.log("Running icon switched ${if (on) "ON" else "OFF"}.")
+            WatchService.instance?.notifier?.refreshNotice()
+        }
+        FlowRow(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (Build.VERSION.SDK_INT >= 26) TextButton(onClick = {
+                try { startActivity(Intent(AndroidSettings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, packageName)
+                    .putExtra(AndroidSettings.EXTRA_CHANNEL_ID, Notifier.noticeChannel())) } catch (e: Exception) { openNotifSettings() }
+            }, modifier = Modifier.testTag("notice-off")) { Text("Hide the watching line completely") }
+            TextButton(onClick = { Notifier.test(this@MainActivity); store.log("Test message sent.") }, modifier = Modifier.testTag("testmsg")) { Text("Test message") }
+        }
+        if (Build.VERSION.SDK_INT >= 26) Text("\"Hide the watching line completely\" opens the phone's own switch for it: switch it off there - watching goes on.",
+            fontSize = 11.sp, color = Look.Muted, lineHeight = 15.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp))
+    }
+
     /** 2.9: Settings - the person's ntfy alerts channel: set it up once; the code, a QR for other devices, open in the ntfy app, a test. */
     @Composable
-    fun AlertsCard(r: Int) {
+    fun AlertsCard(r: Int, inSection: Boolean = false) {
         val store = RkApp.store()
         val st = store.settings()
         val ch = remember(r, st.alertTopic) { DeskLink.alertChannel() }
         val fromPc = remember(r) { DeskLink.pcHasChannel() }
-        Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("alerts")) {
-            Text("Alerts on any device (ntfy)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Column(Modifier.fillMaxWidth().then(if (inSection) Modifier else Modifier.background(Color.White, Look.card)).padding(16.dp).testTag("alerts")) {
+            if (!inSection) Text("Alerts on any device (ntfy)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             if (ch == null) {
                 Text("Get your restock, purchase and \"needs you\" alerts on any phone, tablet or PC with the free ntfy app - one code for you, " +
                     "the same on every device you link.", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp))

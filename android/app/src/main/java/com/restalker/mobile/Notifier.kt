@@ -18,10 +18,13 @@ import com.restalker.mobile.ui.MainActivity
 /** The engine's messages to you, as phone notifications with buttons (Buy now / Snooze 3 h / Open). */
 class Notifier(private val ctx: Context) : Alerts {
     @Volatile var lastStatus = ""; private set
-    private var lastStatusPost = 0L
     var onStatus: ((String) -> Unit)? = null
 
+    /** 2.12: the kinds of message you chose in Settings (NotifyPrefs). */
+    private fun wants(kind: String) = com.restalker.mobile.core.NotifyPrefs.allowed(RkApp.store().settings(), kind)
+
     override fun restock(p: Product, price: Double?) {
+        if (!wants("restock")) return                    // (2.12: restocks switched off in Settings - neither here nor on ntfy)
         val practice = RkApp.store().settings().practice
         val b = base(CH_RESTOCK, "IN STOCK: ${p.label}",
             (price?.let { "\$${Engine.money(it)}" } ?: "Price not shown") + " (your cap \$${Engine.money(p.cap)}). " +
@@ -37,7 +40,7 @@ class Notifier(private val ctx: Context) : Alerts {
         val title = if (verified) "BOUGHT: ${p.label}" else "BOUGHT? Check Amazon: ${p.label}"
         val text = (price?.let { "\$${Engine.money(it)}" } ?: "") + (order?.let { " - order $it" } ?: "") +
             if (verified) " - found in your Amazon orders." else " - Amazon showed the order but it is not in your order list yet. Check Amazon."
-        post(idFor("b", p.id), base(CH_BUY, title, text.trim()).addAction(0, "Your orders", openBrowser(Engine.ORDERS_URL, 7)).build())
+        if (wants("bought")) post(idFor("b", p.id), base(CH_BUY, title, text.trim()).addAction(0, "Your orders", openBrowser(Engine.ORDERS_URL, 7)).build())
         NtfyOut.send("bought", title, text.trim() + " (${DeskLink.name()})", Engine.ORDERS_URL)
     }
 
@@ -45,22 +48,37 @@ class Notifier(private val ctx: Context) : Alerts {
         val b = base(CH_NEED, title, text)
         if (title.contains("check it's you") || title.contains("Sign in")) b.addAction(0, if (title.contains("Sign in")) "Sign in" else "Show browser",
             if (title.contains("Sign in")) openBrowser(BrowserActivity.SIGNIN_URL, 9) else openBrowser(null, 8))
-        post(idFor("n", title + (p?.id ?: "")), b.build())
+        if (wants("need")) post(idFor("n", title + (p?.id ?: "")), b.build())
         NtfyOut.send("need", title, "$text (${DeskLink.name()})")
         Reporter.auto(ctx, "$title - $text")
     }
 
     override fun problem(what: String) { Reporter.auto(ctx, what) }
 
-    override fun practice(p: Product, text: String) = post(idFor("p", p.id), base(CH_BUY, "PRACTICE: ${p.label}", text).build())
+    override fun practice(p: Product, text: String) { if (wants("practice")) post(idFor("p", p.id), base(CH_BUY, "PRACTICE: ${p.label}", text).build()) }
 
+    /** 2.12: a price drop - for sale over your cap, but clearly cheaper than before (PriceDrop). */
+    fun priceDrop(p: Product, was: Double, now: Double) {
+        val title = "PRICE DROP: ${p.label}"
+        val text = "\$${Engine.money(now)} (was \$${Engine.money(was)}) - still over your cap of \$${Engine.money(p.cap)}."
+        RkApp.store().log("${p.label}: price drop to \$${Engine.money(now)} (was \$${Engine.money(was)}).")
+        if (wants("drop")) post(idFor("d", p.id), base(CH_DROP, title, text).addAction(0, "Open", openBrowser(p.url, p.id.hashCode() + 3)).build())
+        NtfyOut.send("drop", title, "$text (${DeskLink.name()})", p.url)
+    }
+
+    // 2.12 (owner: "Notifications should only pop up when the user needs to see something. We do not need a constant notification that
+    // the app is running and watching"): the engine's running status ("Looking at ...") is shown on the app's screen only - 2.0-2.11 also
+    // rewrote the watching notice with it every 30 s. The notice (Android requires one while an app watches all day) now never changes:
+    // no icon, no sound, not on the lock screen, at the very bottom of the notifications - and once swiped away it stays away.
     override fun status(text: String) {
         lastStatus = text
         onStatus?.invoke(text)
-        val now = System.currentTimeMillis()
-        if (now - lastStatusPost < 30_000 || hidden) return      // (2.0: every 30 s at most; never after you swiped it away)
-        lastStatusPost = now
-        if (WatchService.instance != null) post(ONGOING_ID, ongoing(ctx, text))
+    }
+
+    /** The watching notice again (only when its look changes: the icon switch, standby). Never after you swiped it away. */
+    fun refreshNotice() {
+        if (hidden || WatchService.instance == null) return
+        post(ONGOING_ID, ongoing(ctx))
     }
 
     private fun base(ch: String, title: String, text: String): NotificationCompat.Builder =
@@ -80,7 +98,7 @@ class Notifier(private val ctx: Context) : Alerts {
     }
 
     companion object {
-        const val CH_WATCH = "watching"; const val CH_QUIET = "watching_quiet"; const val CH_RESTOCK = "restocks"; const val CH_BUY = "purchases"; const val CH_NEED = "needyou"
+        const val CH_WATCH = "watching"; const val CH_QUIET = "watching_quiet"; const val CH_RESTOCK = "restocks"; const val CH_BUY = "purchases"; const val CH_NEED = "needyou"; const val CH_DROP = "pricedrops"
         const val ONGOING_ID = 1
         fun idFor(kind: String, key: String) = (kind + key).hashCode() and 0x7fffffff or 0x100
 
@@ -95,6 +113,7 @@ class Notifier(private val ctx: Context) : Alerts {
             nm.createNotificationChannel(NotificationChannel(CH_RESTOCK, "Restocks", NotificationManager.IMPORTANCE_HIGH))
             nm.createNotificationChannel(NotificationChannel(CH_BUY, "Purchases and practice runs", NotificationManager.IMPORTANCE_HIGH))
             nm.createNotificationChannel(NotificationChannel(CH_NEED, "Restalker needs you", NotificationManager.IMPORTANCE_HIGH))
+            nm.createNotificationChannel(NotificationChannel(CH_DROP, "Price drops", NotificationManager.IMPORTANCE_DEFAULT))
         }
 
         /** "Test message" button: shows that messages reach you (sound and all). */
@@ -111,15 +130,22 @@ class Notifier(private val ctx: Context) : Alerts {
         /** 2.0 (owner: "The notification bar on my phone is still constant and cannot be silenced"): the notice can always be swiped away
          *  (Android 13+; watching goes on) and is not shown again until watching is switched on again - 1.5-1.9 put it back every few
          *  seconds. While the PC buys (this phone stands by) it has no icon either. */
-        @Volatile var hidden = false
+        /** 2.12: kept in Settings (2.0-2.11: forgotten at every restart, so the notice came back). */
+        var hidden: Boolean
+            get() = try { RkApp.store().settings().noticeHidden } catch (e: Exception) { false }
+            set(v) { try { if (RkApp.store().settings().noticeHidden != v) RkApp.store().setSettings { it.copy(noticeHidden = v) } } catch (e: Exception) { } }
         @Volatile var standby = false
 
-        fun ongoing(ctx: Context, text: String): Notification {
+        /** The channel the watching notice uses now (Settings, "Turn it off completely" opens this one in the phone's settings). */
+        fun noticeChannel(): String = if (RkApp.store().settings().runIcon && !standby) CH_WATCH else CH_QUIET
+
+        fun ongoing(ctx: Context): Notification {
             val icon = RkApp.store().settings().runIcon && !standby
             return NotificationCompat.Builder(ctx, if (icon) CH_WATCH else CH_QUIET).setSmallIcon(R.drawable.ic_note)
                 .setContentTitle(if (standby) "Restalker - standby (the PC buys)" else "Restalker is watching")
                 .setPriority(if (icon) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
-                .setContentText(text + " · swipe to hide").setOngoing(false).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET).setShowWhen(false)
+                .setContentText("Swipe to hide - watching goes on").setOngoing(false).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
                 .setDeleteIntent(ActionReceiver.pending(ctx, ActionReceiver.HIDDEN, ""))
                 .addAction(0, "Stop watching", ActionReceiver.pending(ctx, ActionReceiver.STOP, ""))
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE).build()

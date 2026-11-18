@@ -1067,6 +1067,62 @@ object CoreTests {
             la.cycle()
             val (pc, ph) = la.alertChannels()
             sentByPhone && pc == "phone-pcchannel123" && ph == listOf("rka-otherbbbbbbbbbbbbbbb") }
+        // ---- 2.12 (owner, 2026-11-18): notification choices, price drops, the quiet watching notice
+        t("147_notification_choices_presets_and_kinds") {
+            val NP = NotifyPrefs; val d = Settings()
+            val r = NP.apply(d, NP.RESTOCKS); val b = NP.apply(d, NP.BUYS); val a = NP.apply(d, NP.ALL)
+            NP.preset(d) == NP.CUSTOM && d.nRestock && !d.nDrop && d.nBuy && d.nNeed &&                  // (new: all but price drops)
+                NP.preset(r) == NP.RESTOCKS && NP.allowed(r, "restock") && !NP.allowed(r, "bought") && !NP.allowed(r, "practice") && !NP.allowed(r, "drop") && NP.allowed(r, "need") &&
+                NP.preset(b) == NP.BUYS && !NP.allowed(b, "restock") && NP.allowed(b, "bought") && NP.allowed(b, "practice") &&
+                NP.preset(a) == NP.ALL && NP.allowed(a, "drop") && NP.allowed(d.copy(nRestock = false, nBuy = false, nNeed = false), "test") &&
+                NP.preset(d.copy(nRestock = false, nBuy = false, nNeed = false)) == NP.NONE &&
+                NP.summary(a) == "All alerts" && NP.summary(d) == "Restocks, purchases, needs you" && NP.apply(d, "nonsense") == d }
+        t("148_notification_choices_kept") {
+            val s0 = Settings(nRestock = false, nDrop = true, nBuy = false, nNeed = false, noticeHidden = true)
+            val back = Settings.fromMap(MiniJson.obj(MiniJson.write(s0.toMap())))
+            val old = Settings.fromMap(mapOf("watching" to true))
+            back.nRestock == false && back.nDrop && !back.nBuy && !back.nNeed && back.noticeHidden &&
+                old.nRestock && !old.nDrop && old.nBuy && old.nNeed && !old.noticeHidden }
+        t("149_watching_icon_off_once_for_everyone_then_kept") {
+            val before = Settings.fromMap(mapOf("runIcon" to true))                     // (2.11 and older: the icon was on by default)
+            val chosen = Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(runIcon = true).toMap())))    // (switched on again in 2.12)
+            val off = Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(runIcon = false).toMap())))
+            !Settings().runIcon && !before.runIcon && chosen.runIcon && !off.runIcon }
+        t("150_price_drop_rule") {
+            val PD = PriceDrop; val h = 3_600_000L
+            val first = PD.check(null, 0, 700.0, 1000)                     // the first price: the mark, no alert
+            val small = PD.check(700.0, 1000, 680.0, 2000)                 // $20 = 2.9%: not enough
+            val big = PD.check(700.0, 1000, 650.0, 3000)                   // $50 = 7%: alert, new mark
+            val back = PD.check(650.0, 3000, 700.0, 3000 + h)              // back up within a day: mark kept
+            val again = PD.check(back.second, back.third, 650.0, 3000 + 2 * h)   // down to the same price: no second alert
+            val dayLater = PD.check(650.0, 3000, 700.0, 3000 + 25 * h)     // up for over a day: measured from there
+            val cheap = PD.check(60.0, 0, 56.0, 10)                        // $4 (6.7%) on a cheap item: under $5, no alert
+            val none = PD.check(700.0, 1000, null, 5000)
+            !first.first && first.second == 700.0 && !small.first && small.second == 700.0 && big.first && big.second == 650.0 &&
+                !back.first && back.second == 650.0 && !again.first && !dayLater.first && dayLater.second == 700.0 && !cheap.first &&
+                !none.first && none.second == 700.0 }
+        t("151_price_drop_scan_over_cap_watched_only") {
+            val w = World(); val now = w.clock.t
+            w.store.add(Product("a", "B0DROP0001", "Over", cap = 400.0, watch = true, overCap = true, price = 700.0, lastCheck = now))
+            w.store.add(Product("b", "B0DROP0002", "Not watched", cap = 400.0, watch = false, overCap = true, price = 700.0, lastCheck = now))
+            w.store.add(Product("c", "B0DROP0003", "Under cap", cap = 400.0, watch = true, buyable = true, price = 350.0, lastCheck = now))
+            val got = ArrayList<Triple<String, Double, Double>>()
+            val n1 = PriceDrop.scan(w.store, now) { p, was, pr -> got += Triple(p.id, was, pr) }
+            w.store.update("a") { it.copy(price = 640.0, lastCheck = now + 60_000) }
+            w.store.update("b") { it.copy(price = 600.0, lastCheck = now + 60_000) }
+            w.store.update("c") { it.copy(price = 300.0, lastCheck = now + 60_000) }
+            val n2 = PriceDrop.scan(w.store, now + 60_000) { p, was, pr -> got += Triple(p.id, was, pr) }
+            val n3 = PriceDrop.scan(w.store, now + 120_000) { p, was, pr -> got += Triple(p.id, was, pr) }
+            // the linked PC's newer reading counts too
+            w.store.update("a") { it.copy(dSt = "over", dPr = 590.0, dAt = now + 180_000) }
+            val n4 = PriceDrop.scan(w.store, now + 180_000) { p, was, pr -> got += Triple(p.id, was, pr) }
+            n1 == 0 && n2 == 1 && n3 == 0 && n4 == 1 && got == listOf(Triple("a", 700.0, 640.0), Triple("a", 640.0, 590.0)) &&
+                w.store.product("a")!!.dropRef == 590.0 && w.store.product("b")!!.dropRef == null && w.store.product("c")!!.dropRef == null &&
+                Product.fromMap(MiniJson.obj(MiniJson.write(w.store.product("a")!!.toMap()))!!)!!.dropRef == 590.0 }
+        t("152_price_drop_alerts_skip_ntfy_when_pc_has_channel") {
+            val pcT = "phone-pcchannel123"
+            !NtfyAlerts.shouldSend(true, pcT, "drop", true) && NtfyAlerts.shouldSend(true, pcT, "drop", false) &&
+                RefreshTiming.MIN_MS in 500..1500 && RefreshTiming.MAX_MS >= 10_000 }
         return results
     }
 

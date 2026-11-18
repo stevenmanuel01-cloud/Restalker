@@ -65,7 +65,7 @@ object DeskLink {
     @Volatile var lastResult: String = ""; private set
     /** 1.7: rounds in a row that failed (the self-check reports 10 in a row). */
     @Volatile var failsInRow = 0; private set
-    @Volatile private var running = false
+    @Volatile var running = false; private set
 
     /** One round in the background (skipped when one is running). [done] on the main thread. */
     fun cycleAsync(done: ((String) -> Unit)? = null) {

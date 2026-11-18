@@ -48,6 +48,7 @@ object Diag {
         val hp = try { com.restalker.mobile.core.Health.check(HealthRunner.input(ctx)) } catch (e: Exception) { listOf("?" to "self-check failed: ${e.message}") }
         sb.append("\nSelf-check: ${if (hp.isEmpty()) "nothing wrong found" else hp.joinToString("\n  ", "\n  ") { "${it.first}: ${it.second}" }}\n")
         sb.append(try { NtfyOut.status() } catch (e: Exception) { "ntfy alerts: ?" }).append("\n")
+        sb.append("Messages (2.12): ${com.restalker.mobile.core.NotifyPrefs.summary(st)} · watching icon=${st.runIcon} notice swiped away=${st.noticeHidden}\n")
         sb.append("Desktop link rounds failed in a row: ${DeskLink.failsInRow}\n")
         sb.append("Updates: mode=${Updater.mode(ctx)} by itself=${st.autoUpdate} allowed=${Updater.allowed(ctx)} state=${Updater.state.ifBlank { "-" }} failed=${Updater.failed ?: "-"}" +
             " installer=${try { if (Build.VERSION.SDK_INT >= 30) ctx.packageManager.getInstallSourceInfo(ctx.packageName).installingPackageName else @Suppress("DEPRECATION") ctx.packageManager.getInstallerPackageName(ctx.packageName) } catch (e: Exception) { "?" }}\n")

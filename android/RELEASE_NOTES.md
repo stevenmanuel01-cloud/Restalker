@@ -1,3 +1,15 @@
+# Restalker Mobile 2.12 (2026-11-18; your notes of 3:33 PM)
+- Pull down to refresh: the circle keeps turning while it refreshes and goes away by itself when it is done. (Before, the refresh
+  said "done" before the screen even saw it start, so the arrow froze where your finger left it until you changed tabs.)
+- Settings -> Notifications: choose All, Restocks only or Purchases only, or switch each kind on or off: restocks, price drops (new),
+  purchases, and "when it needs you". The phone's messages and its ntfy alerts both follow your choice.
+- Price drops (new, off until you switch them on): a watched product for sale over your cap that gets at least 5% (and $5) cheaper.
+  A price bouncing back and forth alerts once, not every time.
+- Settings is folded: each part is one line - its name and where it stands - and opens when you tap it.
+- No constant "watching" notification: no icon, no sound, not on the lock screen, and it never changes. Android requires a notice while
+  an app watches all day, so a single line stays at the very bottom of your notifications - swipe it away and it stays away, or tap
+  "Hide the watching line completely" (Settings -> Notifications) and switch it off there. Watching goes on either way.
+
 # Restalker Mobile 2.11 (2026-11-18; your notes of 1:18 PM)
 - Product page: the big price is the LOWEST price seen in stock anywhere lately. When that is another store, it has a * and says where
   ("$639.20* @ Walmart"), with a line under it: buy it yourself there - Restalker buys on Amazon only (for now) - and Amazon's price.

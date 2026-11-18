@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.11"
+const val APP_VERSION = "2.12"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -51,6 +51,8 @@ data class Product(
     val picTriedAt: Long = 0,             // 1.6: when its page was last opened only for its picture
     val dImg: String = "",                // 1.7: the linked desktop's picture of the product (its table's)
     val cImg: String = "",                // 2.8: the central list's picture (TCGplayer's catalogue photo of exactly this product)
+    val dropRef: Double? = null,          // 2.12: the price a price drop is measured from (PriceDrop) and when it was set
+    val dropAt: Long = 0,
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -69,6 +71,7 @@ data class Product(
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
         "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
         "msrp" to msrp, "tcg" to tcg, "tcgUrl" to tcgUrl, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg, "cImg" to cImg,
+        "dropRef" to dropRef, "dropAt" to dropAt,
     )
 
     /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
@@ -102,6 +105,7 @@ data class Product(
                 picTriedAt = if (Pics.canon(m["image"].asStr()) != null || m["image"].asStr().isNullOrBlank()) m["picTriedAt"].asLong() ?: 0 else 0,
                 dImg = Pics.desk(m["dImg"].asStr()) ?: "",
                 cImg = m["cImg"].asStr()?.takeIf { Pics.validAny(it) } ?: "",
+                dropRef = m["dropRef"].asDouble()?.takeIf { it > 0 && it < 100_000 }, dropAt = m["dropAt"].asLong() ?: 0,
             )
         }
     }
@@ -133,7 +137,10 @@ data class Settings(
     val needYouAt: Long = 0,              // last "Amazon needs you" message (at most one an hour)
     val ordersReadAt: Long = 0,
     val ordersKnown: Map<String, List<String>> = emptyMap(),   // ASIN -> order numbers already in your Amazon orders (before a checkout)
-    val runIcon: Boolean = true,          // 1.5: the "watching" notice shows its icon in the status bar (off = tucked away, no icon)
+    // 1.5: the "watching" notice shows its icon in the status bar (off = tucked away, no icon). 2.12 (owner: "Notifications should only pop
+    // up when the user needs to see something. We do not need a constant notification that the app is running and watching"): off by
+    // default, and switched off once on every device that had it on (noticeV) - it can be switched back on in Settings
+    val runIcon: Boolean = false,
     val autoUpdate: Boolean = true,       // 1.7: new versions install by themselves
     val buyMode: String = "pc",           // linked - who buys on Amazon here: "pc" (this device only watches) | "both" | "phone" (instead of the PC)
     val buyModeAt: Long = 0,              //   (2.3: each device its own choice - changed here or from another linked device; the newest change wins)
@@ -143,12 +150,19 @@ data class Settings(
     val masterCode: String = "",          // 2.7: the owner's master code typed here (Settings, About) - no purchase limit
     val alertTopic: String = "",          // 2.9: this phone's own ntfy alerts channel (made when you set it up; NtfyAlerts.channel picks the one used)
     val alertsOn: Boolean = false,        // 2.9: send alerts to that channel too (Settings, "Alerts on any device")
+    // 2.12: which messages this device shows (NotifyPrefs): restocks, price drops, purchases (and practice runs), "Restalker needs you"
+    val nRestock: Boolean = true,
+    val nDrop: Boolean = false,
+    val nBuy: Boolean = true,
+    val nNeed: Boolean = true,
+    val noticeHidden: Boolean = false,    // 2.12: the watching notice was swiped away - it stays away (kept across restarts)
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
         "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown, "runIcon" to runIcon, "autoUpdate" to autoUpdate,
         "buyMode" to buyMode, "buyModeAt" to buyModeAt, "failover" to failover, "deviceName" to deviceName, "crowd" to crowd, "masterCode" to masterCode,
-        "alertTopic" to alertTopic, "alertsOn" to alertsOn)
+        "alertTopic" to alertTopic, "alertsOn" to alertsOn, "nRestock" to nRestock, "nDrop" to nDrop, "nBuy" to nBuy, "nNeed" to nNeed,
+        "noticeHidden" to noticeHidden, "noticeV" to 1)
     companion object {
         const val MIN_INTERVAL = 60
         val BUY_MODES = listOf("pc", "phone", "both")
@@ -157,10 +171,12 @@ data class Settings(
             return Settings(m["watching"].asBool(), if (m.containsKey("buying")) m["buying"].asBool() else true, m["practice"] == true,
                 ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["signinNeededAt"].asLong() ?: 0, m["reportTopic"].asStr() ?: "", m["autoReport"] != false, m["reportAt"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
-                (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } }, m["runIcon"] != false, m["autoUpdate"] != false,
+                (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } }, (m["noticeV"].asLong() ?: 0) >= 1 && m["runIcon"] == true, m["autoUpdate"] != false,
                 (m["buyMode"].asStr() ?: "pc").takeIf { it in BUY_MODES } ?: "pc", m["buyModeAt"].asLong() ?: 0, m["failover"] != false,
                 (m["deviceName"].asStr() ?: "").take(40), m["crowd"] != false, (m["masterCode"].asStr() ?: "").take(40),
-                (m["alertTopic"].asStr() ?: "").takeIf { NtfyAlerts.ok(it) } ?: "", m["alertsOn"] == true)
+                (m["alertTopic"].asStr() ?: "").takeIf { NtfyAlerts.ok(it) } ?: "", m["alertsOn"] == true,
+                nRestock = m["nRestock"] != false, nDrop = m["nDrop"] == true, nBuy = m["nBuy"] != false, nNeed = m["nNeed"] != false,
+                noticeHidden = m["noticeHidden"] == true)
         }
     }
 }
