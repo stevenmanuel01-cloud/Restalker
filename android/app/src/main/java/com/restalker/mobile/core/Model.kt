@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.9"
+const val APP_VERSION = "2.10"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -240,15 +240,22 @@ object Tcg {
  *  linked PC watches. (price, store, that store's page) or null when nowhere has it. Pure: CoreTests. */
 object BestPrice {
     data class Offer(val price: Double, val store: String, val url: String)
-    fun of(p: Product): Offer? {
+    /** 2.10 (owner: "The low price still doesn't match the store price listed. Confirm where you are getting the low price information and
+     *  make sure these are consistent"): only a price SEEN in stock within the last [FRESH_MS] counts. 2.5-2.9 also took a store's last
+     *  price after that store was no longer looked at - e.g. Walmart's $369.99 for the Star Trek box the PC had bought there (the PC stops
+     *  watching a store after it bought there, so its last "in stock at $369.99" stayed). */
+    const val FRESH_MS = 2 * 3_600_000L
+    fun of(p: Product, now: Long = System.currentTimeMillis()): Offer? {
         val out = ArrayList<Offer>()
-        val (st, pr, _) = p.stock()
-        if ((st == "in" || st == "over") && pr != null && pr > 0) out += Offer(pr, "Amazon", p.url)
+        val (st, pr, at) = p.stock()
+        if ((st == "in" || st == "over") && pr != null && pr > 0 && now - at <= FRESH_MS) out += Offer(pr, "Amazon", p.url)
         for (o in p.others) {
             val s = o["st"].asStr() ?: continue
             val v = o["pr"].asDouble() ?: continue
             val u = o["u"].asStr()?.takeIf { it.startsWith("https://") } ?: continue
-            if ((s == "in" || s == "over") && v > 0) out += Offer(v, (o["s"].asStr() ?: "").ifBlank { "store" }, u)
+            val a0 = o["at"].asDouble() ?: 0.0
+            val aMs = if (a0 < 1e11) (a0 * 1000).toLong() else a0.toLong()        // (the PC sends seconds)
+            if ((s == "in" || s == "over") && v > 0 && now - aMs <= FRESH_MS) out += Offer(v, (o["s"].asStr() ?: "").ifBlank { "store" }, u)
         }
         return out.minByOrNull { it.price }
     }

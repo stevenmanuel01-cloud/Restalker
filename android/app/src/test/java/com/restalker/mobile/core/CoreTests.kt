@@ -871,10 +871,37 @@ object CoreTests {
                 mapOf("s" to "Target", "st" to "in", "pr" to 489.99, "u" to "https://www.target.com/p/x"),
                 mapOf("s" to "Walmart", "st" to "out", "pr" to 400.0, "u" to "https://www.walmart.com/ip/x"),
                 mapOf("s" to "GameStop", "st" to "in", "pr" to 450.0)))                                // (no page: not offered)
-            val b = BestPrice.of(p)!!
-            val amazonOnly = BestPrice.of(p.copy(others = emptyList()))!!
+            // (2.10: "now" = just after the looks - every price here is fresh; the PC sends its stores' times in seconds)
+            val now = 1_000L
+            val fresh = p.copy(others = p.others.map { it + ("at" to 0.5) })
+            val b = BestPrice.of(fresh, now)!!
+            val amazonOnly = BestPrice.of(p.copy(others = emptyList()), now)!!
             b.store == "Target" && b.price == 489.99 && b.url == "https://www.target.com/p/x" && amazonOnly.store == "Amazon" &&
-                amazonOnly.url == "https://www.amazon.com/dp/B0TEST0501" && BestPrice.of(p.copy(buyable = false, others = emptyList())) == null }
+                amazonOnly.url == "https://www.amazon.com/dp/B0TEST0501" && BestPrice.of(p.copy(buyable = false, others = emptyList()), now) == null }
+        // ---- 2.10 (owner, 2026-11-18 12:22 PM)
+        t("147_best_price_only_from_prices_seen_lately") {
+            val t0 = 1_800_000_000_000L
+            val p = Product(id = "x", asin = "B0H6H2VXJB", cap = 380.0, lastCheck = t0 - 60_000, buyable = false, overCap = true, price = 399.99, others = listOf(
+                mapOf("s" to "Walmart", "st" to "in", "pr" to 369.99, "at" to (t0 - 26 * 3_600_000L) / 1000.0, "u" to "https://www.walmart.com/ip/x"),   // (bought there a day ago: not looked at since)
+                mapOf("s" to "Target", "st" to "in", "pr" to 389.99, "at" to (t0 - 30 * 60_000L) / 1000.0, "u" to "https://www.target.com/p/x")))
+            val b = BestPrice.of(p, t0)!!
+            val noneFresh = BestPrice.of(p.copy(lastCheck = t0 - 5 * 3_600_000L, others = p.others.take(1)), t0)
+            b.store == "Target" && b.price == 389.99 && noneFresh == null }
+        t("148_bar_half_to_twice_the_msrp_rounded") {
+            val (a, b) = CapStep.range(399.99, 380.0, 455.88, 388.40)
+            val (c, d) = CapStep.range(null, 0.0, 39.99, null)
+            val (e, f) = CapStep.range(399.99, 380.0, null, 388.40)                 // (no MSRP: around the TCG price)
+            val (g, h) = CapStep.range(null, 0.0, null, null)
+            val pm = PriceMarks.of(399.99, 380.0, 455.88, 388.40, b, emptyMap(), a)
+            a == 200.0 && b == 950.0 && c == 15.0 && d == 80.0 && e == 150.0 && f == 800.0 && g == 0.0 && h == 50.0 &&
+                Math.abs(pm.frac(455.88) - ((455.88 - 200) / 750).toFloat()) < 1e-6 && pm.frac(100.0) == 0f && pm.frac(2000.0) == 1f &&
+                pm.items.first { it.kind == PriceMarks.ZERO }.label == "\$200" && clear(pm) }
+        t("149_chart_time_axis_in_quarters") {
+            val d0 = java.time.LocalDate.of(2026, 8, 21).toEpochDay(); val d1 = java.time.LocalDate.of(2026, 11, 18).toEpochDay()
+            val q = Quarters.of(d0, d1)
+            val y = Quarters.of(java.time.LocalDate.of(2025, 11, 20).toEpochDay(), d1)
+            q.map { it.third } == listOf("Q3 '26", "Q4 '26") && q.first().first == d0 && q.last().second == d1 + 1 &&
+                q[0].second == java.time.LocalDate.of(2026, 10, 1).toEpochDay() && y.map { it.third } == listOf("Q4 '25", "Q1 '26", "Q2 '26", "Q3 '26", "Q4 '26") }
         // ---- 2.6 (owner, 2026-11-17 6:50 PM: real crowd sharing): what is sent and taken, the count, the look limits
         t("131_crowd_sends_only_product_store_price_time") {
             val m = Crowd.sighting("0123456789ab", "B0GXC89N66", 455.881, 1.8e9)

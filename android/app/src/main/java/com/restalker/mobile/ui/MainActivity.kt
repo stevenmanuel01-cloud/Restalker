@@ -636,10 +636,8 @@ class MainActivity : ComponentActivity() {
      *  but should be green when its under"): where the price stands among the others. */
     @Composable
     fun PriceBar(p: Product, nowPr: Double?, cap: Double = p.cap, onDrag: (Double) -> Unit = {}, onDrop: (Double) -> Unit = {}) {
-        // 2.2: the scale stays put while the cap mark is dragged (from the values without the dragged cap; room up to 1.6 x)
-        // 2.8: the right end = the highest price seen (every store, TCG's last 3 months) + 10% room - not an arbitrary 1.6 x
-        val high = remember(p.id, p.others, p.dPr) { CapStep.high(p, try { com.restalker.mobile.core.TcgHist.of(RkApp.store(), p.asin) } catch (e: Exception) { emptyList() }) }
-        val scale = remember(p.id, p.cap, nowPr, p.msrp, p.tcg, high) { CapStep.scale(nowPr, p.cap, p.msrp, p.tcg, high) }
+        // 2.10: the bar runs from half to twice the MSRP (CapStep.range) - it stays put while the cap mark is dragged
+        val (lo, scale) = remember(p.id, p.msrp, p.tcg) { CapStep.range(nowPr, p.cap, p.msrp, p.tcg) }
         val under = nowPr != null && nowPr <= cap
         val barColor = if (nowPr == null) Look.GreyText else if (under) Look.Good else Look.BadText
         var last by remember { mutableStateOf(cap) }
@@ -652,16 +650,16 @@ class MainActivity : ComponentActivity() {
         BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp).testTag("pricebar-${p.asin}")) {
             val w = maxWidth
             val wPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
-            val texts = PriceMarks.labels(nowPr, cap, p.msrp, p.tcg)
+            val texts = PriceMarks.labels(nowPr, cap, p.msrp, p.tcg, lo)
             val sizes = texts.mapValues { (k, t) -> tm.measure(t, styleOf(k), maxLines = 1).size }
             val padPx = with(dens) { 6.dp.toPx() }
-            val marks = PriceMarks.of(nowPr, cap, p.msrp, p.tcg, scale, sizes.mapValues { (_, z) -> ((z.width + padPx) / wPx).toDouble() })
+            val marks = PriceMarks.of(nowPr, cap, p.msrp, p.tcg, scale, sizes.mapValues { (_, z) -> ((z.width + padPx) / wPx).toDouble() }, lo)
             val rowH = with(dens) { (sizes.values.maxOfOrNull { it.height } ?: 40).toDp() } + 3.dp
             val lineY = rowH * marks.rows + 10.dp
             Box(Modifier.fillMaxWidth().height(lineY + rowH + 26.dp)) {
-                val valueAt = { x: Float -> CapStep.snap(scale * (x / wPx).coerceIn(0f, 1f)) }
+                val valueAt = { x: Float -> CapStep.snap(lo + (scale - lo) * (x / wPx).coerceIn(0f, 1f)) }
                 // (only a drag that starts ON the cap mark moves it - a tap or a swipe elsewhere on the bar changes nothing)
-                val capPx = wPx * (cap / scale).toFloat().coerceIn(0f, 1f)
+                val capPx = wPx * ((cap - lo) / (scale - lo)).toFloat().coerceIn(0f, 1f)
                 val grabPx = with(dens) { 36.dp.toPx() }
                 Box(Modifier.fillMaxSize().testTag("capdrag-${p.asin}").pointerInput(p.id, scale, p.cap) {
                     detectHorizontalDragGestures(
@@ -670,7 +668,7 @@ class MainActivity : ComponentActivity() {
                         onHorizontalDrag = { ch, _ -> if (grabbed) { ch.consume(); last = valueAt(ch.position.x); onDrag(last) } })
                 })
                 // 2.5: the whole bar is a gradient - dark green (cheap) to dark red (very expensive); a white marker shows the price now
-                val (g1, g2, g3) = PriceMarks.gradient(marks.max, cap, p.msrp, p.tcg)
+                val (g1, g2, g3) = PriceMarks.gradient(marks.max, cap, p.msrp, p.tcg, lo)
                 // (drawn as 96 thin strips of solid color - no gradient shader: the API 33 / 34 test phones' software graphics froze on one)
                 // 2.8: a softer middle (a warm step between the light middle and red) and eased blends - green turns to red gradually
                 val stops = listOf(0.0 to Look.BarGreen, g1 to Look.BarGreenLight, g2 to Look.BarMid, (g2 + g3) / 2 to Look.BarWarm, g3 to Look.BarRedLight, 1.0 to Look.BarRed)
@@ -719,9 +717,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        // 2.8: what the far right stands for
-        val top = CapStep.top(nowPr, p.cap, p.msrp, p.tcg, high)
-        if (top > 0) Text("Right end: the highest price seen, \$${Engine.money(top)}" + (if (high != null && high >= top) " (other stores / TCG, last 3 months)" else ""),
+        // 2.10: what the bar covers
+        Text("Bar: \$${Engine.money(lo).removeSuffix(".00")} to \$${Engine.money(scale).removeSuffix(".00")}" + (if ((p.msrp ?: 0.0) > 0) " (half to twice the MSRP)" else ""),
             fontSize = 11.sp, color = Look.Muted, modifier = Modifier.padding(top = 2.dp).testTag("pricebar-end-${p.asin}"))
     }
 
@@ -758,12 +755,23 @@ class MainActivity : ComponentActivity() {
                 if (chg != null) Text(String.format(Locale.US, "  %+.1f%%", chg), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                     color = if (chg < 0) Look.Good else if (chg > 0) Look.BadText else Look.Muted, modifier = Modifier.testTag("tcgchange-${p.asin}"))
             }
-            Text("Low \$${Engine.money(lo0)} · High \$${Engine.money(hi0)} · " + (if (fromTcg) "TCGplayer, last " + (if (year && yr != null) "year" else "3 months") +
+            Text("Low \$${"%,.0f".format(lo0)} · High \$${"%,.0f".format(hi0)} · " + (if (fromTcg) "TCGplayer, last " + (if (year && yr != null) "year" else "3 months") +
                 (if (sold.any { it.second > 0 }) " · bars: items sold" else "") else "${pts.size} days recorded by the PC"), fontSize = 11.sp, color = Look.Muted,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
-            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(140.dp).testTag("tcgplot-${p.asin}")) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(158.dp).testTag("tcgplot-${p.asin}")) {
                 val lp = 44.dp.toPx()                                   // (the prices along the left side)
-                val top = 6.dp.toPx(); val w = size.width - lp; val h = size.height - top
+                val qh = 18.dp.toPx()                                   // (2.10: the quarters along the bottom)
+                val top = 6.dp.toPx(); val w = size.width - lp; val h = size.height - top - qh
+                // 2.10 (owner: "The price graph shows data points that are too specific. A year and quarter abbreviation is sufficient"):
+                // the time axis says only the quarter and year ("Q3 '26") - a faint line where a quarter starts, its name under its part
+                val qs = com.restalker.mobile.core.Quarters.of(d0, d1)
+                for ((qStart, qEnd, name) in qs) {
+                    val xa = lp + (if (d1 > d0) (qStart - d0).toFloat() / (d1 - d0) * w else 0f)
+                    val xb = lp + (if (d1 > d0) (qEnd - d0).toFloat() / (d1 - d0) * w else w)
+                    if (qStart > d0) drawLine(Look.Line, androidx.compose.ui.geometry.Offset(xa, top), androidx.compose.ui.geometry.Offset(xa, top + h), strokeWidth = 1f)
+                    val t = tm.measure(name, axisStyle)
+                    if (xb - xa >= t.size.width + 4) drawText(t, topLeft = androidx.compose.ui.geometry.Offset((xa + xb) / 2 - t.size.width / 2, top + h + 3.dp.toPx()))
+                }
                 val x = { d: Long -> lp + (if (d1 > d0) (d - d0).toFloat() / (d1 - d0) * w else w / 2) }
                 val y = { v: Double -> top + (h - ((v - lo) / (hi - lo)).toFloat() * h) }
                 for (k in 0..3) {
@@ -796,10 +804,6 @@ class MainActivity : ComponentActivity() {
                     drawText(t, topLeft = androidx.compose.ui.geometry.Offset(lp + 4.dp.toPx(), ty.coerceAtLeast(0f)))
                 }
                 drawCircle(Look.Navy, 4.dp.toPx(), androidx.compose.ui.geometry.Offset(x(d1), y(pts.last().second)))
-            }
-            Row(Modifier.fillMaxWidth().padding(start = 44.dp, top = 4.dp)) {
-                Text(day(d0), fontSize = 11.sp, color = Look.Muted, modifier = Modifier.weight(1f))
-                Text(day(d1), fontSize = 11.sp, color = Look.Muted, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
             }
             // 3 months / 1 year (when TCGplayer's year is there)
             if (yr != null && qr != null) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.Center) {

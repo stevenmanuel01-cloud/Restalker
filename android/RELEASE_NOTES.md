@@ -1,3 +1,10 @@
+# Restalker Mobile 2.10 (2026-11-18; your notes of 12:22 PM)
+- Price bar zoomed in: it runs from half the MSRP to twice the MSRP (rounded - e.g. $200 to $950 for a $455.88 box), so the labels
+  have more room. A line under it says the range. A price outside it sits at that end; its label still shows the real price.
+- TCG chart: the time axis shows only quarters ("Q3 '26", "Q4 '26"); low and high in whole dollars. Details: the TCG link.
+- Best price: only a price seen in stock in the last 2 hours counts. Before, a store the PC no longer looked at kept its last price -
+  the Star Trek box showed Walmart $369.99, the price the PC bought it at there.
+
 # Restalker Mobile 2.9 (2026-11-18; your notes of 8:09 AM)
 - "Bought 2×" next to each product's picture (the list and the product page) - every linked device's purchases counted.
 - TCG chart: prices along the left side, and your cap is always drawn as a labelled dashed line (the chart's range takes it in).

@@ -535,7 +535,7 @@ class ScreenTests {
         compose.onNodeWithTag("pricebar-gradient", useUnmergedTree = true).assertExists()             // 2.5: the gradient bar
         android.util.Log.i("RkTest", "t19 step 16")
         compose.onNodeWithTag("pricebar-end-B0TEST0701").assertExists()                             // 2.8
-        compose.onNodeWithText("highest price seen, \$612.00", substring = true).assertExists()
+        compose.onNodeWithText("Bar: \$200 to \$950 (half to twice the MSRP)", substring = true).assertExists()    // 2.10
         compose.onNodeWithTag("tcgchart-B0TEST0701").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("TCGplayer, last 3 months", substring = true).assertExists()
         compose.onNodeWithTag("tcgchange-B0TEST0701", useUnmergedTree = true).assertExists()

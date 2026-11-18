@@ -70,3 +70,22 @@ object TcgHist {
     fun pick(central: List<Pair<Long, Double>>, pc: List<Pair<Long, Double>>): Pair<List<Pair<Long, Double>>, Boolean> =
         if (central.size >= 2) central to true else pc to false
 }
+
+/** 2.10: the quarters a chart's days (days since 1970-01-01) cover: (first day, last day + 1, "Q3 '26"), oldest first. Pure: CoreTests. */
+object Quarters {
+    fun of(d0: Long, d1: Long): List<Triple<Long, Long, String>> {
+        if (d1 < d0) return emptyList()
+        val out = ArrayList<Triple<Long, Long, String>>()
+        var d = java.time.LocalDate.ofEpochDay(d0)
+        val end = java.time.LocalDate.ofEpochDay(d1)
+        while (!d.isAfter(end)) {
+            val q = (d.monthValue - 1) / 3
+            val qStart = java.time.LocalDate.of(d.year, q * 3 + 1, 1)
+            val next = qStart.plusMonths(3)
+            val a = maxOf(d.toEpochDay(), d0); val b = minOf(next.toEpochDay(), d1 + 1)
+            out += Triple(a, b, "Q${q + 1} '${(d.year % 100).toString().padStart(2, '0')}")
+            d = next
+        }
+        return out
+    }
+}
