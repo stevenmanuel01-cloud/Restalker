@@ -520,7 +520,8 @@ class ScreenTests {
         toList(hasTestTag("product-B0TEST0701"))
         android.util.Log.i("RkTest", "t19 step 11")
         compose.onNodeWithTag("boughtn-product-B0TEST0701", useUnmergedTree = true).assertExists()            // 2.9: "Bought 1x" by the picture
-        compose.onNodeWithText("Bought 1×", substring = true, useUnmergedTree = true).assertExists()
+        // (the count includes earlier tests' purchases of the same product, matched by name - so: a count is shown, not which one)
+        compose.onNodeWithTag("boughtn-product-B0TEST0701", useUnmergedTree = true).assert(androidx.compose.ui.test.hasText("Bought ", substring = true))
         compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle(); Thread.sleep(500)
         compose.onNodeWithTag("pboughtn-B0TEST0701", useUnmergedTree = true).assertExists()
         android.util.Log.i("RkTest", "t19 step 12")
