@@ -470,38 +470,64 @@ class ScreenTests {
     @Test fun t19_bought_and_tcg_link() {
         val s = RkApp.store()
         s.products().forEach { s.remove(it.id) }
+        android.util.Log.i("RkTest", "t19 step 1")
         s.add(prod("B0TEST0701", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(msrp = 455.88, tcg = 542.98))
+        android.util.Log.i("RkTest", "t19 step 2")
         s.addPurchase(com.restalker.mobile.core.Purchase(System.currentTimeMillis() - 60_000, "B0TEST0701", "The Hobbit Collector Booster Box", 455.88, null, true))
+        android.util.Log.i("RkTest", "t19 step 3")
         compose.waitForIdle()
+        android.util.Log.i("RkTest", "t19 step 4")
         compose.onNodeWithTag("tab1").performClick(); compose.waitForIdle()
+        android.util.Log.i("RkTest", "t19 step 5")
         try {
+            android.util.Log.i("RkTest", "t19 step 6")
             compose.waitUntil(5_000) { compose.onAllNodesWithTag("buy-row").fetchSemanticsNodes().isNotEmpty() }
+            android.util.Log.i("RkTest", "t19 step 7")
             compose.onAllNodesWithText("Amazon  ·  ", substring = true).onFirst().assertExists()      // (one per purchase - a second try adds one)
+            android.util.Log.i("RkTest", "t19 step 8")
             compose.onNodeWithTag("bought-total").assertExists()
             shot("t19_bought")
+        android.util.Log.i("RkTest", "t19 step 9")
         } finally { compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }           // (back on Watch even when it failed)
+        android.util.Log.i("RkTest", "t19 step 10")
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0701"))
+        android.util.Log.i("RkTest", "t19 step 11")
         compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle(); Thread.sleep(500)
+        android.util.Log.i("RkTest", "t19 step 12")
         compose.onNodeWithTag("tcglink-B0TEST0701").performScrollTo().assertIsDisplayed()
+        android.util.Log.i("RkTest", "t19 step 13")
         compose.onNodeWithText("TCG market \$542.98", substring = true).assertExists()
+        android.util.Log.i("RkTest", "t19 step 14")
         compose.onNodeWithTag("best-B0TEST0701").assertExists()                                      // 2.5: Best price line
+        android.util.Log.i("RkTest", "t19 step 15")
         compose.onNodeWithTag("pricebar-gradient", useUnmergedTree = true).assertExists()             // 2.5: the gradient bar
+        android.util.Log.i("RkTest", "t19 step 16")
         compose.onNodeWithTag("pbought-B0TEST0701").performScrollTo().assertIsDisplayed()
         shot("t19_product_bought")
+        android.util.Log.i("RkTest", "t19 step 17")
         compose.onNodeWithTag("back").performClick()
     }
 
     /** 2.6: the contributors line under the title; Settings: the crowd switch and About at the bottom. */
     @Test fun t20_crowd_contributors_about() {
+        android.util.Log.i("RkTest", "t19 step 18")
         compose.onNodeWithTag("contributors", useUnmergedTree = true).assertExists()
+        android.util.Log.i("RkTest", "t19 step 19")
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        android.util.Log.i("RkTest", "t19 step 20")
         compose.onNodeWithTag("about-text").performScrollTo().assertIsDisplayed()
+        android.util.Log.i("RkTest", "t19 step 21")
         compose.onNodeWithText("Restocks of sought-after Magic products", substring = true).assertExists()
         shot("t20_about")
+        android.util.Log.i("RkTest", "t19 step 22")
         compose.onNodeWithTag("crowd-on").performScrollTo().performClick()
+        android.util.Log.i("RkTest", "t19 step 23")
         compose.waitUntil(3_000) { !RkApp.store().settings().crowd }
+        android.util.Log.i("RkTest", "t19 step 24")
         compose.onNodeWithTag("crowd-on").performClick()
+        android.util.Log.i("RkTest", "t19 step 25")
         compose.waitUntil(3_000) { RkApp.store().settings().crowd }
+        android.util.Log.i("RkTest", "t19 step 26")
         compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
     }
 

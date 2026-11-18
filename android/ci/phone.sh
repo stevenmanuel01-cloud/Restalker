@@ -50,7 +50,8 @@ alive() { timeout 20 adb shell true >/dev/null 2>&1; }
 finish() { timeout 300 bash android/ci/evidence.sh || true; exit $fail; }
 if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP TESTS (nothing more can run on it)"; fail=1
   echo "--- how far the tests got"; grep -o "INSTRUMENTATION_STATUS: test=[a-zA-Z0-9_]*" instrument.txt | tail -4
-  echo "--- the phone's last words"; grep -E "FATAL|ANR in|Watchdog|lowmemorykiller|Low on memory|Killing|system_server|E/AndroidRuntime" live_logcat.txt | tail -30
+  echo "--- the test's last steps"; grep "RkTest" live_logcat.txt | tail -8
+  echo "--- the phone's last words"; grep -E "FATAL|ANR in|lowmemorykiller|Low on memory|E/AndroidRuntime|estalker" live_logcat.txt | tail -30
   tail -40 live_logcat.txt | cut -c1-220
   finish; fi
 
