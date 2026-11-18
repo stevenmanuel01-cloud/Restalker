@@ -982,6 +982,15 @@ object CoreTests {
             m.keys == setOf("B0TEST0911") && of == listOf(20400L to 520.5, 20410L to 530.0) && unlinked == 1 && linked == 0 &&
                 w.p("B0TEST0911").tcg == 530.0 && w.p("B0TEST0912").tcg == null && fromTcg && pts == of && !fromTcg2 && pts2.size == 2 &&
                 !TcgHist.ok("{}") && !TcgHist.ok("not json") && TcgHist.ok(json) && TcgHist.of(w.store, "B0NOTHERE1").isEmpty() }
+        t("141b_tcg_series_sold_bars_one_year_and_change") {
+            val w = World()
+            val json = MiniJson.write(mapOf("v" to 2, "h" to mapOf("B0TEST0931" to listOf(listOf(20700, 800.0, 40), listOf(20703, 520.0, -5), listOf(20706, 516.0, 12))),
+                "y" to mapOf("B0TEST0931" to listOf(listOf(20400, 900.0, 300), listOf(20407, 516.0, 20)))))
+            w.store.writeFile(TcgHist.FILE, json)
+            val q = TcgHist.series(w.store, "B0TEST0931")!!; val y = TcgHist.series(w.store, "B0TEST0931", year = true)!!
+            val v1 = TcgHist.parseSeries(MiniJson.write(mapOf("h" to mapOf("B0TEST0932" to listOf(listOf(20700, 1.0), listOf(20701, 2.0))))))["B0TEST0932"]!!
+            q.sold == listOf(20700L to 40, 20703L to 0, 20706L to 12) && y.pts.first() == (20400L to 900.0) && Math.abs(q.changePct!! - (-35.5)) < 1e-9 &&
+                v1.sold.all { it.second == 0 } && v1.pts.size == 2 && TcgHist.of(w.store, "B0TEST0931").size == 3 && TcgHist.series(w.store, "B0NONE0000") == null }
         t("142_tcg_page_link_from_the_central_list_the_pcs_link_stays") {
             val w = World(); w.add("B0TEST0913", 120.0, false); w.add("B0TEST0914", 120.0, false)
             w.store.update("idB0TEST0914") { it.copy(tcgUrl = "https://www.tcgplayer.com/product/1/the-pcs-own") }

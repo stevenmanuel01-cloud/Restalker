@@ -720,34 +720,54 @@ class MainActivity : ComponentActivity() {
             fontSize = 11.sp, color = Look.Muted, modifier = Modifier.padding(top = 2.dp).testTag("pricebar-end-${p.asin}"))
     }
 
-    /** 2.7: the TCG market price over time (one point a day, from the linked PC): a navy line on a light area, the highest and lowest
-     *  price, the first and last day, the price now; your cap as a dashed line when it is inside the range. */
+    /** 2.7: the TCG market price over time: a navy line on a light area, the highest and lowest price, the first and last day, the price
+     *  now; your cap as a dashed line when it is inside the range. 2.8 (owner: TCGplayer's own "Market Price History" chart): from
+     *  TCGplayer itself - the items sold as light bars behind the line, the change over the period, 3 months / 1 year. */
     @Composable
-    fun TcgChart(pts: List<Pair<Long, Double>>, p: Product, fromTcg: Boolean = false) {
+    fun TcgChart(pts0: List<Pair<Long, Double>>, p: Product, fromTcg: Boolean = false) {
+        var year by remember(p.id) { mutableStateOf(false) }
+        val yr = remember(p.id, fromTcg) { if (fromTcg) try { com.restalker.mobile.core.TcgHist.series(RkApp.store(), p.asin, year = true) } catch (e: Exception) { null } else null }
+        val qr = remember(p.id, fromTcg, pts0) { if (fromTcg) try { com.restalker.mobile.core.TcgHist.series(RkApp.store(), p.asin) } catch (e: Exception) { null } else null }
+        val ser = if (year && yr != null) yr else qr
+        val pts = ser?.pts ?: pts0
+        val sold = ser?.sold ?: emptyList()
         val lo0 = pts.minOf { it.second }; val hi0 = pts.maxOf { it.second }
         val pad = maxOf((hi0 - lo0) * 0.12, hi0 * 0.02, 1.0)
         val lo = lo0 - pad; val hi = hi0 + pad
         val d0 = pts.first().first; val d1 = pts.last().first
         val fmt = SimpleDateFormat("MMM d", Locale.US)
         val day = { d: Long -> fmt.format(Date(d * 86_400_000L + 43_200_000L)) }
+        val maxSold = (sold.maxOfOrNull { it.second } ?: 0).coerceAtLeast(1)
+        val chg = if (pts.first().second > 0) (pts.last().second / pts.first().second - 1) * 100 else null
         Column(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(16.dp).testTag("tcgchart-${p.asin}")) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("TCG market price", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                Text("\$${Engine.money(pts.last().second)} now", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Look.Navy)
+                Text("\$${Engine.money(pts.last().second)}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Look.Navy)
+                if (chg != null) Text(String.format(Locale.US, "  %+.1f%%", chg), fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (chg < 0) Look.Good else if (chg > 0) Look.BadText else Look.Muted, modifier = Modifier.testTag("tcgchange-${p.asin}"))
             }
-            Text("Low \$${Engine.money(lo0)} · High \$${Engine.money(hi0)} · " + (if (fromTcg) "TCGplayer, last ${((pts.last().first - pts.first().first + 15) / 30).coerceAtLeast(1)} month(s)" else "${pts.size} days recorded by the PC"), fontSize = 11.sp, color = Look.Muted,
+            Text("Low \$${Engine.money(lo0)} · High \$${Engine.money(hi0)} · " + (if (fromTcg) "TCGplayer, last " + (if (year && yr != null) "year" else "3 months") +
+                (if (sold.any { it.second > 0 }) " · bars: items sold" else "") else "${pts.size} days recorded by the PC"), fontSize = 11.sp, color = Look.Muted,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
-            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(120.dp)) {
                 val w = size.width; val h = size.height
                 val x = { d: Long -> if (d1 > d0) (d - d0).toFloat() / (d1 - d0) * w else w / 2 }
                 val y = { v: Double -> (h - ((v - lo) / (hi - lo)).toFloat() * h) }
                 for (k in 0..3) drawLine(Look.Line, androidx.compose.ui.geometry.Offset(0f, h * k / 3), androidx.compose.ui.geometry.Offset(w, h * k / 3), strokeWidth = 1f)
+                // (the items sold: light bars from the bottom, up to 70% of the height - like TCGplayer's own chart)
+                if (sold.size >= 2) {
+                    val bw = (w / sold.size * 0.72f).coerceAtLeast(2f)
+                    for ((d, q) in sold) if (q > 0) {
+                        val bh = h * 0.70f * q / maxSold
+                        drawRect(Look.BarSold, topLeft = androidx.compose.ui.geometry.Offset((x(d) - bw / 2).coerceIn(0f, w - bw), h - bh), size = androidx.compose.ui.geometry.Size(bw, bh))
+                    }
+                }
                 val line = androidx.compose.ui.graphics.Path(); val area = androidx.compose.ui.graphics.Path()
                 pts.forEachIndexed { i, (d, v) ->
                     if (i == 0) { line.moveTo(x(d), y(v)); area.moveTo(x(d), h); area.lineTo(x(d), y(v)) } else { line.lineTo(x(d), y(v)); area.lineTo(x(d), y(v)) }
                 }
                 area.lineTo(x(d1), h); area.close()
-                drawPath(area, Look.Navy.copy(alpha = 0.10f))
+                if (sold.size < 2) drawPath(area, Look.Navy.copy(alpha = 0.10f))
                 drawPath(line, Look.Navy, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5.dp.toPx()))
                 if (p.cap > lo && p.cap < hi) drawLine(Look.Accent, androidx.compose.ui.geometry.Offset(0f, y(p.cap)), androidx.compose.ui.geometry.Offset(w, y(p.cap)),
                     strokeWidth = 2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
@@ -758,6 +778,13 @@ class MainActivity : ComponentActivity() {
                 if (p.cap > lo && p.cap < hi) Text("- - your cap \$${Engine.money(p.cap)}", fontSize = 11.sp, color = Look.AmberText, modifier = Modifier.weight(1f),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 Text(day(d1), fontSize = 11.sp, color = Look.Muted, modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
+            }
+            // 3 months / 1 year (when TCGplayer's year is there)
+            if (yr != null && qr != null) Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.Center) {
+                listOf(false to "3M", true to "1Y").forEach { (y1, l) ->
+                    FilterChip(year == y1, { year = y1 }, { Text(l, fontSize = 12.sp) }, modifier = Modifier.padding(horizontal = 6.dp).testTag("tcgrange-$l"),
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.Navy, selectedLabelColor = Color.White))
+                }
             }
         }
     }
