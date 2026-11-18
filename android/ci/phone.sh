@@ -124,6 +124,8 @@ adb shell am instrument -w -r -e debug false -e class $P.ScreenTests -e shotTag 
 grep -E "^OK|FAILURES|Tests run" instrument_big.txt | tail -3
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument_big.txt | cut -c1-600
 grep -E "ScreenTests.kt:[0-9]+" instrument_big.txt | head -10
+# 2.4: what the screen held when a big-text test could not find something (the first failure in full)
+grep -m1 -A60 "Semantics of the node" instrument_big.txt | grep -v "^\s*at " | head -60
 if grep -q "^OK (" instrument_big.txt; then :; elif grep -q "device offline\|not found\|Process crashed" instrument_big.txt && ! adb shell true 2>/dev/null; then echo "(the virtual phone dropped off during the big-text run)"; else judge instrument_big.txt -e shotTag _big || fail=1; fi
 fi
 

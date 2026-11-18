@@ -474,11 +474,12 @@ class ScreenTests {
         s.addPurchase(com.restalker.mobile.core.Purchase(System.currentTimeMillis() - 60_000, "B0TEST0701", "The Hobbit Collector Booster Box", 455.88, null, true))
         compose.waitForIdle()
         compose.onNodeWithTag("tab1").performClick(); compose.waitForIdle()
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("buy-row").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Amazon  ·  ", substring = true).assertExists()
-        compose.onNodeWithTag("bought-total").assertExists()
-        shot("t19_bought")
-        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+        try {
+            compose.waitUntil(5_000) { compose.onAllNodesWithTag("buy-row").fetchSemanticsNodes().isNotEmpty() }
+            compose.onAllNodesWithText("Amazon  ·  ", substring = true).onFirst().assertExists()      // (one per purchase - a second try adds one)
+            compose.onNodeWithTag("bought-total").assertExists()
+            shot("t19_bought")
+        } finally { compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }           // (back on Watch even when it failed)
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("product-B0TEST0701"))
         compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle(); Thread.sleep(500)
         compose.onNodeWithTag("tcglink-B0TEST0701").performScrollTo().assertIsDisplayed()
