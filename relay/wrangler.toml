@@ -1,0 +1,19 @@
+# Restalker relay - deployed by .github/workflows/relay.yml (secrets come from the repository's GitHub secrets).
+name = "restalker-relay"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "HUB"
+class_name = "Hub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Hub"]
+
+[triggers]
+crons = ["* * * * *", "*/15 * * * *", "7 16 * * *"]
+
+[observability]
+enabled = true

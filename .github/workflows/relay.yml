@@ -1,0 +1,73 @@
+# Restalker relay + Discord (stage 2 of the growth plan). Runs when relay/ changes on main, or by hand.
+# Secrets (the owner's, 2026-11-19): CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, DISCORD_APP_ID, DISCORD_PUBLIC_KEY, DISCORD_BOT_TOKEN.
+# Nothing secret is ever printed.
+name: relay
+on:
+  push:
+    branches: [main]
+    paths: ["relay/**", ".github/workflows/relay.yml"]
+  workflow_dispatch:
+concurrency:
+  group: relay
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
+      DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
+      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Relay rules tests
+        run: node --test test/logic.test.mjs
+      - name: workers.dev address
+        run: |
+          python3 - <<'EOF'
+          import json, os, random, urllib.request, urllib.error
+          A, T = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip(), os.environ["CLOUDFLARE_API_TOKEN"].strip()
+          def cf(method, body=None):
+              req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/accounts/{A}/workers/subdomain", method=method,
+                  data=json.dumps(body).encode() if body else None, headers={"Authorization": "Bearer " + T, "Content-Type": "application/json"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
+              except urllib.error.HTTPError as e: return json.loads(e.read().decode() or "{}")
+          sub = (cf("GET").get("result") or {}).get("subdomain")
+          if not sub:
+              for name in ["restalker", "restalker-relay", "restalker-" + "".join(random.choice("abcdefghjkmnpqrstuvwxyz23456789") for _ in range(5))]:
+                  r = cf("PUT", {"subdomain": name})
+                  print("try", name, "->", r.get("success"), [e.get("message") for e in r.get("errors", [])])
+                  if r.get("success"): sub = name; break
+          if not sub: raise SystemExit("no workers.dev address could be made")
+          print("workers.dev address:", sub)
+          open(os.environ["GITHUB_ENV"], "a").write(f"BASE=https://restalker-relay.{sub}.workers.dev\n")
+          EOF
+      - name: Discord server (channels, roles, intro messages)
+        run: python3 discord_setup.py ../mobile/catalog.json src/discord.json
+      - name: Deploy the relay
+        run: npx wrangler deploy
+      - name: The relay's secrets
+        run: |
+          python3 -c "import json,os; json.dump({k: os.environ[k].strip() for k in ['DISCORD_BOT_TOKEN','DISCORD_PUBLIC_KEY','DISCORD_APP_ID']}, open('/tmp/s.json','w'))"
+          npx wrangler secret bulk /tmp/s.json; rm -f /tmp/s.json
+      - name: The relay answers
+        run: |
+          for i in $(seq 1 20); do r=$(curl -s -m 15 "$BASE/v1/stats" || true); echo "$r" | grep -q '"ok":true' && break; sleep 6; done
+          echo "$BASE/v1/stats -> $r"
+          echo "$r" | grep -q '"discord":true'
+      - name: Slash commands and the interactions address
+        run: python3 discord_setup.py ../mobile/catalog.json src/discord.json "$BASE"
+      - name: Live check (the crowd read runs every minute)
+        run: |
+          sleep 75
+          curl -s -m 15 "$BASE/v1/stats?log" | python3 -m json.tool
