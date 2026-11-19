@@ -1,4 +1,5 @@
-# Prints the live relay's stats and its recent log (nothing secret) - Claude reads it (the relay's address is not reachable from Claude's workspace).
+# Prints the live relay's stats, its recent log and ~70 s of its own log stream (nothing secret) - Claude reads it (the relay's
+# address is not reachable from Claude's workspace).
 name: relay-check
 on:
   push:
@@ -7,8 +8,34 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - run: |
+      - uses: actions/checkout@v4
+      - name: Stats
+        run: |
           curl -s -m 20 "https://restalker-relay.restalker.workers.dev/v1/stats?log" | python3 -m json.tool
           curl -s -m 20 "https://restalker-relay.restalker.workers.dev/v1/feed?since=0" | python3 -c "import sys,json; d=json.load(sys.stdin); print('feed events:', len(d['events'])); [print(e) for e in d['events'][-10:]]"
-# run 1
+      - name: Live log for 75 s
+        working-directory: relay
+        run: |
+          npm ci --no-audit --no-fund >/dev/null 2>&1
+          timeout 75 npx wrangler tail restalker-relay --format json > /tmp/tail.json 2>/tmp/tail.err || true
+          python3 - <<'PY'
+          import json
+          raw = open("/tmp/tail.json").read()
+          dec = json.JSONDecoder(); i = 0; n = 0
+          while i < len(raw):
+              raw2 = raw[i:].lstrip(); 
+              if not raw2: break
+              try: obj, j = dec.raw_decode(raw2)
+              except Exception: break
+              i = len(raw) - len(raw2) + j; n += 1
+              ev = obj.get("event") or {}
+              print(obj.get("outcome"), obj.get("scriptName"), ev.get("cron") or (ev.get("request") or {}).get("url"),
+                    [l.get("message") for l in obj.get("logs", [])][:3], [e.get("message") for e in obj.get("exceptions", [])][:3])
+          print("events seen:", n)
+          PY
+          tail -5 /tmp/tail.err
+# run 2
