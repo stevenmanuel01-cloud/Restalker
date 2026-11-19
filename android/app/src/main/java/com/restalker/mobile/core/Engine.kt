@@ -57,7 +57,14 @@ class Engine(private val store: Store, private val page: Page, private val alert
              private val master: () -> Boolean = { true },
              private val boughtOf: (Product) -> Int = { 0 },
              /** 2.14: the bytes this app has received so far (-1 = not known) - for "Data by activity" in the diagnostics. */
-             rxBytes: () -> Long = { -1L }) {
+             rxBytes: () -> Long = { -1L },
+             /** 2.15: every linked device takes part in the shared checkout lock (then they race; the first at Place your order wins). */
+             private val raceOn: () -> Boolean = { false },
+             /** 2.15: claim the product right before Place your order: true = this device has it, false = another of your devices has it,
+              *  null = the lock could not be asked (then the 2.2 rules decide - never two orders). */
+             private val raceLock: (String) -> Boolean? = { null },
+             /** 2.15: how this device's claimed checkout ended ("bought" keeps the others out for a day; "failed" frees it). */
+             private val raceRelease: (String, String) -> Unit = { _, _ -> }) {
     val meter = DataMeter(rxBytes)
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
@@ -66,6 +73,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         data class PracticeAny(val asin: String) : Cmd()   // 2.0: a practice checkout of ANY Amazon item that is in stock (nothing is bought)
         data class Crowd(val asin: String) : Cmd()          // 2.6: another Restalker saw it in stock on Amazon - look now
         data class Go(val asin: String) : Cmd()             // 2.2: the PC saw it in stock under the cap (Who buys: phone / both) - look now
+        data class Baseline(val id: String) : Cmd()         // 2.15: the first look when the app starts (prices to set a cap by)
         object Wake : Cmd()
         object Quit : Cmd()
     }
@@ -73,6 +81,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private val q = LinkedBlockingDeque<Cmd>()
     @Volatile var pausedFor: String? = null               // e.g. "you are using the browser" - nothing is opened meanwhile
     @Volatile var busyWith: String = "idle"; private set
+    @Volatile private var quietLook = false              // 2.15: a start-up look at a product that is not watched (nothing said or shared)
     @Volatile private var quit = false
     @Volatile private var overrideDesk: String? = null
 
@@ -138,6 +147,15 @@ class Engine(private val store: Store, private val page: Page, private val alert
             is Cmd.Quit -> quit = true
             is Cmd.Wake -> {}
             is Cmd.CheckNow -> store.product(c.id)?.let { check(it, manual = true) }
+            is Cmd.Baseline -> {
+                // 2.15 (owner: "When the app starts up, it should do an automatic 1 time check of all products so that the data is included as
+                // a base. It is difficult for a user to assess a cap if they have no data showing what the prices are"): a watched product
+                // gets its usual look; one that is not watched only gets its price and stock written down - no message, no sharing, no buying
+                val p = store.product(c.id) ?: return
+                if (now() < s().cooldownUntil || network() == null || (s().wifiOnly && network() != "wifi")) return
+                if (now() - p.lastCheck < BASELINE_FRESH) return
+                if (p.watch) check(p) else { quietLook = true; try { meter.run("looks") { openAndRead(p) } } finally { quietLook = false; busyWith = "idle" } }
+            }
             is Cmd.Go -> {
                 // 2.2 (owner: "buy only on app (so the desktop is doing the searching work but pushing purchasing to the app)"): the PC's
                 // signal - this phone looks at the product at once and buys it if IT sees it in stock under the cap (the PC's word alone
@@ -160,6 +178,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
             is Cmd.BuyNow -> {
                 val p = store.product(c.id) ?: return
                 if (p.purchased || p.attempted) { alerts.needYou("Not bought", "${p.label} was already ordered once - press Re-arm in the app to buy it again.", p); return }
+                if (p.cap <= 0) { alerts.needYou("Not bought - no cap", "${p.label} is watched without a price cap. Open it in the app and set the most you'll pay, then Buy.", p); return }
                 store.update(p.id) { it.copy(buy = true, watch = true) }
                 if (!s().buying) store.setSettings { it.copy(buying = true) }
                 log("${p.label}: Buy now pressed on the message - set to buy, looking at it now.")
@@ -241,7 +260,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val before = store.product(p.id) ?: p
         setSeen(before, text, price, eligible)
         val over = reason == "price above cap"
-        if ((eligible || over) && !(before.buyable || before.overCap)) try { onSighting(p.asin, price) } catch (e: Exception) { }
+        if ((eligible || over) && !(before.buyable || before.overCap) && !quietLook) try { onSighting(p.asin, price) } catch (e: Exception) { }
         if (over != (store.product(p.id)?.overCap ?: false)) store.update(p.id) { it.copy(overCap = over) }
         // 1.5: the product's picture (Amazon's own, from this page) - once
         if ((store.product(p.id)?.image ?: "").isBlank()) takePicture(p)
@@ -271,7 +290,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
             it.copy(status = text, price = price ?: if (buyable) it.price else price, lastCheck = t, buyable = buyable,
                 episodeStart = if (newEp) t else it.episodeStart)
         }
-        if (buyable && !p.buyable) { detail("${p.label}: $text"); freshId = p.id }
+        if (buyable && !p.buyable && !quietLook) { detail("${p.label}: $text"); freshId = p.id }
     }
 
     fun check(p0: Product, manual: Boolean = false) {
@@ -308,7 +327,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     /** 2.3 (each device its own choice): may THIS device buy now? "both" / "phone": yes; "pc": only when the PC has stopped (not when it
      *  handed Amazon to another device) and "takes over" is on; never while another phone / tablet is first in line (one order). */
-    private fun mayBuyHere(): Boolean = !otherPhoneBuys() && when (buyerMode()) {
+    private fun mayBuyHere(): Boolean = (!otherPhoneBuys() || (raceOn() && buyerMode() != "pc")) && when (buyerMode()) {
         "pc" -> failover() && !desktopBuys() && !pcHanded()
         else -> true
     }
@@ -366,11 +385,12 @@ class Engine(private val store: Store, private val page: Page, private val alert
     }
 
     // ------------------------------------------------------------------ buying (the desktop's _try_amazon)
-    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT }
+    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT, RACE_LOST }
 
     fun buy(p: Product, price: Double?, forcePractice: Boolean = false) = meter.run("checkouts") { buyNow(p, price, forcePractice) }
 
     private fun buyNow(p: Product, price: Double?, forcePractice: Boolean) {
+        var lockHeld = false                     // 2.15: this device holds the shared checkout lock for it
         val practice = forcePractice || s().practice
         busyWith = "checking out ${p.label}" + if (practice) " (practice)" else ""
         if (!practice && !canAutoBuy(p)) { busyWith = "idle"; return }
@@ -406,9 +426,16 @@ class Engine(private val store: Store, private val page: Page, private val alert
                                 end = End.PRACTICE_OK
                                 continue@loop
                             }
-                            // 2.2: Who buys = both - the PC's own try first
+                            // 2.15: the race - the first of your devices at Place your order claims the product; the others stop
+                            val claim = if (raceOn()) try { raceLock(p.asin) } catch (e: Exception) { null } else null
+                            if (claim == false) {
+                                page.ask(mapOf("bb" to "reply", "n" to x["n"], "value" to mapOf("ok" to false, "reason" to "another of your devices is ordering it")), 4_000)
+                                end = End.RACE_LOST; why = "another of your devices got to Place your order first - not ordered here"; return
+                            }
+                            if (claim == true) { lockHeld = true; detail("${p.label}: this device won the race to Place your order (the shared lock).") }
+                            // 2.2: Who buys = both - the PC's own try first (when the shared lock could not be asked)
                             val h0 = now()
-                            val held = holdForPc(p, startedAt)
+                            val held = if (claim == true) null else holdForPc(p, startedAt)
                             until += now() - h0                  // (the wait does not count against the checkout's own time)
                             if (held != null) {
                                 page.ask(mapOf("bb" to "reply", "n" to x["n"], "value" to mapOf("ok" to false, "reason" to held)), 4_000)
@@ -460,6 +487,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 why = "Amazon asked to sign in"; end = End.STOPPED; actionRequired(p, "sign in required")
             }
             if (end != End.BOUGHT) try { page.ask(mapOf("bb" to "reset"), 4_000) } catch (e: Exception) { }    // (no unfinished checkout is left in the browser)
+            // 2.15: the shared lock - bought (or maybe bought) keeps your other devices out; anything else frees it at once
+            if (lockHeld) try { raceRelease(p.asin, if (end == End.BOUGHT || end == End.UNCLEAR) "bought" else "failed") } catch (e: Exception) { }
             finish(p, end, why, order, paid, practiceFees, submitted)
             try { page.images(false) } catch (e: Exception) { }
             busyWith = "idle"
@@ -493,6 +522,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 store.update(p.id) { it.copy(inProgress = false, practiceOkAt = now(), status = "PRACTICE OK - reached Place your order") }
                 log("${p.label}: $txt")
                 alerts.practice(store.product(p.id) ?: p, txt)
+            }
+            End.RACE_LOST -> {
+                // (nothing counts against this device; the winner's purchase comes over the link and turns Buy off as usual)
+                store.update(p.id) { it.copy(inProgress = false, status = "ANOTHER OF YOUR DEVICES IS ORDERING IT - not ordered here") }
+                log("${p.label}: $why.")
             }
             End.PC_BOUGHT -> {
                 // (one order per product: Buy goes off here; the PC's purchase comes over the link as usual)
@@ -634,6 +668,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val HOLD_NONE_MS = 10_000L        // 2.2: ... and when the PC says nothing at all about this product in that time, it is not trying it
         const val STANDBY_MS = 30 * 60_000L     // 1.6: was 10 min (about 80 MB an hour on the owner's phone); the desktop's view shows meanwhile
         const val PIC_RETRY_MS = 24 * 3600_000L
+        const val BASELINE_FRESH = 6 * 3_600_000L          // 2.15: a product looked at in the last 6 hours is not looked at again on start-up
         fun money(d: Double) = String.format(java.util.Locale.US, "%.2f", d)
         fun secs(ms: Long) = if (ms < 90_000) "in ${(ms + 999) / 1000} s" else "in ${(ms + 59_999) / 60_000} min"
     }

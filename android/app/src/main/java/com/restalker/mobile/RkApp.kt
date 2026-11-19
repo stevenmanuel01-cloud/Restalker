@@ -13,6 +13,14 @@ class RkApp : Application() {
         app = this
         com.restalker.mobile.core.Pics.broken = { u -> Pics2.broken(u) }
         Notifier.channels(this)
+        // 2.15 (owner, 2026-11-19: "it should be happening simultaneously with the PC. Its a race to checkout, so whichever happens first
+        // is the winner"): once, every device that only watched ("PC only") is set to buy too (Who buys: both). With a PC that does not
+        // know the shared lock yet, "both" still waits for the PC's own try at Place your order (2.2) - never two orders.
+        try {
+            val st = store()
+            if (st.settings().modeV < 1) store().setSettings { it.copy(modeV = 1, buyMode = if (it.buyMode == "pc") "both" else it.buyMode,
+                buyModeAt = if (it.buyMode == "pc") System.currentTimeMillis() else it.buyModeAt) }
+        } catch (e: Exception) { }
         // 2.1: after an update the linked PC learns this app's version at once (it then sends no "new version" message)
         Thread {
             try {

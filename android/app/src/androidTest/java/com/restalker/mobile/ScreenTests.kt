@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -468,6 +469,7 @@ class ScreenTests {
         compose.onNodeWithTag("runicon").performClick()
         compose.waitUntil(3_000) { RkApp.store().settings().runIcon == icon0 }
         Thread.sleep(500); shot("t12_linked")
+        sec("desk")                                                       // (2.15: one part open at a time - notes closed it)
         compose.onNodeWithTag("unlink").performScrollTo().performClick()
         compose.onNodeWithTag("unlink-yes").performClick()
         compose.waitUntil(30_000) { !DeskLink.get().linked() }
@@ -647,6 +649,91 @@ class ScreenTests {
             sec("notes")                                                   // closes again
             compose.waitUntil(3_000) { compose.onAllNodesWithTag("n-drop").fetchSemanticsNodes().isEmpty() }
         } finally { RkApp.store().setSettings { it.copy(nRestock = true, nDrop = false, nBuy = true, nNeed = true) }; compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }
+    }
+
+    /** 2.15: Settings - navy parts, one open at a time; red marks on what needs you (go away when tapped); Activity in days, only
+     *  restocks / checkouts / problems; Check now shows a turning circle. */
+    @Test fun t23_navy_settings_marks_activity_days_spinner() {
+        val s = RkApp.store()
+        s.setSettings { it.copy(attnSeen = emptyMap(), attnDaily = true) }
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0701", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0).copy(status = "NOT BOUGHT - Amazon checkout: sold out"))
+        s.log("Watching switched ON.")
+        s.log("The Hobbit Collector Booster Box: cap \$485.00.")
+        s.log("The Hobbit Collector Booster Box: in stock at \$350.00 - buying it now.")
+        s.log("The Hobbit Collector Booster Box: CHECKOUT started (\$350.00, cap \$400.00)")
+        compose.waitForIdle()
+        // the product that needs you: a red mark on the card and on the Watch tab; opening it takes the card's mark away
+        toList(hasTestTag("product-B0TEST0701"))
+        compose.onNodeWithTag("attn-B0TEST0701", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("tabattn0", useUnmergedTree = true).assertExists()
+        shot("t23_watch_marks")
+        compose.onNodeWithTag("product-B0TEST0701").performClick(); compose.waitForIdle()
+        // Check now: a turning circle until the look is done
+        compose.onNodeWithTag("check-B0TEST0701").performScrollTo().performClick()
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("busy-check-B0TEST0701", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        shot("t23_check_spinner")
+        compose.onNodeWithTag("back").performScrollTo().performClick(); compose.waitForIdle()
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("attn-B0TEST0701", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+        // Settings: navy parts; not signed in to Amazon on the test phone -> the red mark; opening the part takes it away
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("attn-amazon", useUnmergedTree = true).assertExists()
+        Thread.sleep(400); shot("t23_settings_navy_marks")
+        sec("amazon")
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("attn-amazon", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("buying").assertExists()
+        sec("notes")                                                      // one part open at a time
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("buying").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("attn-daily").performScrollTo()
+        sec("discord")
+        compose.onNodeWithTag("discord-join").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("discord-sharing", useUnmergedTree = true).assertExists()
+        Thread.sleep(400); shot("t23_discord")
+        // Activity: a navy bar per day; restocks and checkouts shown, settings changes not
+        compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
+        compose.onNodeWithText("CHECKOUT started", substring = true).assertExists()
+        compose.onNodeWithText("in stock at \$350.00", substring = true).assertExists()
+        assertTrue("settings changes are not in Activity", compose.onAllNodesWithText("Watching switched ON", substring = true).fetchSemanticsNodes().isEmpty() &&
+            compose.onAllNodesWithText("cap \$485.00.", substring = true).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithText("Today").assertExists()
+        Thread.sleep(400); shot("t23_activity_days")
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+    }
+
+    /** 2.15 (owner: "the CAP should not be required to watch, but is required for buying"). */
+    @Test fun t24_watch_without_a_cap_buy_asks_for_one() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0801", "Lorwyn Eclipsed Collector Booster Box", "2026", "Lorwyn Eclipsed").copy(cap = 0.0, watch = false))
+        compose.waitForIdle()
+        toList(hasTestTag("product-B0TEST0801"))
+        compose.onNodeWithTag("product-B0TEST0801").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("watch-B0TEST0801").performScrollTo().performClick(); compose.waitForIdle()
+        compose.waitUntil(3_000) { s.products().first { it.asin == "B0TEST0801" }.watch }
+        assertEquals("no cap asked to watch", 0.0, s.products().first { it.asin == "B0TEST0801" }.cap, 0.001)
+        Thread.sleep(300); shot("t24_watch_no_cap")
+        compose.onNodeWithTag("back").performScrollTo().performClick(); compose.waitForIdle()
+        // the add form: no cap and Buy off -> added, watched only; Buy on without a cap -> asks for the cap
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
+        compose.onNodeWithTag("add").performClick()
+        compose.onNodeWithTag("f-link").performTextInput("B0TEST0802")
+        compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()
+        val buyOn = try { compose.onNodeWithTag("f-buy").assertIsOn(); true } catch (e: AssertionError) { false }
+        if (!buyOn) { compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle() }
+        compose.onNodeWithTag("f-save").performClick(); compose.waitForIdle()
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("f-err", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("To buy it, enter the price cap", substring = true).assertExists()
+        compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()      // Buy off: just watch
+        for (k in 0 until 3) {
+            if (s.products().any { it.asin == "B0TEST0802" }) break
+            compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
+            try { compose.waitUntil(5_000) { s.products().any { it.asin == "B0TEST0802" } }; break } catch (e: Throwable) { if (k == 2) throw e }
+        }
+        val q = s.products().first { it.asin == "B0TEST0802" }
+        assertTrue("watched, no cap, not set to buy", q.watch && q.cap == 0.0 && !q.buy)
+        compose.waitForIdle()
+        toList(hasTestTag("product-B0TEST0802"))
+        Thread.sleep(300); shot("t24_added_no_cap")
     }
 
     @Test fun t8_turnPhoneSideways_noCrash() {

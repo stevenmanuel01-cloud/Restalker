@@ -6,6 +6,13 @@ package com.restalker.mobile.core
  *  a purchase is running). Android itself also refuses a file not signed with the app's own key. */
 object UpdatePlan {
     const val NOTE_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/latest.json"
+    /** 2.15 (owner, 2026-11-19: "my linked devices need to be considered the master/beta/administrator versions. When future changes are
+     *  made, this should be pushed to my linked devices only ... rolled into a single wider update for all other users"): the owner's
+     *  devices also read this one - every new version goes here first; latest.json (everyone) only when the owner says so. */
+    const val BETA_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/beta.json"
+
+    /** The newer of the two offers (the owner's devices: the test version when it is newer than the one for everyone). */
+    fun pick(stable: Offer?, beta: Offer?): Offer? = listOfNotNull(stable, beta).maxByOrNull { it.code }
     const val APK_PREFIX = "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v"
     const val CHECK_EVERY_MS = 3 * 3_600_000L
     const val RETRY_SOON_MS = 2 * 60_000L

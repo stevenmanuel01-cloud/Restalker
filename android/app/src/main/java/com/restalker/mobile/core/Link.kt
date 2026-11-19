@@ -35,6 +35,10 @@ object LinkCrypto {
     }
 
     private fun prf(k: ByteArray, m: ByteArray): ByteArray = Mac.getInstance("HmacSHA256").run { init(SecretKeySpec(k, "HmacSHA256")); doFinal(m) }
+
+    /** 2.15: the group code of one person's linked devices for the shared checkout lock (the relay) - made from the link secret, so no
+     *  one else can guess it; the PC makes the same one (phonelink.py lock_group). */
+    fun lockGroup(secret: ByteArray): String = prf(secret, "rk-lock".toByteArray()).joinToString("") { "%02x".format(it) }.take(32)
     private fun be32(i: Int) = byteArrayOf((i ushr 24).toByte(), (i ushr 16).toByte(), (i ushr 8).toByte(), i.toByte())
     private fun stream(kenc: ByteArray, nonce: ByteArray, n: Int): ByteArray {
         val out = ByteArray(n); var i = 0; var off = 0
@@ -236,6 +240,7 @@ class Link(private val store: Store, private val net: LinkNet,
             if (d.isNotEmpty()) s.phones[d] = linkedMapOf("at" to (srvTime ?: now), "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(),
                 "av" to (msg["av"].asLong() ?: 0L), "nm" to (msg["nm"].asStr() ?: "").take(40), "bm" to (msg["bm"].asStr() ?: "").take(8),
                 "fo" to (msg["fo"] != false), "vn" to (msg["vn"].asStr() ?: "").take(12),
+                "lk" to msg["lk"].asBool(),                                           // 2.15: it takes part in the shared checkout lock
                 "nt" to (msg["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""),     // 2.9: that device's alerts channel
                 // 2.4: that device's purchases (a post without them keeps the last list heard)
                 "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"], Buys.MAX_SENT) else s.phones[d]?.get("buys").asList()))
@@ -251,6 +256,7 @@ class Link(private val store: Store, private val net: LinkNet,
                 // 2.4: the PC's purchase list - it sends it only when it changed (or every 6 hours): kept until then
                 "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"]) else s.peer["buys"].asList()),
                 "mst" to msg["mst"].asBool(),            // 2.7: the PC is the owner's (no purchase limit on its linked devices)
+                "lk" to msg["lk"].asBool(),              // 2.15: the PC takes part in the shared checkout lock
                 "nt" to (msg["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""),     // 2.9: the PC's alerts channel ("Phone: set up")
                 // 2.7: the TCG price history the PC recorded - sent only when it changed: kept until then
                 "th" to (if (msg.containsKey("th")) cleanHistory(msg["th"]) else s.peer["th"].asMap() ?: emptyMap<String, Any?>()))
@@ -343,7 +349,7 @@ class Link(private val store: Store, private val net: LinkNet,
             "nt" to (mine["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""), "items" to s.recs.values.map { it.post() },
             "bm" to store.settings().buyMode, "bmAt" to store.settings().buyModeAt / 1000.0,        // 2.3: THIS device's choice (each its own)
             "fo" to store.settings().failover, "nm" to (mine["nm"] as? String ?: "").take(40), "vn" to (mine["vn"] as? String ?: "").take(12),
-            "buys" to Buys.post(store.purchases()))
+            "buys" to Buys.post(store.purchases()), "lk" to true)              // 2.15: this app takes part in the shared checkout lock
         val set = pendingSet
         set?.let { o["set"] = it }
         if (bye) o["bye"] = true
@@ -415,6 +421,22 @@ class Link(private val store: Store, private val net: LinkNet,
         val t = nowS()
         return ph.any { (d, v) -> d != dev && v["amz"].asBool() && !v["bye"].asBool() && t - (v["at"].asDouble() ?: 0.0) < PHONE_ALIVE && d < dev }
     }
+
+    /** 2.15 (owner: "Its a race to checkout, so whichever happens first is the winner and should lock the product normally"): every
+     *  linked device that may buy takes part in the shared checkout lock - the PC (when it was ever heard) and every phone / tablet heard
+     *  lately. Only then do they race; with a device that does not know the lock yet, the 2.2 rules stay (never two orders). */
+    fun raceReady(): Boolean {
+        val sn = snap ?: return false
+        if (!sn.first) return false
+        val p = sn.second
+        if (p["r"].asStr() == "desktop" && !p["lk"].asBool()) return false
+        val (dev, ph) = snapPhones
+        val t = nowS()
+        return ph.none { (d, v) -> d != dev && v["amz"].asBool() && !v["bye"].asBool() && t - (v["at"].asDouble() ?: 0.0) < PHONE_ALIVE && !v["lk"].asBool() }
+    }
+
+    /** 2.15: this link's group code for the shared checkout lock (null when not linked). */
+    fun lockGroup(): String? = synchronized(lock) { LinkCrypto.parse(load().code)?.second?.let { LinkCrypto.lockGroup(it) } }
 
     /** 2.0: someone else buys (the desktop, or another phone first in line) - this phone stands by. */
     fun othersBuy(): Boolean = desktopBuys() || otherPhoneBuys()

@@ -26,14 +26,16 @@ class Notifier(private val ctx: Context) : Alerts {
     override fun restock(p: Product, price: Double?) {
         if (!wants("restock")) return                    // (2.12: restocks switched off in Settings - neither here nor on ntfy)
         val practice = RkApp.store().settings().practice
+        // 2.15: a product watched without a cap - no Buy now (a cap is needed to buy)
+        val capWords = if (p.cap > 0) "your cap \$${Engine.money(p.cap)}" else "watching only - no cap set"
         val b = base(CH_RESTOCK, "IN STOCK: ${p.label}",
-            (price?.let { "\$${Engine.money(it)}" } ?: "Price not shown") + " (your cap \$${Engine.money(p.cap)}). " +
-                (if (practice) "Practice mode is on: Buy now runs a practice checkout (nothing is bought)." else "Tap Buy now to buy it."))
-            .addAction(0, "Buy now", ActionReceiver.pending(ctx, ActionReceiver.BUY_NOW, p.id))
-            .addAction(0, "Open", openBrowser(p.url, p.id.hashCode()))
+            (price?.let { "\$${Engine.money(it)}" } ?: "Price not shown") + " ($capWords). " +
+                (if (p.cap <= 0) "To buy it, open it in the app and set the most you'll pay." else if (practice) "Practice mode is on: Buy now runs a practice checkout (nothing is bought)." else "Tap Buy now to buy it."))
+        if (p.cap > 0) b.addAction(0, "Buy now", ActionReceiver.pending(ctx, ActionReceiver.BUY_NOW, p.id))
+        b.addAction(0, "Open", openBrowser(p.url, p.id.hashCode()))
             .addAction(0, "Snooze 3 h", ActionReceiver.pending(ctx, ActionReceiver.SNOOZE, p.id))
         post(idFor("r", p.id), b.build())
-        NtfyOut.send("restock", "IN STOCK: ${p.label}", (price?.let { "\$${Engine.money(it)}" } ?: "Price not shown") + " (cap \$${Engine.money(p.cap)}) - seen by ${DeskLink.name()}", p.url)
+        NtfyOut.send("restock", "IN STOCK: ${p.label}", (price?.let { "\$${Engine.money(it)}" } ?: "Price not shown") + (if (p.cap > 0) " (cap \$${Engine.money(p.cap)})" else " (no cap)") + " - seen by ${DeskLink.name()}", p.url)
     }
 
     override fun bought(p: Product, price: Double?, order: String?, verified: Boolean) {

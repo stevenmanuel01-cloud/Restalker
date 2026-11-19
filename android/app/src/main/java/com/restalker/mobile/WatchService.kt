@@ -42,7 +42,9 @@ class WatchService : Service() {
             pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() },
             onSighting = { a, pr -> CrowdNet.share(a, pr) },                    // 2.6: the Restalker crowd hears this phone's sightings
             master = { DeskLink.master() }, boughtOf = { p -> DeskLink.boughtOf(p) },
-            rxBytes = { android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()) })      // 2.14: Data by activity (diagnostics)        // 2.7: at most 3 purchases of a product
+            rxBytes = { android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()) },      // 2.14: Data by activity (diagnostics)
+            // 2.15: the race to checkout between your devices (the shared lock on the relay; only when every linked device knows it)
+            raceOn = { Relay.enabled && DeskLink.get().raceReady() }, raceLock = { a -> Relay.lock(a) }, raceRelease = { a, r -> Relay.release(a, r) })        // 2.7: at most 3 purchases of a product
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
@@ -59,6 +61,7 @@ class WatchService : Service() {
                 GoListener.check()                          // 2.2: the fast channel with the PC (Who buys: phone / both)
                 Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
                 CrowdNet.tick()                             // 2.6: the Restalker crowd (read every 2 minutes while watching)
+                Relay.heartbeat()                           // 2.15: "active now" (every 15 minutes)
                 // 2.12: price drop alerts - watched products for sale over the cap that got clearly cheaper (this phone's look or the PC's)
                 try { com.restalker.mobile.core.PriceDrop.scan(RkApp.store(), System.currentTimeMillis()) { p, was, pr -> notifier.priceDrop(p, was, pr) } } catch (e: Exception) { }
                 tick.postDelayed(this, 60_000)
@@ -80,6 +83,9 @@ class WatchService : Service() {
                     "check" -> engine.send(Engine.Cmd.CheckNow(id))
                     // 2.3 (owner: "a button to [refresh all products at once] would be good"): one after another, watched products only
                     "checkall" -> RkApp.store().products().filter { it.watch }.forEach { engine.send(Engine.Cmd.CheckNow(it.id)) }
+                    // 2.15: the start-up look at every product not looked at in the last 6 hours (watched ones first)
+                    "baseline" -> RkApp.store().products().filter { System.currentTimeMillis() - it.lastCheck >= Engine.BASELINE_FRESH }
+                        .sortedBy { if (it.watch) 0 else 1 }.forEach { engine.send(Engine.Cmd.Baseline(it.id)) }
                     "buynow" -> engine.send(Engine.Cmd.BuyNow(id))
                     "practice" -> engine.send(Engine.Cmd.Practice(id))
                     "practiceany" -> engine.send(Engine.Cmd.PracticeAny(id))

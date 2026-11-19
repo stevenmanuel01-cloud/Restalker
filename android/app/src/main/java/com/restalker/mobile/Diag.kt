@@ -49,6 +49,8 @@ object Diag {
         val hp = try { com.restalker.mobile.core.Health.check(HealthRunner.input(ctx)) } catch (e: Exception) { listOf("?" to "self-check failed: ${e.message}") }
         sb.append("\nSelf-check: ${if (hp.isEmpty()) "nothing wrong found" else hp.joinToString("\n  ", "\n  ") { "${it.first}: ${it.second}" }}\n")
         sb.append(try { NtfyOut.status() } catch (e: Exception) { "ntfy alerts: ?" }).append("\n")
+        sb.append(try { Relay.status() + " · race to checkout: " + (if (DeskLink.get().raceReady()) "on (every linked device knows the shared lock)" else "off (a linked device does not know the shared lock yet)") +
+            " · reports go to: " + (if (Reporter.toClaude()) "Claude" else "the Restalker team") } catch (e: Exception) { "relay: ?" }).append("\n")
         sb.append("Messages (2.12): ${com.restalker.mobile.core.NotifyPrefs.summary(st)} · watching icon=${st.runIcon} notice swiped away=${st.noticeHidden}\n")
         sb.append("Desktop link rounds failed in a row: ${DeskLink.failsInRow}\n")
         sb.append("Updates: mode=${Updater.mode(ctx)} by itself=${st.autoUpdate} allowed=${Updater.allowed(ctx)} state=${Updater.state.ifBlank { "-" }} failed=${Updater.failed ?: "-"}" +
@@ -77,12 +79,20 @@ object Reporter {
         return code
     }
 
-    /** In the background; [done] gets true/false on the main thread. */
-    fun send(ctx: android.content.Context, why: String, done: ((Boolean) -> Unit)? = null) {
+    /** 2.15 (owner, 2026-11-19: "the option to send to claude should be removed from all devices except for my master account (and my
+     *  linked devices) ... Instead, all issues should be reported to discord, which can be sorted, compiled, and sent to me/you for
+     *  review"): only the owner's devices (the master code, or linked to the owner's PC) send straight to Claude; everyone else's
+     *  reports go to the relay, which compiles them once a day into the private staff channel on Discord. (Test builds: ours.) */
+    fun toClaude(): Boolean = BuildConfig.DEBUG || DeskLink.master()
+
+    /** In the background; [done] gets true/false on the main thread. [note]: what you wrote (if anything). */
+    fun send(ctx: android.content.Context, why: String, note: String = "", done: ((Boolean) -> Unit)? = null) {
         val store = RkApp.store()
         Thread {
-            // 1.6: what you wrote comes first in the report (owner 2026-11-16: "App issues sent" - the report had the log but not the issues)
-            val ok = com.restalker.mobile.core.Report.send(store, "Restalker Mobile report", "REPORT: $why\n\n" + Diag.text(ctx), why, put = ::put)
+            val ok = if (toClaude())
+                // 1.6: what you wrote comes first in the report (owner 2026-11-16: "App issues sent" - the report had the log but not the issues)
+                com.restalker.mobile.core.Report.send(store, "Restalker Mobile report", "REPORT: $why\n\n" + Diag.text(ctx), why, put = ::put)
+            else Relay.report(why, note, Diag.text(ctx)).also { ok -> store.log(if (ok) "Report sent to the Restalker team (looked at once a day)." else "! The report could not be sent (no internet?) - try again.", quiet = ok) }
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post { done(ok) }
         }.start()
     }

@@ -79,7 +79,8 @@ object Updater {
     private fun run(ctx: Context, explicit: Boolean) {
         nextCheck = System.currentTimeMillis() + UpdatePlan.CHECK_EVERY_MS
         val note = try { get(UpdatePlan.NOTE_URL) } catch (e: Exception) { state = "could not check for updates (no internet?)"; nextCheck = System.currentTimeMillis() + 30 * 60_000L; return }
-        val offer = UpdatePlan.parse(note, BuildConfig.VERSION_CODE)
+        val beta = if (DeskLink.master()) try { UpdatePlan.parse(get(UpdatePlan.BETA_URL), BuildConfig.VERSION_CODE) } catch (e: Exception) { null } else null
+        val offer = UpdatePlan.pick(UpdatePlan.parse(note, BuildConfig.VERSION_CODE), beta)
         available = offer
         if (offer == null) { state = "up to date (v${BuildConfig.VERSION_NAME})"; failed = null; return }
         if (!RkApp.store().settings().autoUpdate) { state = "v${offer.version} is available (updating by itself is off)"; return }
