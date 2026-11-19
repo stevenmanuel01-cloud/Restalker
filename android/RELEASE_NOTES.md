@@ -1,7 +1,8 @@
 # Restalker Mobile 2.12 (2026-11-18; your notes of 3:33 PM)
 - Pull down to refresh: the circle keeps turning while it refreshes and goes away by itself when it is done. (Before, the refresh
   said "done" before the screen even saw it start, so the arrow froze where your finger left it until you changed tabs.)
-- Settings -> Notifications: choose All, Restocks only or Purchases only, or switch each kind on or off: restocks, price drops (new),
+- Settings -> Notifications: choose Recommended (all but price drops), All, Restocks only or Purchases only, or switch each kind
+  on or off: restocks, price drops (new),
   purchases, and "when it needs you". The phone's messages and its ntfy alerts both follow your choice.
 - Price drops (new, off until you switch them on): a watched product for sale over your cap that gets at least 5% (and $5) cheaper.
   A price bouncing back and forth alerts once, not every time.

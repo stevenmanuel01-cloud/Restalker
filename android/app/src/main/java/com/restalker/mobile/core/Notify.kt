@@ -10,7 +10,7 @@ object RefreshTiming {
  *  drop alerts, purchase alerts, etc."): which kinds of message this device shows (and sends to the ntfy alerts channel).
  *  Kinds: "restock", "drop" (price drop), "bought", "practice" (goes with purchases), "need" (Restalker needs you). Pure: CoreTests. */
 object NotifyPrefs {
-    const val ALL = "all"; const val RESTOCKS = "restocks"; const val BUYS = "buys"; const val CUSTOM = "custom"; const val NONE = "none"
+    const val ALL = "all"; const val USUAL = "usual"; const val RESTOCKS = "restocks"; const val BUYS = "buys"; const val CUSTOM = "custom"; const val NONE = "none"
 
     fun allowed(st: Settings, kind: String): Boolean = when (kind) {
         "restock" -> st.nRestock
@@ -23,6 +23,7 @@ object NotifyPrefs {
     /** The quick choice that matches the switches (Custom when none matches). */
     fun preset(st: Settings): String = when (listOf(st.nRestock, st.nDrop, st.nBuy, st.nNeed)) {
         listOf(true, true, true, true) -> ALL
+        listOf(true, false, true, true) -> USUAL       // (the default: all but price drops)
         listOf(true, false, false, true) -> RESTOCKS
         listOf(false, false, true, true) -> BUYS
         listOf(false, false, false, false) -> NONE
@@ -32,6 +33,7 @@ object NotifyPrefs {
     /** A quick choice sets the switches ("Restalker needs you" stays on with each of them - it is how a sign-in or a robot check reaches you). */
     fun apply(st: Settings, preset: String): Settings = when (preset) {
         ALL -> st.copy(nRestock = true, nDrop = true, nBuy = true, nNeed = true)
+        USUAL -> st.copy(nRestock = true, nDrop = false, nBuy = true, nNeed = true)
         RESTOCKS -> st.copy(nRestock = true, nDrop = false, nBuy = false, nNeed = true)
         BUYS -> st.copy(nRestock = false, nDrop = false, nBuy = true, nNeed = true)
         else -> st
@@ -40,6 +42,7 @@ object NotifyPrefs {
     /** One line for the folded Settings section. */
     fun summary(st: Settings): String = when (preset(st)) {
         ALL -> "All alerts"
+        USUAL -> "Recommended: restocks, purchases, needs you"
         RESTOCKS -> "Restocks only (and when it needs you)"
         BUYS -> "Purchases only (and when it needs you)"
         NONE -> "No alerts"

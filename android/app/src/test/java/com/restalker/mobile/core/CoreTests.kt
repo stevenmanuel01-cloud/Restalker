@@ -1069,14 +1069,15 @@ object CoreTests {
             sentByPhone && pc == "phone-pcchannel123" && ph == listOf("rka-otherbbbbbbbbbbbbbbb") }
         // ---- 2.12 (owner, 2026-11-18): notification choices, price drops, the quiet watching notice
         t("147_notification_choices_presets_and_kinds") {
-            val NP = NotifyPrefs; val d = Settings()
+            val NP = NotifyPrefs; val d = Settings(); val a0 = { x: Settings -> x.copy(nRestock = false, nDrop = true, nBuy = false, nNeed = false) }
             val r = NP.apply(d, NP.RESTOCKS); val b = NP.apply(d, NP.BUYS); val a = NP.apply(d, NP.ALL)
-            NP.preset(d) == NP.CUSTOM && d.nRestock && !d.nDrop && d.nBuy && d.nNeed &&                  // (new: all but price drops)
+            NP.preset(d) == NP.USUAL && NP.preset(d.copy(nNeed = false)) == NP.CUSTOM && NP.apply(a0(d), NP.USUAL) == d && d.nRestock && !d.nDrop && d.nBuy && d.nNeed &&                  // (new: all but price drops)
                 NP.preset(r) == NP.RESTOCKS && NP.allowed(r, "restock") && !NP.allowed(r, "bought") && !NP.allowed(r, "practice") && !NP.allowed(r, "drop") && NP.allowed(r, "need") &&
                 NP.preset(b) == NP.BUYS && !NP.allowed(b, "restock") && NP.allowed(b, "bought") && NP.allowed(b, "practice") &&
                 NP.preset(a) == NP.ALL && NP.allowed(a, "drop") && NP.allowed(d.copy(nRestock = false, nBuy = false, nNeed = false), "test") &&
                 NP.preset(d.copy(nRestock = false, nBuy = false, nNeed = false)) == NP.NONE &&
-                NP.summary(a) == "All alerts" && NP.summary(d) == "Restocks, purchases, needs you" && NP.apply(d, "nonsense") == d }
+                NP.summary(a) == "All alerts" && NP.summary(d) == "Recommended: restocks, purchases, needs you" &&
+                NP.summary(d.copy(nNeed = false)) == "Restocks, purchases" && NP.apply(d, "nonsense") == d }
         t("148_notification_choices_kept") {
             val s0 = Settings(nRestock = false, nDrop = true, nBuy = false, nNeed = false, noticeHidden = true)
             val back = Settings.fromMap(MiniJson.obj(MiniJson.write(s0.toMap())))

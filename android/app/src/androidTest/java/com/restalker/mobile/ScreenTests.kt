@@ -641,7 +641,7 @@ class ScreenTests {
             compose.waitUntil(3_000) { RkApp.store().settings().let { it.nRestock && it.nBuy && it.nNeed && it.nDrop } }
             compose.onNodeWithTag("n-drop").performScrollTo().performClick()
             compose.waitUntil(3_000) { !RkApp.store().settings().nDrop }
-            compose.onNodeWithTag("np-custom").assertExists()
+            compose.onNodeWithTag("np-usual").assertExists()                 // (all but price drops: the Recommended choice)
             compose.onNodeWithTag("notice-off").assertExists()
             compose.onNodeWithTag("n-restock").performScrollTo(); Thread.sleep(500); shot("t22_notifications")
             sec("notes")                                                   // closes again

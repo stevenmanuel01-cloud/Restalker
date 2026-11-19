@@ -1547,7 +1547,7 @@ class MainActivity : ComponentActivity() {
             Text("Which messages", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val cur = NP.preset(st)
-                listOf(NP.ALL to "All", NP.RESTOCKS to "Restocks only", NP.BUYS to "Purchases only").forEach { (k, l) ->
+                listOf(NP.USUAL to "Recommended", NP.ALL to "All", NP.RESTOCKS to "Restocks only", NP.BUYS to "Purchases only").forEach { (k, l) ->
                     FilterChip(cur == k, { store.setSettings { NP.apply(it, k) }; store.log("Notifications: $l.") }, { Text(l, fontSize = 13.sp) },
                         Modifier.testTag("np-$k"), colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.Accent, selectedLabelColor = Look.Ink))
                 }
