@@ -1176,6 +1176,85 @@ object CoreTests {
             val shown = Store.shown(w.store.log())
             shown.any { it.contains("in stock at \$89.99 - another phone / tablet buys it (this one stands by).") } &&
                 shown.none { it.contains("the linked desktop buys it") } && w.amz.begins == 0 }
+        // ---- 2.15 (owner, 2026-11-19: "Its a race to checkout, so whichever happens first is the winner and should lock the product")
+        fun raceWorld(claim: Boolean?, mode: String = "both", desk: Boolean = true): Triple<World, Engine, ArrayList<String>> {
+            val w = World(desk = desk); w.mode = mode
+            val rel = ArrayList<String>()
+            val e = Engine(w.store, w.amz, w.said, w.clock, { w.net }, { w.desk }, { w.other }, { w.mode }, { a -> w.verdicts[a] },
+                failover = { w.fo }, pcHanded = { w.handed }, raceOn = { true }, raceLock = { claim }, raceRelease = { a, r -> rel += "$a:$r" })
+            return Triple(w, e, rel)
+        }
+        t("160_race_won_orders_at_once_and_keeps_the_others_out") {
+            val (w, e, rel) = raceWorld(true)
+            w.add("B0TEST0001", 120.0, true); e.check(w.p("B0TEST0001"))
+            w.p("B0TEST0001").purchased && w.amz.places == 1 && rel == listOf("B0TEST0001:bought") &&
+                w.store.log().none { it.contains("waiting for the PC's own try") } }          // (no 2.2 wait: the lock decides)
+        t("161_race_lost_never_orders_and_counts_nothing_against_this_device") {
+            val (w, e, rel) = raceWorld(false)
+            w.add("B0TEST0001", 120.0, true); e.check(w.p("B0TEST0001"))
+            val p = w.p("B0TEST0001")
+            w.amz.places == 0 && !p.purchased && !p.attempted && p.buy && p.fails == 0 && rel.isEmpty() &&
+                p.status.startsWith("ANOTHER OF YOUR DEVICES IS ORDERING IT") && w.said.problems.isEmpty() && w.said.needYou.isEmpty() }
+        t("162_race_lock_not_reachable_falls_back_to_the_pc_first_rule") {
+            val (w, e, rel) = raceWorld(null)
+            w.verdicts["B0TEST0001"] = "bought" to w.clock.t
+            w.add("B0TEST0001", 120.0, true); e.check(w.p("B0TEST0001"))
+            w.amz.places == 0 && rel.isEmpty() && w.p("B0TEST0001").status.startsWith("THE PC BOUGHT IT") }
+        t("163_race_won_but_amazon_says_no_order_frees_the_lock") {
+            val (w, e, rel) = raceWorld(true)
+            w.add("B0TEST0001", 120.0, true); w.amz.placeFail = 1; e.check(w.p("B0TEST0001"))
+            !w.p("B0TEST0001").purchased && rel == listOf("B0TEST0001:failed") }
+        t("164_race_on_two_phones_both_may_buy_pc_mode_still_only_watches") {
+            val (w, e, _) = raceWorld(true, desk = false); w.other = true
+            w.add("B0TEST0001", 120.0, true); e.check(w.p("B0TEST0001"))
+            val (w2, e2, _) = raceWorld(true, mode = "pc", desk = true)
+            w2.add("B0TEST0002", 120.0, true); e2.check(w2.p("B0TEST0002"))
+            w.amz.places == 1 && w2.amz.places == 0 }
+        t("165_race_ready_only_when_every_linked_device_knows_the_lock") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val (net, posts) = hub()
+            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true) }) { wa.clock.t }
+            la.connect(code); la.cycle()
+            val sentLk = posts.mapNotNull { LinkCrypto.unseal(sec, it)?.let { j -> MiniJson.obj(j) } }.any { it["lk"] == true }
+            fun pc(lk: Boolean) = posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-pc", "r" to "desktop", "at" to wa.clock.t / 1000.0,
+                "amz" to true, "items" to emptyList<Any>(), "lk" to lk))))
+            pc(false); la.cycle(); val oldPc = la.raceReady()
+            pc(true); la.cycle(); val newPc = la.raceReady()
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "p-old", "r" to "phone", "at" to wa.clock.t / 1000.0, "amz" to true,
+                "items" to emptyList<Any>()))))
+            la.cycle(); val oldPhone = la.raceReady()
+            val g = la.lockGroup()
+            sentLk && !oldPc && newPc && !oldPhone && g != null && g.length == 32 && g == LinkCrypto.lockGroup(sec) && g.matches(Regex("[0-9a-f]{32}")) }
+        t("166_activity_shows_only_restocks_checkouts_and_problems") {
+            val keep = listOf("11-18 21:57:34  Nauctis Collector Booster Box: in stock at \$323.88 (another Restalker spotted it first) - the linked desktop buys it (this phone stands by).",
+                "11-19 04:39:59  Nauctis Secret Lair Bundle: CHECKOUT started (\$89.99, cap \$90.00)",
+                "11-19 04:40:04  Nauctis Secret Lair Bundle: not bought - Amazon checkout: sold out under us",
+                "11-19 05:00:00  X: BOUGHT at \$89.99 - order 111-2", "11-19 05:01:00  X: PRACTICE checkout started",
+                "11-19 05:02:00  X: price drop to \$300.00 (was \$330.00).", "11-19 05:03:00  ! Report could not be sent (no internet?) - try again.",
+                "11-18 14:44:48  Updated to v2.11.", "11-19 05:04:00  X: ANOTHER: another of your devices got to Place your order first - not ordered here.")
+            val drop = listOf("11-18 15:28:09  · The watching notice was swiped away - watching goes on.",
+                "11-17 17:50:25  Phone / tablet 51c1: set to Both buy (from this device).", "11-17 17:38:33  The Hobbit Collector Booster Box: cap \$485.00.",
+                "11-17 17:38:33  X: Buy ON.", "11-16 11:01:39  Watching switched ON.", "11-16 15:11:52  From the desktop: Reality Fracture Collector Booster Box added (cap \$330.00).",
+                "11-19 04:40:04    checkout step: FLOW_BLOCKED - sold out", "11-16 15:10:49  Linked with the desktop. Products are shared from now on.",
+                "11-17 17:38:12  The Hobbit Collector Booster Box: looked at by you - for sale over your cap (\$699.99)")
+            val days = ActivityLog.byDay(listOf("11-18 10:00:00  a", "11-18 11:00:00  b", "11-19 09:00:00  c"))
+            val jan = java.time.LocalDate.of(2027, 1, 2).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            keep.all { ActivityLog.important(it) } && drop.none { ActivityLog.important(it) } &&
+                days.map { it.first } == listOf("11-19", "11-18") && days[1].second == listOf("11-18 11:00:00  b", "11-18 10:00:00  a") &&
+                ActivityLog.dayLabel("12-31", jan) == "Thursday, December 31" && ActivityLog.dayLabel("01-02", jan) == "Today" &&
+                ActivityLog.dayLabel("01-01", jan) == "Yesterday" && ActivityLog.split("11-18 21:57:34  hello") == ("21:57" to "hello") }
+        t("167_attention_marks_go_away_when_tapped_and_come_back_daily") {
+            val items = listOf(Attention.Item("signin", "amazon", "Sign in to Amazon"), Attention.Item("battery", "phone", "Allow watching all day"))
+            val s0 = emptyMap<String, String>()
+            val shown0 = Attention.showing(items, s0, true, "2026-11-19")
+            val s1 = Attention.tapped(s0, items, "amazon", "2026-11-19")
+            val shown1 = Attention.showing(items, s1, true, "2026-11-19")
+            val next = Attention.showing(items, s1, true, "2026-11-20")
+            val off = Attention.showing(items, s1, false, "2026-11-20")
+            val s2 = Attention.tapped(s1, items.drop(1), "phone", "2026-11-20")      // (signed in meanwhile: its entry goes)
+            val back = Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(attnDaily = false, attnSeen = s1, modeV = 1).toMap())))
+            shown0.size == 2 && shown1.map { it.key } == listOf("battery") && next.size == 2 && off.map { it.key } == listOf("battery") &&
+                s2 == mapOf("battery" to "2026-11-20") && !back.attnDaily && back.attnSeen == s1 && back.modeV == 1 && Settings().attnDaily }
         return results
     }
 

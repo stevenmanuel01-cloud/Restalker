@@ -1,3 +1,20 @@
+# Restalker Mobile 2.15 (2026-11-19; your notes of 1:01 PM)
+- The race to checkout: your phones and tablets buy at the same time as the PC (Who buys: both, set once on every device). The first
+  of your devices to reach Place your order claims the product on the Restalker server and orders; the others stop - never two orders.
+  This starts as soon as the PC knows the shared lock too (PC v141); until then "both" waits for the PC's own try, as before.
+- Only your own devices (the master code, or linked to your PC) send reports to Claude. Everyone else's go to the Restalker team on
+  Discord, compiled once a day. "Send diagnostics" still only opens the share menu.
+- Red marks on anything that needs you (not signed in, notifications or battery not allowed, an update waiting, a product whose checkout
+  did not finish). They go away when you tap them and come back each day until done ("Remind me daily", Settings, Notifications).
+- Settings: navy headers; what is inside sits in white; opening one part closes the others.
+- Restalker on Discord (Settings): the invite, whether your restocks reach Discord, and an optional "Connect my Discord" (/link).
+- Activity: a navy bar per day; only restocks, checkouts, purchases, price drops and problems.
+- Watch: the years are navy bars that stay at the top while you scroll; the sets are white pills with an amber outline (look B).
+- Check now, Check all now, Practice checkout and Run the practice show a turning circle until they are done.
+- The header shows how many Restalker devices are active now (each working device checks in every 15 minutes).
+- A product that is not on the Restalker list can be suggested for it (product page).
+- From now on new versions reach your devices first; everyone else gets them when you say so.
+
 # Restalker Mobile 2.14 (2026-11-19; from the phone's own reports overnight)
 - Less data: between two looks the Amazon page is now closed and quiet every time (before, only when the next look was more than 20
   seconds away - with 8 products every 90 seconds the last page stayed open all night, its scripts and ads still working). Your phone

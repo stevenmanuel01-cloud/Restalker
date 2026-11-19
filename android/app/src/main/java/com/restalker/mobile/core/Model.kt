@@ -1,6 +1,6 @@
 package com.restalker.mobile.core
 
-const val APP_VERSION = "2.14"
+const val APP_VERSION = "2.15"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -156,13 +156,18 @@ data class Settings(
     val nBuy: Boolean = true,
     val nNeed: Boolean = true,
     val noticeHidden: Boolean = false,    // 2.12: the watching notice was swiped away - it stays away (kept across restarts)
+    val modeV: Int = 0,                   // 2.15: 1 = the "race to checkout" default was applied once (Who buys: both)
+    // 2.15 (owner: "anything that requires user input should be flagged with a small red triangle ... Once clicked, the icon should go
+    // away. Icons should refresh for anything left outstanding ... each day unless the user manually disables the option")
+    val attnDaily: Boolean = true,
+    val attnSeen: Map<String, String> = emptyMap(),      // what was tapped -> on which day (yyyy-MM-dd)
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
         "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown, "runIcon" to runIcon, "autoUpdate" to autoUpdate,
         "buyMode" to buyMode, "buyModeAt" to buyModeAt, "failover" to failover, "deviceName" to deviceName, "crowd" to crowd, "masterCode" to masterCode,
         "alertTopic" to alertTopic, "alertsOn" to alertsOn, "nRestock" to nRestock, "nDrop" to nDrop, "nBuy" to nBuy, "nNeed" to nNeed,
-        "noticeHidden" to noticeHidden, "noticeV" to 1)
+        "noticeHidden" to noticeHidden, "noticeV" to 1, "modeV" to modeV, "attnDaily" to attnDaily, "attnSeen" to attnSeen)
     companion object {
         const val MIN_INTERVAL = 60
         val BUY_MODES = listOf("pc", "phone", "both")
@@ -176,7 +181,8 @@ data class Settings(
                 (m["deviceName"].asStr() ?: "").take(40), m["crowd"] != false, (m["masterCode"].asStr() ?: "").take(40),
                 (m["alertTopic"].asStr() ?: "").takeIf { NtfyAlerts.ok(it) } ?: "", m["alertsOn"] == true,
                 nRestock = m["nRestock"] != false, nDrop = m["nDrop"] == true, nBuy = m["nBuy"] != false, nNeed = m["nNeed"] != false,
-                noticeHidden = m["noticeHidden"] == true)
+                noticeHidden = m["noticeHidden"] == true, modeV = (m["modeV"].asLong() ?: 0).toInt(), attnDaily = m["attnDaily"] != false,
+                attnSeen = (m["attnSeen"].asMap() ?: emptyMap()).entries.take(50).mapNotNull { (k, v) -> v.asStr()?.let { k.take(60) to it.take(10) } }.toMap())
         }
     }
 }

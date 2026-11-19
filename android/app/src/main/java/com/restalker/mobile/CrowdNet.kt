@@ -28,6 +28,8 @@ object CrowdNet {
     /** Tests: forget the state (after the store was reset). */
     fun reset() { state = null; lastPoll = 0; catAt = 0; catalog = emptySet() }
     fun count(): Int = try { state().count() } catch (e: Exception) { 1 }
+    /** 2.15: on the central list (shared with the crowd, posted on Discord) - null while the list is not read yet. */
+    fun onList(asin: String): Boolean? = if (catalog.isEmpty()) null else asin in catalog
 
     /** [force]: the app was opened / you asked - read the channel now (at most once a minute), also while not watching. */
     fun tick(force: Boolean = false) {

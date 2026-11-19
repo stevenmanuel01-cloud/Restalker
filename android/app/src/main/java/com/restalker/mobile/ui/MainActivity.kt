@@ -60,6 +60,7 @@ import com.restalker.mobile.WatchService
 import com.restalker.mobile.CrowdNet
 import com.restalker.mobile.Updater
 import com.restalker.mobile.NtfyOut
+import com.restalker.mobile.Relay
 import com.restalker.mobile.core.APP_VERSION
 import com.restalker.mobile.core.Asin
 import com.restalker.mobile.core.CapStep
@@ -94,9 +95,10 @@ class MainActivity : ComponentActivity() {
     private fun sendReport(note: String) {
         reportResult.value = "Sending..."
         val n = note.replace(Regex("\\s+"), " ").trim().take(1500)
-        Reporter.send(this, if (n.isEmpty()) "sent by you" else "sent by you - your note: $n") { ok ->
-            reportResult.value = if (ok) "Sent to Claude.\nYour report code:\n${com.restalker.mobile.core.Report.code(RkApp.store())}\n\nTell Claude \"reported\" (the first time, also send this code)."
-                                 else "Could not send it (no internet?). Try again."
+        Reporter.send(this, if (n.isEmpty()) "sent by you" else "sent by you - your note: $n", n) { ok ->
+            reportResult.value = if (!ok) "Could not send it (no internet?). Try again."
+                else if (Reporter.toClaude()) "Sent to Claude.\nYour report code:\n${com.restalker.mobile.core.Report.code(RkApp.store())}\n\nTell Claude \"reported\" (the first time, also send this code)."
+                else "Sent to the Restalker team. Problems are looked at once a day - for help sooner, ask in the Restalker Discord (Settings, Discord)."
         }
     }
     private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
@@ -140,6 +142,7 @@ class MainActivity : ComponentActivity() {
         // the app back to the front: that asked again in a loop)
         if (update.value != null && Updater.state.contains("allow Restalker to install") && Updater.allowed(this)) checkUpdate(explicit = true)
         if (DeskLink.get().linked()) DeskLink.cycleAsync { bump() }          // (opening the app: the desktop's latest at once)
+        Relay.heartbeat()                                                     // 2.15: the live "active now" count
         com.restalker.mobile.HealthRunner.tick(this)                          // 1.7: the self-check (a report by itself when something is wrong)
         try { CrowdNet.tick(force = true) } catch (e: Exception) { }          // 2.8: the contributor count and the central list's pictures, also when not watching
     }
@@ -196,7 +199,11 @@ class MainActivity : ComponentActivity() {
             if (open == null) NavigationBar(containerColor = Color.White, tonalElevation = 0.dp) {
                 listOf(Triple("Watch", Icons.Filled.Home, 0), Triple("Bought", Icons.Filled.ShoppingCart, 1), Triple("Activity", Icons.Filled.List, 2),
                     Triple("Settings", Icons.Filled.Settings, 3)).forEach { (label, icon, i) ->
-                    NavigationBarItem(selected = pager.currentPage == i, onClick = { goTab(i) }, icon = { Icon(icon, contentDescription = null) },
+                    // 2.15: a red mark on the tab when something there needs you
+                    val mark = (i == 0 && attnOn("watch")) || (i == 3 && (attnOn("amazon") || attnOn("notes") || attnOn("phone")))
+                    NavigationBarItem(selected = pager.currentPage == i, onClick = { goTab(i) }, icon = {
+                        if (mark) BadgedBox(badge = { Badge(containerColor = Look.AttnRed, modifier = Modifier.testTag("tabattn$i")) }) { Icon(icon, contentDescription = null) }
+                        else Icon(icon, contentDescription = null) },
                         label = { Text(label, maxLines = 1, fontSize = 12.sp) }, modifier = Modifier.testTag("tab$i"),
                         colors = NavigationBarItemDefaults.colors(selectedIconColor = Look.Navy, selectedTextColor = Look.Navy, indicatorColor = Look.AccentSoft,
                             unselectedIconColor = Look.Muted, unselectedTextColor = Look.Muted))
@@ -229,7 +236,7 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(note, { note = it }, minLines = 3, maxLines = 6, placeholder = { Text("For example: no pictures on the Hobbit box") },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("report-note"))
                 }
-            }, confirmButton = { Button(colors = Look.btn(), onClick = { asking.value = false; sendReport(note) }, modifier = Modifier.testTag("report-send")) { Text("Send to Claude") } },
+            }, confirmButton = { Button(colors = Look.btn(), onClick = { asking.value = false; sendReport(note) }, modifier = Modifier.testTag("report-send")) { Text(if (Reporter.toClaude()) "Send to Claude" else "Send") } },
                 dismissButton = { TextButton(onClick = { asking.value = false }) { Text("Cancel") } })
         }
         reportResult.value?.let { msg ->
@@ -397,6 +404,7 @@ class MainActivity : ComponentActivity() {
     }
 
     // =================================================================== Watch (home)
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     @Composable
     fun WatchTab(st: Settings, products: List<Product>, r: Int, onOpen: (Product) -> Unit, onAdd: () -> Unit, onSettings: () -> Unit) {
         val store = RkApp.store()
@@ -421,8 +429,12 @@ class MainActivity : ComponentActivity() {
                                 maxLines = 2, modifier = Modifier.testTag("title"))
                             // 2.6 (owner: "small text ... the total number of workers (individual devices contributing) ... XXX total
                             // contributors and counting")
+                            // 2.15 (owner: "This number should be dynamic and tied directly to the total active number of devices working"):
+                            // the relay's count of devices heard in the last 30 minutes (each working device checks in every 15 minutes)
                             val crowdN = remember(r) { CrowdNet.count() }
-                            Text(if (!st.crowd) "Crowd sharing is off (Settings)" else if (crowdN > 1) "$crowdN total contributors and counting" else "Joining the Restalker crowd",
+                            val activeN = remember(r) { Relay.active }
+                            Text(if (!st.crowd) "Crowd sharing is off (Settings)" else if (activeN > 0) "$activeN Restalker device${if (activeN == 1) "" else "s"} active now"
+                                else if (crowdN > 1) "$crowdN total contributors and counting" else "Joining the Restalker crowd",
                                 color = Look.OnNavyDim, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp).testTag("contributors"))
                         }
                         Button(onClick = onAdd, colors = Look.btn(),
@@ -478,9 +490,16 @@ class MainActivity : ComponentActivity() {
                     Text("${products.size}" + (products.count { it.buy }.takeIf { it > 0 }?.let { " · $it set to buy" } ?: ""), color = Look.Muted, fontSize = 13.sp)
                 }
                 // 2.3 (owner: "a button to [refresh all products at once] would be good"): every watched product is looked at now, one after another
-                if (products.any { it.watch }) TextButton(onClick = {
-                    WatchService.cmd(this@MainActivity, "checkall"); store.log("Check all now: every watched product is looked at now.")
-                }, modifier = Modifier.padding(start = 8.dp).testTag("checkall")) { Text("Check all now (${products.count { it.watch }})") }
+                if (products.any { it.watch }) {
+                    var allAt by remember { mutableLongStateOf(0L) }
+                    val all = working(allAt, 300_000) { RkApp.store().products().filter { it.watch }.all { it.lastCheck >= allAt } }
+                    TextButton(onClick = {
+                        if (!all) { allAt = System.currentTimeMillis(); WatchService.cmd(this@MainActivity, "checkall"); store.log("Check all now: every watched product is looked at now.", quiet = true) }
+                    }, modifier = Modifier.padding(start = 8.dp).testTag("checkall")) {
+                        if (all) Spinner("busy-checkall")
+                        Text(if (all) "Checking ${products.count { it.watch }} products..." else "Check all now (${products.count { it.watch }})")
+                    }
+                }
                 if (products.isEmpty()) MascotNote("No products yet. Tap Add, or open a product in the Amazon app, tap Share and choose Restalker." +
                     if (!linked) " Or link the desktop (Settings) to get its products." else "")
                 else Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -498,14 +517,14 @@ class MainActivity : ComponentActivity() {
             val shown = products.filter { when (filter.intValue) { 1 -> it.inStock && !it.purchased; 2 -> it.buy; 3 -> it.watch; else -> true } }
             val hot = shown.filter { it.inStock && !it.purchased }
             if (filter.intValue == 0 && hot.isNotEmpty()) {
-                item(key = "hdr-hot") { GroupHeader("In stock now", hot.size, null, false, "grp-hot") {} }
+                stickyHeader(key = "hdr-hot") { GroupHeader("In stock now", hot.size, null, false, "grp-hot") {} }
                 items(hot, key = { "hot-" + it.id }) { p -> ProductCard(p, deskBuys, "top-${p.asin}", boughtN(p)) { onOpen(p) } }
             }
             if (products.isNotEmpty() && shown.isEmpty()) item { MascotNote(when (filter.intValue) { 1 -> "Nothing is in stock right now - still watching."; 2 -> "No product is set to buy."; else -> "No product is watched." }) }
             val years = shown.groupBy { Groups.of(it).first }.toList().sortedBy { Groups.yearRank(it.first) }
             for ((year, inYear) in years) {
                 val yKey = "y:$year"
-                item(key = yKey) { GroupHeader(year, inYear.size, inYear.count { it.inStock && !it.purchased }, yKey in folded, "grp-$year") { fold(yKey) } }
+                stickyHeader(key = yKey) { GroupHeader(year, inYear.size, inYear.count { it.inStock && !it.purchased }, yKey in folded, "grp-$year") { fold(yKey) } }
                 if (yKey in folded) continue
                 for ((set, inSet) in inYear.groupBy { Groups.of(it).second }.toList().sortedBy { it.first.lowercase() }) {
                     val sKey = "s:$year|$set"
@@ -527,30 +546,33 @@ class MainActivity : ComponentActivity() {
         try { RkApp.store().writeFile("folded.json", MiniJson.write(folded.toList())) } catch (e: Exception) { }
     }
 
+    /** 2.15 (owner chose look B, 2026-11-19): every year (and "In stock now") is a navy bar across the screen with an amber button; it
+     *  stays pinned at the top while its products scroll under it, so the brand colours never scroll away. */
     @Composable
     fun GroupHeader(title: String, count: Int, hot: Int?, isFolded: Boolean, tag: String, onClick: () -> Unit) {
-        Row(Modifier.fillMaxWidth().clickable(enabled = hot != null, onClick = onClick).padding(start = 20.dp, end = 16.dp, top = 14.dp, bottom = 6.dp)
-            .heightIn(min = 32.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (hot == null) Look.Teal else Look.Ink)
-            Text("  $count", color = Look.Muted, fontSize = 13.sp)
-            if (hot != null && hot > 0) Chip("$hot in stock", Look.TealSoft, Look.TealText, Modifier.padding(start = 8.dp))
-            Spacer(Modifier.weight(1f))
-            // 2.11 (owner: "incorporate a bit more amber coloring ... buttons associated with the product name and year (for minimizing).
-            // Once we scroll, we completely lose the amber"): the fold button of every year is an amber circle
-            if (hot != null) Box(Modifier.size(28.dp).background(Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide", tint = Look.Ink, modifier = Modifier.size(20.dp)) }
+        Box(Modifier.fillMaxWidth().background(Look.Ground).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 6.dp)) {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Look.Navy).clickable(enabled = hot != null, onClick = onClick)
+                .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp).heightIn(min = 30.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (hot == null) Look.OnNavyAccent else Color.White)
+                Text("  $count", color = Look.OnNavyDim, fontSize = 13.sp)
+                if (hot != null && hot > 0) Chip("$hot in stock", Look.GoodSoft, Look.GoodText, Modifier.padding(start = 8.dp))
+                Spacer(Modifier.weight(1f))
+                if (hot != null) Box(Modifier.size(28.dp).background(Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide", tint = Look.Ink, modifier = Modifier.size(20.dp)) }
+            }
         }
     }
 
+    /** 2.15 (look B): every set is a white pill with an amber outline. */
     @Composable
     fun SetHeader(title: String, count: Int, isFolded: Boolean, tag: String, onClick: () -> Unit) {
-        Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 24.dp, end = 16.dp, top = 6.dp, bottom = 2.dp).heightIn(min = 32.dp).testTag(tag),
-            verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(22.dp).background(Look.AccentSoft, CircleShape).border(1.5.dp, Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide",
-                    tint = Look.Ink, modifier = Modifier.size(16.dp)) }
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Look.GreyText, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 4.dp))
-            Text("$count", color = Look.Muted, fontSize = 13.sp)
+        Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 2.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Color.White)
+            .border(2.dp, Look.Accent, RoundedCornerShape(20.dp)).clickable(onClick = onClick).padding(start = 14.dp, end = 10.dp, top = 5.dp, bottom = 5.dp)
+            .heightIn(min = 26.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Look.GreyText, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text("$count", color = Look.Muted, fontSize = 13.sp, modifier = Modifier.padding(end = 6.dp))
+            Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide",
+                tint = Look.Ink, modifier = Modifier.size(20.dp))
         }
     }
 
@@ -868,13 +890,16 @@ class MainActivity : ComponentActivity() {
         val (c, bg, fg) = chip(p)
         Row(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().clip(Look.card).background(Color.White)
             .then(if (p.inProgress || (p.stock().first == "in" && p.buy)) Modifier.border(2.dp, Look.GoodBorder, Look.card) else Modifier)
-            .clickable(onClick = onClick).padding(14.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
+            .clickable { if (attnSeenKey("product:" + p.asin)) attnTapKey("product:" + p.asin); onClick() }.padding(14.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Thumb(p, 56)
                 BoughtBadge(bought, Modifier.padding(top = 4.dp).testTag("boughtn-$tag"))
             }
             Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                Text(p.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(p.label, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (attnSeenKey("product:" + p.asin)) Box(Modifier.padding(start = 6.dp)) { AttnMark("attn-${p.asin}", 18) }     // 2.15
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 5.dp)) {
                     Chip(c, bg, fg, Modifier.testTag("pstatus-${p.asin}"))
                     Text(if (p.cap > 0) "  cap \$${Engine.money(p.cap)}" else "  no cap yet", color = if (p.cap > 0) Look.Muted else Look.AmberText, fontSize = 12.sp, maxLines = 1)
@@ -1028,14 +1053,31 @@ class MainActivity : ComponentActivity() {
                         }, colors = ButtonDefaults.buttonColors(containerColor = Look.Amber), modifier = Modifier.padding(top = 8.dp).testTag("rearm-${p.asin}")) { Text("Re-arm (buy again)") }
                     }
                 }
+                var checkAt by remember(p.id) { mutableLongStateOf(0L) }
+                var practiceAt by remember(p.id) { mutableLongStateOf(0L) }
+                val checking = working(checkAt, 60_000) { (RkApp.store().product(p.id)?.lastCheck ?: 0L) >= checkAt && !engineBusyWith(p.label) }
+                val practicing = working(practiceAt, 180_000) { System.currentTimeMillis() - practiceAt > 3_000 && !engineBusyWith(p.label) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Action("Check now", "check-${p.asin}", Modifier.weight(1f)) { WatchService.cmd(this@MainActivity, "check", p.id) }
+                    Action("Check now", "check-${p.asin}", Modifier.weight(1f), busy = checking) { checkAt = System.currentTimeMillis(); WatchService.cmd(this@MainActivity, "check", p.id) }
                     Action("Change cap", "edit-${p.asin}", Modifier.weight(1f)) { onEdit(p) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Action("Practice checkout", "practice-${p.asin}", Modifier.weight(1f)) { WatchService.cmd(this@MainActivity, "practice", p.id) }
+                    Action("Practice checkout", "practice-${p.asin}", Modifier.weight(1f), busy = practicing) { practiceAt = System.currentTimeMillis(); WatchService.cmd(this@MainActivity, "practice", p.id) }
                     Action(if (confirmRemove) "Tap again" else "Remove", "remove-${p.asin}", Modifier.weight(1f), danger = true) {
                         if (confirmRemove) { store.remove(p.id); store.log("${p.label}: removed."); onBack() } else confirmRemove = true
+                    }
+                }
+                // 2.15 (owner: "Given that there is no limit to the number or type of product a user can add ... the app is useable for
+                // everything, just not necessarily the discord"): a product that is not on the central (Magic) list is watched and bought
+                // like any other, but only on your devices - it can be suggested for the list
+                if (CrowdNet.onList(p.asin) == false) {
+                    var sugg by remember(p.id) { mutableStateOf(RkApp.store().readFile("suggested.txt")?.contains(p.asin) == true) }
+                    Row(Modifier.fillMaxWidth().background(Color.White, Look.card).padding(12.dp).testTag("suggest-${p.asin}"), verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (sugg) "Suggested for the Restalker list - thank you." else "Not on the Restalker list: only your devices watch it (it is not shared or posted on Discord).",
+                            fontSize = 12.sp, lineHeight = 16.sp, color = Look.Muted, modifier = Modifier.weight(1f))
+                        if (!sugg) TextButton(onClick = {
+                            Thread { val ok = Relay.suggest(p.asin, p.label); runOnUiThread { if (ok) { sugg = true; RkApp.store().writeFile("suggested.txt", (RkApp.store().readFile("suggested.txt") ?: "") + p.asin + "\n") } } }.start()
+                        }, modifier = Modifier.testTag("suggest-go-${p.asin}")) { Text("Suggest it") }
                     }
                 }
                 // 2.4 (owner: "individual product pages should have a "bought" section above the "latest" section which shows the activity
@@ -1094,13 +1136,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** 2.15 (owner: "anytime the program is doing something, it should display the rotating arrow. Example, if i click "check now" the
+     *  program doesnt provide any feedback"): [busy] shows a turning circle in the button until the work is done. */
     @Composable
-    fun Action(text: String, tag: String, modifier: Modifier, danger: Boolean = false, onClick: () -> Unit) {
-        OutlinedButton(onClick = onClick, modifier = modifier.heightIn(min = 48.dp).testTag(tag), shape = RoundedCornerShape(14.dp),
+    fun Action(text: String, tag: String, modifier: Modifier, danger: Boolean = false, busy: Boolean = false, onClick: () -> Unit) {
+        OutlinedButton(onClick = { if (!busy) onClick() }, modifier = modifier.heightIn(min = 48.dp).testTag(tag), shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = if (danger) Look.Red else Look.Ink)) {
+            if (busy) Spinner("busy-$tag")
             Text(text, fontWeight = FontWeight.SemiBold, maxLines = 2, fontSize = 14.sp)
         }
     }
+
+    @Composable
+    fun Spinner(tag: String) = CircularProgressIndicator(Modifier.padding(end = 8.dp).size(18.dp).testTag(tag), color = Look.Navy, strokeWidth = 2.dp)
+
+    /** 2.15: true from [start] until [done] (at least 0.8 s, so it is seen; at most [maxMs]). */
+    @Composable
+    fun working(start: Long, maxMs: Long, done: () -> Boolean): Boolean {
+        var on by remember(start) { mutableStateOf(start > 0) }
+        LaunchedEffect(start) {
+            if (start <= 0) { on = false; return@LaunchedEffect }
+            on = true
+            while (true) {
+                val el = System.currentTimeMillis() - start
+                if (el >= maxMs || (el >= RefreshTiming.MIN_MS && try { done() } catch (e: Exception) { true })) break
+                kotlinx.coroutines.delay(300)
+            }
+            on = false; bump()
+        }
+        return on
+    }
+    private fun engineBusyWith(label: String): Boolean = WatchService.instance?.engine?.let { !it.idle() && it.busyWith.contains(label) } ?: false
 
     @Composable
     fun SwitchRow(label: String, help: String, on: Boolean, tag: String, set: (Boolean) -> Unit) {
@@ -1252,23 +1318,48 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    /** 2.15 (owner: "In the "Activity" tab, we are still missing color. Lets add a navy bar that displays the date, with all activity then
+     *  separated by date ... This should only be displaying checkout activities, instock alerts, etc. Not information about changing things
+     *  to watch or buy, or communications with the desktop"): restocks, checkouts, purchases, price drops and problems, one navy bar per day
+     *  (pinned while its day scrolls). Everything else is still kept for the reports. */
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+    @Composable
     fun ActivityTab(r: Int) {
-        val lines = remember(r) { com.restalker.mobile.core.Store.shown(RkApp.store().log()).asReversed() }
+        val L = com.restalker.mobile.core.ActivityLog
+        val days = remember(r) { L.byDay(RkApp.store().log().filter { L.important(it) }) }
+        val now = System.currentTimeMillis()
         LazyColumn(Modifier.fillMaxSize().testTag("log")) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 16.dp)) {
                     Box(Modifier.weight(1f)) { TabHeader("Activity") }
-                    OutlinedButton(onClick = { report() }, modifier = Modifier.padding(top = 12.dp).testTag("report-log")) { Text("Send to Claude") }
+                    OutlinedButton(onClick = { report() }, modifier = Modifier.padding(top = 12.dp).testTag("report-log")) { Text(if (Reporter.toClaude()) "Send to Claude" else "Report a problem") }
                 }
             }
-            if (lines.isEmpty()) item { Text("Nothing yet.", color = Look.Muted, modifier = Modifier.padding(horizontal = 20.dp)) }
-            items(lines) { l ->
-                val warn = l.contains("  !")
-                Text(l, fontSize = 12.sp, lineHeight = 16.sp, color = if (warn) Look.Red else Look.Ink,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp).fillMaxWidth().background(Color.White, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp))
+            if (days.isEmpty()) item { MascotNote("Nothing yet - restocks, checkouts and purchases show up here.") }
+            for ((d, lines) in days) {
+                stickyHeader(key = "day-$d") {
+                    Box(Modifier.fillMaxWidth().background(Look.Ground).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)) {
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Look.Navy).padding(horizontal = 14.dp, vertical = 7.dp).testTag("day-$d"),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(L.dayLabel(d, now), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Text("${lines.size}", color = Look.OnNavyAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                items(lines) { l ->
+                    val (t, text) = L.split(l)
+                    val warn = text.startsWith("!")
+                    val good = text.contains("BOUGHT")
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 2.dp).fillMaxWidth().background(Color.White, RoundedCornerShape(8.dp))
+                        .then(if (good) Modifier.border(1.5.dp, Look.GoodBorder, RoundedCornerShape(8.dp)) else Modifier).padding(horizontal = 10.dp, vertical = 7.dp)) {
+                        Text(t, fontSize = 12.sp, color = Look.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(44.dp))
+                        Text(text.removePrefix("! "), fontSize = 12.sp, lineHeight = 16.sp, color = if (warn) Look.Red else Look.Ink, modifier = Modifier.weight(1f))
+                    }
+                }
             }
         }
     }
+
 
     // =================================================================== Settings
     @OptIn(ExperimentalLayoutApi::class)
@@ -1294,12 +1385,12 @@ class MainActivity : ComponentActivity() {
                     if (linked) linkLine else "Tap to link the desktop Restalker", navy = true, titleTag = "link-title", summaryTag = "link-state") {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                         if (!linked) Text("Link the desktop Restalker: your products stay the same on both, and only one of them buys each product. On the desktop click Link phone, then scan its code.",
-                            color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 18.sp)
+                            color = Look.Muted, fontSize = 13.sp, lineHeight = 18.sp)
                         FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { scan() }, colors = Look.btn(),
                                 modifier = Modifier.heightIn(min = 44.dp).testTag("scan")) { Text(if (linked) "Scan again" else "Scan the desktop's QR code", fontWeight = FontWeight.SemiBold) }
-                            TextButton(onClick = { typing = true }, modifier = Modifier.testTag("pastecode")) { Text("Type the code", color = Look.Mint) }
-                            if (linked) TextButton(onClick = { confirmUnlink = true }, modifier = Modifier.testTag("unlink")) { Text("Unlink", color = Look.Mint) }
+                            TextButton(onClick = { typing = true }, modifier = Modifier.testTag("pastecode")) { Text("Type the code", color = Look.Navy) }
+                            if (linked) TextButton(onClick = { confirmUnlink = true }, modifier = Modifier.testTag("unlink")) { Text("Unlink", color = Look.Red) }
                         }
                     }
                 }
@@ -1309,7 +1400,7 @@ class MainActivity : ComponentActivity() {
                 Section("amazon", "Amazon and buying", listOf(if (signed) "Signed in" else "Not signed in",
                     if (!st.buying) "buying off" else if (st.practice) "practice (nothing is bought)" else "real purchases",
                     "looks every ${if (st.intervalSec >= 180) "3 min" else "${st.intervalSec} s"}").joinToString(" · "),
-                    summaryColor = if (signed) Look.Muted else Look.Red) {
+                    summaryColor = if (signed) Look.Muted else Look.Red, attn = "amazon") {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Amazon account", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
@@ -1338,16 +1429,19 @@ class MainActivity : ComponentActivity() {
                 }
                 // ---- 2.12: notifications - which kinds, and the watching notice
                 Section("notes", "Notifications", if (!notes) "Not allowed on this phone - tap to fix" else com.restalker.mobile.core.NotifyPrefs.summary(st),
-                    summaryColor = if (notes) Look.Muted else Look.Red, summaryTag = "notes-summary") {
+                    summaryColor = if (notes) Look.Muted else Look.Red, summaryTag = "notes-summary", attn = "notes") {
                     NotificationsBody(st, notes)
                 }
                 // ---- 2.9: ntfy alerts on any device
                 Section("ntfy", "Alerts on other devices (ntfy)",
                     if (alertCh == null) "Not set up" else if (st.alertsOn) "On · $alertCh" else "Set up · this device does not send") { AlertsCard(r, inSection = true) }
+                // ---- 2.15 (owner: "The app and PC versions should both include a link to the discord channel ... some way of indicating that
+                // it is connected and/or reporting data to discord ... The user should have the option to connect with discord, but is not required")
+                DiscordSection(st)
                 // ---- this phone
                 Section("phone", "This phone", listOf(if (st.autoUpdate) "updates by itself" else "updates off",
                     if (batt) "watching all day allowed" else "battery not allowed").joinToString(" · ").replaceFirstChar { it.uppercase() },
-                    summaryColor = if (batt) Look.Muted else Look.Red) {
+                    summaryColor = if (batt) Look.Muted else Look.Red, attn = "phone") {
                     // 1.7 (owner: "Why do i have to manually download everything still?") / 2.9: says exactly whether Android will still ask (and why)
                     SwitchRow("Update by itself", (Updater.modeText(Updater.mode(this@MainActivity)) + " " + Updater.state).trim(), st.autoUpdate, "autoupdate") { on ->
                         store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true, explicit = true) }
@@ -1375,7 +1469,10 @@ class MainActivity : ComponentActivity() {
                         OutlinedTextField(paLink, { paLink = it; paErr = "" }, label = { Text("Amazon link or product code") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("pa-link"))
                         if (paErr.isNotEmpty()) Text(paErr, color = Look.Red, fontSize = 12.sp, modifier = Modifier.testTag("pa-err"))
-                        Button(colors = Look.btn(), onClick = {
+                        var paAt by remember { mutableLongStateOf(0L) }
+                        val paBusy = working(paAt, 180_000) { System.currentTimeMillis() - paAt > 3_000 && WatchService.instance?.engine?.idle() != false }
+                        Button(colors = Look.btn(), enabled = !paBusy, onClick = {
+                            paAt = System.currentTimeMillis()
                             val t = paLink
                             Thread {
                                 val a = Asin.resolve(t) { u -> followOnce(u) }
@@ -1384,7 +1481,7 @@ class MainActivity : ComponentActivity() {
                                     else { paErr = ""; WatchService.cmd(this@MainActivity, "practiceany", a); store.log("Practice checkout asked for $a.") }
                                 }
                             }.start()
-                        }, modifier = Modifier.padding(top = 8.dp).testTag("pa-go")) { Text("Run the practice") }
+                        }, modifier = Modifier.padding(top = 8.dp).testTag("pa-go")) { if (paBusy) Spinner("busy-pa"); Text(if (paBusy) "Running..." else "Run the practice") }
                         if (!signed) Text("Sign in to Amazon first (Amazon and buying).", color = Look.AmberText, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
@@ -1420,8 +1517,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 // ---- problems
-                Section("problems", "Problems", if (st.autoReport) "Sent to Claude by themselves" else "Sent only when you report them") {
-                    SwitchRow("Send problems to Claude", "Automatic, at most every 30 min", st.autoReport, "autoreport") { on ->
+                Section("problems", "Problems", if (!st.autoReport) "Sent only when you report them" else if (Reporter.toClaude()) "Sent to Claude by themselves" else "Sent to the Restalker team by themselves") {
+                    SwitchRow(if (Reporter.toClaude()) "Send problems to Claude" else "Send problems to the Restalker team",
+                        if (Reporter.toClaude()) "Automatic, at most every 30 min" else "Automatic, looked at once a day (nothing personal is sent)", st.autoReport, "autoreport") { on ->
                         store.setSettings { it.copy(autoReport = on) }; store.log("Automatic problem reports switched ${if (on) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
                     Row(Modifier.fillMaxWidth().clickable { report() }.padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 24.dp).testTag("report"),
@@ -1503,33 +1601,120 @@ class MainActivity : ComponentActivity() {
             dismissButton = { TextButton(onClick = { confirmUnlink = false }) { Text("Cancel") } })
     }
 
-    /** 2.12: the Settings parts that are open (all start folded: one line each - its name and where it stands). */
+    /** 2.12: the Settings part that is open (all start folded: one line each - its name and where it stands). 2.15 (owner: "only one
+     *  selection should be made at a time (if i select "notifications" then previously opened selections will automatically minimize)"). */
     private val openSecs = mutableStateListOf<String>()
 
-    /** 2.12: one folding part of Settings - tap the line to open or close it. */
+    // ------------------------------------------------------------------------------------------------------------ 2.15: red marks
+    /** Everything that needs you now (2.15, owner: "anything that requires user input should be flagged with a small red triangle"). */
+    private fun attnItems(): List<com.restalker.mobile.core.Attention.Item> {
+        val A = com.restalker.mobile.core.Attention
+        val out = ArrayList<com.restalker.mobile.core.Attention.Item>()
+        try {
+            if (!signedIn()) out += A.Item("signin", "amazon", "Sign in to Amazon")
+            if (!notesOk()) out += A.Item("notes", "notes", "Allow notifications")
+            if (!battOk()) out += A.Item("battery", "phone", "Allow watching all day")
+            if (Updater.state.contains("allow Restalker to install") || Updater.state.contains("tap Update now")) out += A.Item("update", "phone", "An update waits for you")
+            for (p in RkApp.store().products()) if (p.watch && attnStatus(p)) out += A.Item("product:" + p.asin, "watch", p.label)
+        } catch (e: Exception) { }
+        return out
+    }
+    /** A product that needs you: a checkout that did not finish, an unclear order, a page that does not open. */
+    private fun attnStatus(p: Product): Boolean = p.status.startsWith("NOT BOUGHT") || p.status.startsWith("STOPPED") ||
+        p.status.startsWith("ORDER MAY HAVE BEEN PLACED") || p.status == "the page did not load" || p.status == "the page did not answer"
+    private val attnTick = mutableIntStateOf(0)
+    private fun attnShowing(): List<com.restalker.mobile.core.Attention.Item> {
+        attnTick.intValue
+        val st = RkApp.store().settings()
+        return com.restalker.mobile.core.Attention.showing(attnItems(), st.attnSeen, st.attnDaily, com.restalker.mobile.core.Attention.day(System.currentTimeMillis()))
+    }
+    private fun attnOn(where: String) = attnShowing().any { it.where == where }
+    private fun attnSeenKey(key: String) = attnShowing().any { it.key == key }
+    /** Tapping a part: its marks go away (until tomorrow, when "remind me daily" is on and the thing is still not done). */
+    private fun attnTap(where: String) {
+        val all = attnItems(); if (all.none { it.where == where }) return
+        RkApp.store().setSettings { it.copy(attnSeen = com.restalker.mobile.core.Attention.tapped(it.attnSeen, all, where, com.restalker.mobile.core.Attention.day(System.currentTimeMillis()))) }
+        attnTick.intValue++
+    }
+    private fun attnTapKey(key: String) {
+        RkApp.store().setSettings { it.copy(attnSeen = it.attnSeen + (key to com.restalker.mobile.core.Attention.day(System.currentTimeMillis()))) }
+        attnTick.intValue++
+    }
+
     @Composable
-    fun Section(key: String, title: String, summary: String, navy: Boolean = false, summaryColor: Color = Look.Muted, mascot: Boolean = false,
-                titleTag: String? = null, summaryTag: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    fun AttnMark(tag: String, size: Int = 20) {
+        Icon(Icons.Filled.Warning, contentDescription = "Needs you", tint = Look.AttnRed, modifier = Modifier.size(size.dp).testTag(tag))
+    }
+
+    /** 2.12: one folding part of Settings - tap the line to open or close it. 2.15 (owner: "lets make all options the navy color (to look
+     *  like the "desktop linked" option. Then when a selection is made, the dropdown has a clear color distinction between the header and
+     *  the included options below it"): a navy header; what is inside sits in white, framed by the navy. [attn]: where its red mark is. */
+    @Composable
+    fun Section(key: String, title: String, summary: String, @Suppress("UNUSED_PARAMETER") navy: Boolean = true, summaryColor: Color = Look.Muted, mascot: Boolean = false,
+                titleTag: String? = null, summaryTag: String? = null, attn: String? = null, content: @Composable ColumnScope.() -> Unit) {
         val open = key in openSecs
-        Column(Modifier.fillMaxWidth().background(if (navy) Look.Navy else Color.White, Look.card).testTag("sec-$key")) {
-            Row(Modifier.fillMaxWidth().clickable { if (open) openSecs.remove(key) else openSecs.add(key) }
-                .padding(horizontal = 16.dp, vertical = 12.dp).heightIn(min = 44.dp).testTag("sech-$key"), verticalAlignment = Alignment.CenterVertically) {
+        val warn = summaryColor == Look.Red
+        val mark = attn != null && attnOn(attn)
+        Column(Modifier.fillMaxWidth().background(Look.Navy, Look.card).testTag("sec-$key")) {
+            Row(Modifier.fillMaxWidth().clickable {
+                    if (open) openSecs.remove(key) else { openSecs.clear(); openSecs.add(key); if (attn != null) attnTap(attn) }
+                }.padding(horizontal = 16.dp, vertical = 12.dp).heightIn(min = 44.dp).testTag("sech-$key"), verticalAlignment = Alignment.CenterVertically) {
                 if (mascot) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_mascot), contentDescription = null,
                     modifier = Modifier.size(32.dp).padding(end = 8.dp))
                 Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                    Text(title, fontWeight = FontWeight.SemiBold, fontSize = if (navy) 16.sp else 15.sp, color = if (navy) Color.White else Look.Ink,
-                        modifier = if (titleTag != null) Modifier.testTag(titleTag) else Modifier)
-                    Text(summary, fontSize = 12.sp, lineHeight = 16.sp, color = if (navy) Look.OnNavyDim else summaryColor, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    Text(title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color.White, modifier = if (titleTag != null) Modifier.testTag(titleTag) else Modifier)
+                    Text(summary, fontSize = 12.sp, lineHeight = 16.sp, color = if (warn) Look.OnNavyWarn else Look.OnNavyDim, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 2.dp).then(if (summaryTag != null) Modifier.testTag(summaryTag) else Modifier))
                 }
+                if (mark) Box(Modifier.padding(end = 8.dp)) { AttnMark("attn-$key") }
                 Box(Modifier.size(28.dp).background(Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
                     Icon(if (open) Icons.Filled.KeyboardArrowDown else Icons.Filled.KeyboardArrowRight, contentDescription = if (open) "Close" else "Open",
                         tint = Look.Ink, modifier = Modifier.size(20.dp))
                 }
             }
-            if (open) {
-                HorizontalDivider(color = if (navy) Look.NavyCard else Look.Line)
+            if (open) Column(Modifier.padding(start = 3.dp, end = 3.dp, bottom = 3.dp).fillMaxWidth()
+                    .background(Color.White, RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp, topStart = 6.dp, topEnd = 6.dp)).testTag("secb-$key")) {
                 content()
+            }
+        }
+    }
+
+    /** 2.15: Restalker on Discord - the invite, whether this device's restocks reach it, and the optional "connect my Discord". */
+    @OptIn(ExperimentalLayoutApi::class)
+    @Composable
+    fun DiscordSection(st: Settings) {
+        var linkedName by remember { mutableStateOf<String?>(RkApp.store().readFile("discord_name.txt")?.trim()) }
+        var code by remember { mutableStateOf<String?>(null) }
+        var msg by remember { mutableStateOf("") }
+        val sharing = st.crowd
+        Section("discord", "Restalker on Discord", (if (!linkedName.isNullOrEmpty()) "Connected as $linkedName · " else "") +
+            if (sharing) "your restocks reach it" else "sharing is off - your restocks do not reach it") {
+            LaunchedEffect(Unit) {
+                Thread { val n = Relay.linkedName(); if (n != null) runOnUiThread { linkedName = n; RkApp.store().writeFile("discord_name.txt", n) } }.start()
+            }
+            Column(Modifier.fillMaxWidth().padding(16.dp).testTag("discord")) {
+                Text(if (sharing) "Your device shares the restocks it sees with the Restalker crowd; the ones 2 or more devices confirm are posted on the Restalker Discord - with pings for the sets and stores people follow."
+                    else "Sharing with the Restalker crowd is off (Settings, Restalker crowd), so your device's restocks do not reach the Discord. You can still join and get its pings.",
+                    fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.testTag("discord-sharing"))
+                Text("Discord is optional - Restalker works the same without it.", fontSize = 12.sp, color = Look.Muted, modifier = Modifier.padding(top = 6.dp))
+                FlowRow(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        Thread {
+                            val u = Relay.invite()
+                            runOnUiThread { if (u != null) try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } catch (e: Exception) { msg = u } else msg = "Could not get the invite (no internet?) - try again." }
+                        }.start()
+                    }, colors = Look.btn(), modifier = Modifier.heightIn(min = 44.dp).testTag("discord-join")) { Text("Join Restalker on Discord", fontWeight = FontWeight.SemiBold) }
+                    OutlinedButton(onClick = {
+                        Thread { val c = Relay.linkCode(); runOnUiThread { if (c != null) code = c else msg = "Could not get a code (no internet?) - try again." } }.start()
+                    }, modifier = Modifier.heightIn(min = 44.dp).testTag("discord-connect")) { Text(if (linkedName.isNullOrEmpty()) "Connect my Discord" else "Connect again") }
+                }
+                code?.let { c ->
+                    Text("In the Restalker Discord server, type:", fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
+                    Text("/link $c", fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Look.Navy,
+                        modifier = Modifier.padding(top = 4.dp).testTag("discord-code"))
+                    Text("The code works for 15 minutes. Connecting gives you the Restalker user role there; nothing else is shared.", fontSize = 12.sp, color = Look.Muted)
+                }
+                if (msg.isNotEmpty()) Text(msg, fontSize = 12.sp, color = Look.Red, modifier = Modifier.padding(top = 6.dp))
             }
         }
     }
@@ -1566,6 +1751,10 @@ class MainActivity : ComponentActivity() {
         HorizontalDivider(color = Look.Line)
         SwitchRow("When it needs you", if (st.nNeed) "Sign in, Amazon's \"is it you\" check, an order to look at" else "Off: a sign-in or a robot check can then stop it without you knowing",
             st.nNeed, "n-need") { on -> store.setSettings { it.copy(nNeed = on) }; store.log("\"Needs you\" messages switched ${if (on) "ON" else "OFF"}.") }
+        HorizontalDivider(color = Look.Line)
+        // 2.15: the red marks of things that need you - back every day while not done (owner: "unless the user manually disables the option")
+        SwitchRow("Remind me daily", "The red marks of things that need you come back each day until they are done", st.attnDaily, "attn-daily") { on ->
+            store.setSettings { it.copy(attnDaily = on) }; attnTick.intValue++ }
         HorizontalDivider(color = Look.Line)
         // the watching notice (1.5 / 2.0 / 2.12): Android requires a notice while an app watches all day - it can be tucked away completely
         SwitchRow("Show a \"watching\" icon", if (st.runIcon) "An icon at the top while it watches" else

@@ -28,6 +28,8 @@ object Look {
     val Accent = Color(0xFFF2B134)           // the logo's amber: buttons, switches, the cap knob
     val AccentSoft = Color(0xFFFDF0D3)
     val OnNavyAccent = Color(0xFFF2B134)     // amber text on navy (7:1)
+    val OnNavyWarn = Color(0xFFFFB4A8)       // 2.15: a warning on navy (a light red that reads on the navy header)
+    val AttnRed = Color(0xFFE5484D)          // 2.15: the red mark of things that need you
     val Good = Color(0xFF15803D)             // green text: good to go
     val GoodSoft = Color(0xFFDCF3E3)
     val GoodText = Color(0xFF14532D)

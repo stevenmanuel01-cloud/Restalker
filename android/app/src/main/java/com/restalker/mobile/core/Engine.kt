@@ -57,7 +57,14 @@ class Engine(private val store: Store, private val page: Page, private val alert
              private val master: () -> Boolean = { true },
              private val boughtOf: (Product) -> Int = { 0 },
              /** 2.14: the bytes this app has received so far (-1 = not known) - for "Data by activity" in the diagnostics. */
-             rxBytes: () -> Long = { -1L }) {
+             rxBytes: () -> Long = { -1L },
+             /** 2.15: every linked device takes part in the shared checkout lock (then they race; the first at Place your order wins). */
+             private val raceOn: () -> Boolean = { false },
+             /** 2.15: claim the product right before Place your order: true = this device has it, false = another of your devices has it,
+              *  null = the lock could not be asked (then the 2.2 rules decide - never two orders). */
+             private val raceLock: (String) -> Boolean? = { null },
+             /** 2.15: how this device's claimed checkout ended ("bought" keeps the others out for a day; "failed" frees it). */
+             private val raceRelease: (String, String) -> Unit = { _, _ -> }) {
     val meter = DataMeter(rxBytes)
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
@@ -308,7 +315,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     /** 2.3 (each device its own choice): may THIS device buy now? "both" / "phone": yes; "pc": only when the PC has stopped (not when it
      *  handed Amazon to another device) and "takes over" is on; never while another phone / tablet is first in line (one order). */
-    private fun mayBuyHere(): Boolean = !otherPhoneBuys() && when (buyerMode()) {
+    private fun mayBuyHere(): Boolean = (!otherPhoneBuys() || (raceOn() && buyerMode() != "pc")) && when (buyerMode()) {
         "pc" -> failover() && !desktopBuys() && !pcHanded()
         else -> true
     }
@@ -366,11 +373,12 @@ class Engine(private val store: Store, private val page: Page, private val alert
     }
 
     // ------------------------------------------------------------------ buying (the desktop's _try_amazon)
-    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT }
+    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT, RACE_LOST }
 
     fun buy(p: Product, price: Double?, forcePractice: Boolean = false) = meter.run("checkouts") { buyNow(p, price, forcePractice) }
 
     private fun buyNow(p: Product, price: Double?, forcePractice: Boolean) {
+        var lockHeld = false                     // 2.15: this device holds the shared checkout lock for it
         val practice = forcePractice || s().practice
         busyWith = "checking out ${p.label}" + if (practice) " (practice)" else ""
         if (!practice && !canAutoBuy(p)) { busyWith = "idle"; return }
@@ -406,9 +414,16 @@ class Engine(private val store: Store, private val page: Page, private val alert
                                 end = End.PRACTICE_OK
                                 continue@loop
                             }
-                            // 2.2: Who buys = both - the PC's own try first
+                            // 2.15: the race - the first of your devices at Place your order claims the product; the others stop
+                            val claim = if (raceOn()) try { raceLock(p.asin) } catch (e: Exception) { null } else null
+                            if (claim == false) {
+                                page.ask(mapOf("bb" to "reply", "n" to x["n"], "value" to mapOf("ok" to false, "reason" to "another of your devices is ordering it")), 4_000)
+                                end = End.RACE_LOST; why = "another of your devices got to Place your order first - not ordered here"; return
+                            }
+                            if (claim == true) { lockHeld = true; detail("${p.label}: this device won the race to Place your order (the shared lock).") }
+                            // 2.2: Who buys = both - the PC's own try first (when the shared lock could not be asked)
                             val h0 = now()
-                            val held = holdForPc(p, startedAt)
+                            val held = if (claim == true) null else holdForPc(p, startedAt)
                             until += now() - h0                  // (the wait does not count against the checkout's own time)
                             if (held != null) {
                                 page.ask(mapOf("bb" to "reply", "n" to x["n"], "value" to mapOf("ok" to false, "reason" to held)), 4_000)
@@ -460,6 +475,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 why = "Amazon asked to sign in"; end = End.STOPPED; actionRequired(p, "sign in required")
             }
             if (end != End.BOUGHT) try { page.ask(mapOf("bb" to "reset"), 4_000) } catch (e: Exception) { }    // (no unfinished checkout is left in the browser)
+            // 2.15: the shared lock - bought (or maybe bought) keeps your other devices out; anything else frees it at once
+            if (lockHeld) try { raceRelease(p.asin, if (end == End.BOUGHT || end == End.UNCLEAR) "bought" else "failed") } catch (e: Exception) { }
             finish(p, end, why, order, paid, practiceFees, submitted)
             try { page.images(false) } catch (e: Exception) { }
             busyWith = "idle"
@@ -493,6 +510,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 store.update(p.id) { it.copy(inProgress = false, practiceOkAt = now(), status = "PRACTICE OK - reached Place your order") }
                 log("${p.label}: $txt")
                 alerts.practice(store.product(p.id) ?: p, txt)
+            }
+            End.RACE_LOST -> {
+                // (nothing counts against this device; the winner's purchase comes over the link and turns Buy off as usual)
+                store.update(p.id) { it.copy(inProgress = false, status = "ANOTHER OF YOUR DEVICES IS ORDERING IT - not ordered here") }
+                log("${p.label}: $why.")
             }
             End.PC_BOUGHT -> {
                 // (one order per product: Buy goes off here; the PC's purchase comes over the link as usual)
