@@ -13,7 +13,7 @@ tag = "v1"
 new_sqlite_classes = ["Hub"]
 
 [triggers]
-crons = ["* * * * *", "*/15 * * * *", "7 16 * * *"]
+crons = ["*/5 * * * *"]
 
 [observability]
 enabled = true

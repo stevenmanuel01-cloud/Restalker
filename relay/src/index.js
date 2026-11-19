@@ -13,7 +13,6 @@ const CROWD = "restalker-crowd-5e1f0c7a92b4";
 const RAW = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/";
 const API = "https://discord.com/api/v10";
 const UA = "DiscordBot (https://github.com/stevenmanuel01-cloud/Restalker, 1)";
-const CRON_MINUTE = "* * * * *", CRON_15 = "*/15 * * * *", CRON_DAILY = "7 16 * * *";
 
 const json = (o, status = 200) => new Response(JSON.stringify(o), {
   status, headers: { "content-type": "application/json", "access-control-allow-origin": "*", "cache-control": "no-store" } });
@@ -66,10 +65,22 @@ export class Hub {
   async history() { return ((await this.cached("hist", "mobile/tcg_history.json", 3 * 3600_000)) || {}).h || {}; }
   async tcgNow(a) { const s = (await this.history())[a]; return s && s.length ? s[s.length - 1][1] : null; }
 
+  // The Hub's own alarm wakes it every minute (it does not depend on the account's timed triggers - on a new account those can
+  // take a long time to start); the timed triggers only make sure the alarm is set.
+  async ensureAlarm() {
+    if ((await this.state.storage.getAlarm()) == null) await this.state.storage.setAlarm(Date.now() + 5_000);
+  }
+  async alarm() {
+    try { await this.tick(); }
+    catch (e) { this.note("! tick: " + String(e).slice(0, 120)); }
+    finally { await this.state.storage.setAlarm(Date.now() + 60_000); }
+  }
+
   async fetch(req) {
     const u = new URL(req.url);
     try {
-      if (u.pathname === "/__cron") return json(await this.cron(u.searchParams.get("c") || ""));
+      await this.ensureAlarm();
+      if (u.pathname === "/__cron") return json({ ok: true, alarm: await this.state.storage.getAlarm() });
       if (u.pathname === "/v1/s" && req.method === "POST") {
         // a device posts its own sighting(s) here directly (the apps move to this later; today they post to the crowd channel)
         const ip = req.headers.get("cf-connecting-ip") || "?";
@@ -179,11 +190,14 @@ export class Hub {
   }
 
   // ------------------------------------------------------------------------------------------------------------ timed work
-  async cron(c) {
-    const out = {};
+  async tick() {
+    const now = Date.now(), out = {};
     out.crowd = await this.readCrowd();
-    if (c === CRON_15) { out.releases = await this.releases(); this.prune(); }
-    if (c === CRON_DAILY) out.daily = await this.daily();
+    if (now - Number(this.kvGet("t15") || 0) >= 15 * 60_000) { this.kvSet("t15", now); out.releases = await this.releases(); this.prune(); }
+    // daily at 16:07 UTC (8:07 AM Pacific), once a day
+    const d = new Date(now), today = d.toISOString().slice(0, 10);
+    if (d.getUTCHours() * 60 + d.getUTCMinutes() >= 16 * 60 + 7 && this.kvGet("daily") !== today) { this.kvSet("daily", today); out.daily = await this.daily(); }
+    this.kvSet("tick_at", now);
     return out;
   }
 
@@ -262,7 +276,8 @@ export class Hub {
       devicesAll: one("SELECT COUNT(*) AS n FROM seen"),
       restocks24h: one("SELECT COUNT(*) AS n FROM events WHERE first_at > ?", now - 24 * 3600_000),
       confirmed24h: one("SELECT COUNT(*) AS n FROM events WHERE first_at > ? AND n >= ?", now - 24 * 3600_000, L.CONFIRM_DEVICES),
-      last, crowdReadAt: Number(this.kvGet("crowd_at") || 0), discord: !!(CFG.channels && CFG.channels.all_restocks),
+      last, crowdReadAt: Number(this.kvGet("crowd_at") || 0), tickAt: Number(this.kvGet("tick_at") || 0),
+      alarm: await this.state.storage.getAlarm(), discord: !!(CFG.channels && CFG.channels.all_restocks),
     };
     if (withLog) out.log = JSON.parse(this.kvGet("log") || "[]");
     return out;
