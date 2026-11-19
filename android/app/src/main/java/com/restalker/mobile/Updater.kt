@@ -21,7 +21,7 @@ object Updater {
     @Volatile var available: UpdatePlan.Offer? = null; private set
     /** A failed update (for the self-check / report), null when the last try went well. */
     @Volatile var failed: String? = null
-    @Volatile private var running = false
+    @Volatile var running = false; private set
     @Volatile private var nextCheck = 0L
 
     fun allowed(ctx: Context): Boolean = Build.VERSION.SDK_INT < 26 || ctx.packageManager.canRequestPackageInstalls()

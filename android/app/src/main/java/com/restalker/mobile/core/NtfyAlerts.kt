@@ -23,5 +23,5 @@ object NtfyAlerts {
 
     /** Should THIS phone send this alert to the channel? Not a restock the linked PC also alerts about (the PC sends its own). */
     fun shouldSend(on: Boolean, channel: String?, kind: String, pcHasChannel: Boolean): Boolean =
-        on && ok(channel) && !(kind == "restock" && pcHasChannel)
+        on && ok(channel) && !((kind == "restock" || kind == "drop") && pcHasChannel)
 }

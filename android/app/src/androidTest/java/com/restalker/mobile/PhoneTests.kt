@@ -426,10 +426,14 @@ class PhoneTests {
         val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
         val ch = nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId
         assertEquals("no icon: the quiet channel", Notifier.CH_QUIET, ch)
-        RkApp.store().setSettings { it.copy(runIcon = true) }
-        WatchService.instance?.notifier?.status("check " + System.currentTimeMillis()); Thread.sleep(6_000)
-        WatchService.instance?.notifier?.status("check again " + System.currentTimeMillis())
-        assertTrue("icon back", waitFor(45_000) { WatchService.instance?.notifier?.status("check " + System.currentTimeMillis()); nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId == Notifier.CH_WATCH })
+        // 2.12: the engine's status no longer rewrites the notice (it never changes by itself); only the icon switch / standby redraw it
+        val before = nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.extras?.getCharSequence("android.text")?.toString()
+        WatchService.instance?.notifier?.status("check " + System.currentTimeMillis()); Thread.sleep(2_000)
+        val after = nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.extras?.getCharSequence("android.text")?.toString()
+        assertEquals("the notice's words do not change with the status", before, after)
+        RkApp.store().setSettings { it.copy(runIcon = true, noticeHidden = false) }
+        assertTrue("icon back", waitFor(45_000) { WatchService.instance?.notifier?.refreshNotice(); nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId == Notifier.CH_WATCH })
+        RkApp.store().setSettings { it.copy(runIcon = false) }
     }
 
     /** 1.7 (owner: "The pictures aren't populating still"): on Amazon's PHONE page the picture is somewhere else and the page also has a

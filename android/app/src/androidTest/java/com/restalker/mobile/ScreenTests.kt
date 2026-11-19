@@ -99,6 +99,14 @@ class ScreenTests {
         toList(hasTestTag("product-B0TEST0001"))
         compose.onNodeWithTag("product-B0TEST0001").assertIsDisplayed()
     }
+    /** 2.12: Settings parts are folded - open one (its line is tapped). */
+    private fun sec(key: String) {
+        compose.waitForIdle()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("sech-$key").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-$key"))
+        compose.onNodeWithTag("sech-$key").performClick(); compose.waitForIdle()
+    }
+
     @Test fun t6_firstRun_setupCard_andRealPurchasesNeedYes() {
         RkApp.store().products().forEach { RkApp.store().remove(it.id) }
         RkApp.store().setSettings { com.restalker.mobile.core.Settings() }
@@ -109,6 +117,7 @@ class ScreenTests {
         assertEquals("a new install buys for real", false, RkApp.store().settings().practice)
         assertEquals("a new install has buying on", true, RkApp.store().settings().buying)
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("amazon")
         compose.onNodeWithTag("practice").performScrollTo().performClick()     // practice on: at once
         compose.waitUntil(3_000) { RkApp.store().settings().practice }
         compose.onNodeWithTag("practice").performScrollTo().performClick()     // switching Real purchases on again asks first
@@ -150,6 +159,7 @@ class ScreenTests {
         compose.waitUntil(30_000) { compose.onAllNodesWithTag("tab3").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
         shot("t9_settings")
+        sec("problems")
         compose.onNodeWithTag("report").performScrollTo().performClick()
         compose.onNodeWithTag("report-note").performTextInput("test note: pictures missing")      // 1.6: your words go with it
         compose.onNodeWithTag("report-send").performClick()
@@ -322,13 +332,15 @@ class ScreenTests {
         compose.onNodeWithTag("pricebar-green", useUnmergedTree = true).assertExists()
         shot("t15_green_bar")
         compose.onNodeWithTag("back").performClick(); compose.waitForIdle()
-        compose.onNodeWithText("Settings").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("practice")
         compose.onNodeWithTag("practice-any").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("pa-link").performTextInput("https://www.ebay.com/itm/1")
         for (k in 0 until 3) {                                    // not an Amazon link: said, nothing runs (tap again if the keyboard took the tap)
             compose.waitForIdle(); compose.onNodeWithTag("pa-go").performScrollTo().performClick()
             try { compose.waitUntil(5_000) { compose.onAllNodesWithTag("pa-err").fetchSemanticsNodes().isNotEmpty() }; break } catch (e: Throwable) { if (k == 2) throw e }
         }
+        sec("share")
         compose.onNodeWithTag("share-qr").performScrollTo().assertIsDisplayed()
         shot("t15_settings_share")
     }
@@ -392,6 +404,7 @@ class ScreenTests {
         s.add(prod("B0GXC89N66", "The Hobbit Collector Booster Box", "2026", "The Hobbit", price = 520.0))
         compose.waitForIdle()
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("catalog")
         compose.onNodeWithTag("catalog-go").performScrollTo().performClick()
         // (the products come in one by one: wait for the end of it - the message says how many)
         compose.waitUntil(45_000) { compose.onAllNodesWithText("products added", substring = true).fetchSemanticsNodes().isNotEmpty() }
@@ -431,6 +444,7 @@ class ScreenTests {
     /** 1.4: linking by typing the code (the camera's fallback): a wrong code is explained; a right one links; Unlink asks first. */
     @Test fun t12_settings_linkByCode() {
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("desk")
         compose.onNodeWithTag("pastecode").performScrollTo().performClick()
         compose.onNodeWithTag("link-code").performTextInput("hello")
         compose.onNodeWithTag("link-save").performClick()
@@ -444,12 +458,15 @@ class ScreenTests {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Linked with the desktop", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("OK").performClick(); compose.waitForIdle()
         // (scroll the Settings list itself - with big text the nearest scroll could be the tab swiper)
-        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("link-title"))
-        compose.onNodeWithTag("link-title").assertIsDisplayed()
+        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-desk"))
+        compose.onNodeWithTag("link-title", useUnmergedTree = true).assertIsDisplayed()
+        // 2.12: the watching icon is off by default (it is switched on and off again here)
+        sec("notes")
+        val icon0 = RkApp.store().settings().runIcon
         compose.onNodeWithTag("runicon").performScrollTo().performClick()
-        compose.waitUntil(3_000) { !RkApp.store().settings().runIcon }
+        compose.waitUntil(3_000) { RkApp.store().settings().runIcon != icon0 }
         compose.onNodeWithTag("runicon").performClick()
-        compose.waitUntil(3_000) { RkApp.store().settings().runIcon }
+        compose.waitUntil(3_000) { RkApp.store().settings().runIcon == icon0 }
         Thread.sleep(500); shot("t12_linked")
         compose.onNodeWithTag("unlink").performScrollTo().performClick()
         compose.onNodeWithTag("unlink-yes").performClick()
@@ -471,11 +488,16 @@ class ScreenTests {
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("list").fetchSemanticsNodes().isNotEmpty() }
         // pull down on the home screen: refreshes, no crash
         compose.onNodeWithTag("refresh-0").performTouchInput { swipeDown(startY = height * 0.2f, endY = height * 0.7f) }
-        compose.waitForIdle(); Thread.sleep(1_500)
+        // 2.12 (owner: the arrow froze and stayed until another tab): the refresh is seen running, then ends by itself
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("busy-refresh-0", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(20_000) { compose.onAllNodesWithTag("busy-refresh-0", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+        compose.waitForIdle(); Thread.sleep(700)
+        shot("t18_after_refresh")
         compose.onNodeWithTag("title").assertIsDisplayed()
         // linked: this device's own row in Linked devices
         assertEquals(null, DeskLink.get().connect(com.restalker.mobile.core.LinkCrypto.make()))
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("devices")
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("dev-me").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("bm-both").performScrollTo().performClick()
         compose.waitUntil(3_000) { RkApp.store().settings().buyMode == "both" }
@@ -564,6 +586,7 @@ class ScreenTests {
         compose.waitUntil(30_000) { compose.onAllNodesWithTag("tab3").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
         try {
+            sec("ntfy")
             compose.onNodeWithTag("alerts-setup").performScrollTo().performClick(); compose.waitForIdle(); Thread.sleep(600)
             val st = RkApp.store().settings()
             assertTrue("a channel was made and switched on", com.restalker.mobile.core.NtfyAlerts.ok(st.alertTopic) && st.alertsOn)
@@ -583,11 +606,13 @@ class ScreenTests {
         android.util.Log.i("RkTest", "t19 step 19")
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
         android.util.Log.i("RkTest", "t19 step 20")
+        sec("about")
         compose.onNodeWithTag("about-text").performScrollTo().assertIsDisplayed()
         android.util.Log.i("RkTest", "t19 step 21")
         compose.onNodeWithText("Restocks of sought-after Magic products", substring = true).assertExists()
         shot("t20_about")
         android.util.Log.i("RkTest", "t19 step 22")
+        sec("crowd")
         compose.onNodeWithTag("crowd-on").performScrollTo().performClick()
         android.util.Log.i("RkTest", "t19 step 23")
         compose.waitUntil(3_000) { !RkApp.store().settings().crowd }
@@ -597,6 +622,31 @@ class ScreenTests {
         compose.waitUntil(3_000) { RkApp.store().settings().crowd }
         android.util.Log.i("RkTest", "t19 step 26")
         compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+    }
+
+    /** 2.12: Settings is folded (one line per part); Notifications: the quick choices and the switches, kept; the summary line follows. */
+    @Test fun t22_settings_folded_notification_choices() {
+        RkApp.store().setSettings { it.copy(nRestock = true, nDrop = false, nBuy = true, nNeed = true) }
+        compose.waitUntil(30_000) { compose.onAllNodesWithTag("tab3").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        assertTrue("folded: no switch shown before a part is opened", compose.onAllNodesWithTag("buying").fetchSemanticsNodes().isEmpty() &&
+            compose.onAllNodesWithTag("n-drop").fetchSemanticsNodes().isEmpty())
+        Thread.sleep(500); shot("t22_settings_folded")
+        try {
+            sec("notes")
+            compose.onNodeWithTag("np-restocks").performScrollTo().performClick()
+            compose.waitUntil(3_000) { RkApp.store().settings().let { it.nRestock && !it.nBuy && it.nNeed && !it.nDrop } }
+            compose.onNodeWithText("Restocks only (and when it needs you)").assertExists()
+            compose.onNodeWithTag("np-all").performScrollTo().performClick()
+            compose.waitUntil(3_000) { RkApp.store().settings().let { it.nRestock && it.nBuy && it.nNeed && it.nDrop } }
+            compose.onNodeWithTag("n-drop").performScrollTo().performClick()
+            compose.waitUntil(3_000) { !RkApp.store().settings().nDrop }
+            compose.onNodeWithTag("np-usual").assertExists()                 // (all but price drops: the Recommended choice)
+            compose.onNodeWithTag("notice-off").assertExists()
+            compose.onNodeWithTag("n-restock").performScrollTo(); Thread.sleep(500); shot("t22_notifications")
+            sec("notes")                                                   // closes again
+            compose.waitUntil(3_000) { compose.onAllNodesWithTag("n-drop").fetchSemanticsNodes().isEmpty() }
+        } finally { RkApp.store().setSettings { it.copy(nRestock = true, nDrop = false, nBuy = true, nNeed = true) }; compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }
     }
 
     @Test fun t8_turnPhoneSideways_noCrash() {

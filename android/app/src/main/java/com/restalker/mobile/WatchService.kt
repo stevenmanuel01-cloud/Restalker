@@ -27,8 +27,8 @@ class WatchService : Service() {
     override fun onCreate() {
         super.onCreate()
         notifier = Notifier(this)
-        Notifier.hidden = false                              // (watching switched on: the notice is shown again)
-        val n = Notifier.ongoing(this, "Starting...")
+        // (2.12: a notice you swiped away stays away - 2.0-2.11 showed it again whenever watching started)
+        val n = Notifier.ongoing(this)
         ServiceCompat.startForeground(this, Notifier.ONGOING_ID, n,
             if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
         instance = this
@@ -58,6 +58,8 @@ class WatchService : Service() {
                 GoListener.check()                          // 2.2: the fast channel with the PC (Who buys: phone / both)
                 Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
                 CrowdNet.tick()                             // 2.6: the Restalker crowd (read every 2 minutes while watching)
+                // 2.12: price drop alerts - watched products for sale over the cap that got clearly cheaper (this phone's look or the PC's)
+                try { com.restalker.mobile.core.PriceDrop.scan(RkApp.store(), System.currentTimeMillis()) { p, was, pr -> notifier.priceDrop(p, was, pr) } } catch (e: Exception) { }
                 tick.postDelayed(this, 60_000)
             }
         }, 30_000)
@@ -106,7 +108,7 @@ class WatchService : Service() {
         val sb = try { standsBy() } catch (e: Exception) { false }
         if (sb != Notifier.standby) {
             Notifier.standby = sb
-            notifier.status(notifier.lastStatus)
+            notifier.refreshNotice()
         }
         try {
             val w = wake ?: return
