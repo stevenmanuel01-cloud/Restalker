@@ -102,6 +102,14 @@ class ScreenTests {
         compose.onNodeWithTag("product-B0TEST0001").assertIsDisplayed()
     }
     /** 2.12: Settings parts are folded - open one (its line is tapped). */
+    /** 2.15: the keyboard away, only if it is showing (the Back key then closes only the keyboard, not the sheet). */
+    private fun hideKeyboard() {
+        val dev = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val shown = { dev.executeShellCommand("dumpsys input_method").contains("mInputShown=true") }
+        if (shown()) { dev.pressBack(); Thread.sleep(600) }
+        compose.waitForIdle()
+    }
+
     private fun sec(key: String) {
         compose.waitForIdle()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("sech-$key").fetchSemanticsNodes().isNotEmpty() }
@@ -721,7 +729,7 @@ class ScreenTests {
         compose.onNodeWithTag("f-buy").performScrollTo().performClick(); compose.waitForIdle()
         compose.onNodeWithTag("f-buy").assertIsOn()
         compose.onNodeWithTag("f-link").performTextInput("B0TEST0802")
-        androidx.test.espresso.Espresso.closeSoftKeyboard(); compose.waitForIdle()
+        hideKeyboard(); compose.waitForIdle()
         compose.onNodeWithTag("f-buy").assertIsOn()
         for (k in 0 until 3) {           // (as in t5: the keyboard can take the first tap - tap again, as a person would)
             compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
@@ -729,7 +737,7 @@ class ScreenTests {
             catch (e: Throwable) { if (k == 2) throw e }
         }
         assertTrue("not added without a cap while Buy is on", s.products().none { it.asin == "B0TEST0802" })
-        androidx.test.espresso.Espresso.closeSoftKeyboard(); compose.waitForIdle()
+        hideKeyboard(); compose.waitForIdle()
         compose.onNodeWithTag("f-buy").performScrollTo().performClick(); compose.waitForIdle()      // Buy off: just watch
         compose.onNodeWithTag("f-buy").assertIsOff()
         for (k in 0 until 3) {
