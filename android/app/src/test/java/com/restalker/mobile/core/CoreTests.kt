@@ -1124,6 +1124,32 @@ object CoreTests {
             val pcT = "phone-pcchannel123"
             !NtfyAlerts.shouldSend(true, pcT, "drop", true) && NtfyAlerts.shouldSend(true, pcT, "drop", false) &&
                 RefreshTiming.MIN_MS in 500..1500 && RefreshTiming.MAX_MS >= 10_000 }
+        // ---- 2.13 (owner, 2026-11-18 5:41 PM): useless Activity lines hidden (kept for reports), a restock said in ONE line
+        t("153_report_only_lines_hidden_from_activity_kept_for_reports") {
+            val w = World()
+            w.store.log("Updated to v2.12.")
+            w.store.log("Installing the update to v2.12 (the app restarts by itself; watching continues).", quiet = true)
+            w.store.log("The watching notice was swiped away - watching goes on, and the notice stays away.", quiet = true)
+            val all = w.store.log(); val shown = Store.shown(all)
+            all.any { it.contains("Installing the update") } && all.any { it.contains("swiped away") } &&
+                shown.none { it.contains("Installing the update") || it.contains("swiped away") || it.contains("started (Amazon") } &&
+                shown.any { it.contains("Updated to v2.12.") } }
+        t("154_crowd_tip_restock_said_in_one_line") {
+            val w = World(desk = true); w.add("B0TEST0001", 120.0, true, price = 89.99)
+            w.engine.send(Engine.Cmd.Crowd("B0TEST0001")); w.engine.step()
+            val shown = Store.shown(w.store.log())
+            val ours = shown.filter { it.contains("B0TEST0001") || it.contains("Test Product") }
+            ours.size == 1 && ours[0].contains("in stock at \$89.99 (another Restalker spotted it first) - the linked desktop buys it (this phone stands by).") &&
+                w.store.log().any { it.contains("another Restalker saw it in stock - looking now") } && w.amz.begins == 0 }
+        t("155_crowd_tip_not_in_stock_no_activity_line") {
+            val w = World(desk = true); w.add("B0TEST0001", 120.0, true, stock = false)
+            w.engine.send(Engine.Cmd.Crowd("B0TEST0001")); w.engine.step()
+            Store.shown(w.store.log()).none { it.contains("B0TEST0001") || it.contains("Test Product") } &&
+                w.store.log().any { it.contains("not in stock when this phone looked") } }
+        t("156_own_restock_one_line_then_buying") {
+            val w = World(); w.add("B0TEST0002", 120.0, true, price = 99.99); w.check("B0TEST0002")
+            val shown = Store.shown(w.store.log())
+            shown.count { it.contains("in stock at \$99.99 - buying it now.") } == 1 && shown.none { it.contains("BUYABLE") } }
         return results
     }
 

@@ -23,7 +23,7 @@ class ActionReceiver : BroadcastReceiver() {
                 NotificationManagerCompat.from(ctx).cancel(Notifier.idFor("r", id))
             }
             HIDDEN -> {
-                if (!Notifier.hidden) store.log("The watching notice was swiped away - watching goes on, and the notice stays away.")
+                if (!Notifier.hidden) store.log("The watching notice was swiped away - watching goes on, and the notice stays away.", quiet = true)
                 Notifier.hidden = true
             }
             STOP -> {

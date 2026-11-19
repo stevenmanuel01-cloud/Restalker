@@ -78,12 +78,19 @@ class Engine(private val store: Store, private val page: Page, private val alert
     fun idle(): Boolean = q.isEmpty() && busyWith == "idle"
 
     private fun log(s: String) = store.log(s)
+    /** 2.13: a detail for Claude's reports only (not shown in Activity). */
+    private fun detail(s: String) = store.log(s, quiet = true)
+    // 2.13 (owner: the crowd's "saw it - looking now", "BUYABLE at" and "the linked desktop buys it" lines "seem redundant and could
+    // maybe be consolidated"): who tipped this phone off (the crowd / the PC) and whether the look found it newly in stock - so ONE line
+    // says it all: "in stock at $89.99 (another Restalker spotted it first) - the linked desktop buys it (this phone stands by)."
+    @Volatile private var tipFor: Pair<String, String>? = null
+    @Volatile private var freshId: String? = null
     private fun s() = store.settings()
     private fun now() = clock.now()
 
     /** The engine's own thread runs this until Quit. */
     fun run() {
-        log("Restalker Mobile $APP_VERSION started (Amazon checkout from desktop $ENGINE_FROM).")
+        detail("Restalker Mobile $APP_VERSION started (Amazon checkout from desktop $ENGINE_FROM).")
         // a checkout that was running when watching last stopped is not running any more (its lock fields stay as they were)
         store.products().filter { it.inProgress }.forEach { p -> store.update(p.id) { it.copy(inProgress = false) } }
         while (!quit) {
@@ -132,7 +139,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 // never buys anything)
                 val p = store.products().firstOrNull { it.asin == c.asin && it.buy && it.watch } ?: return
                 if (!s().watching || !s().buying || buyerMode() == "pc" || otherPhoneBuys() || now() < s().cooldownUntil) return
-                log("${p.label}: the PC saw it in stock - looking now (Who buys: ${buyerMode()}).")
+                detail("${p.label}: the PC saw it in stock - looking now (Who buys: ${buyerMode()}).")
+                tipFor = p.id to "your PC spotted it first"
                 check(p, manual = false)
             }
             is Cmd.Crowd -> {
@@ -140,7 +148,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 // under your cap; the crowd's word alone never buys anything)
                 val p = store.products().firstOrNull { it.asin == c.asin && it.watch } ?: return
                 if (!s().watching || now() < s().cooldownUntil) return
-                log("${p.label}: another Restalker saw it in stock - looking now.")
+                detail("${p.label}: another Restalker saw it in stock - looking now.")
+                tipFor = p.id to "another Restalker spotted it first"
                 check(p, manual = false)
             }
             is Cmd.BuyNow -> {
@@ -257,24 +266,31 @@ class Engine(private val store: Store, private val page: Page, private val alert
             it.copy(status = text, price = price ?: if (buyable) it.price else price, lastCheck = t, buyable = buyable,
                 episodeStart = if (newEp) t else it.episodeStart)
         }
-        if (buyable && !p.buyable) log("${p.label}: $text")
+        if (buyable && !p.buyable) { detail("${p.label}: $text"); freshId = p.id }
     }
 
     fun check(p0: Product, manual: Boolean = false) {
+        freshId = null
+        val tip = tipFor?.takeIf { it.first == p0.id }?.second; tipFor = null
         if (!openAndRead(p0)) { busyWith = "idle"; return }
         val p = store.product(p0.id) ?: return
         if (manual) log("${p.label}: looked at by you - ${p.status}")
+        val fresh = freshId == p.id; freshId = null
+        // (2.13: one line for a restock, said once - what was seen, who spotted it, and what happens now)
+        val seen = "${p.label}: in stock" + (p.price?.let { " at \$${money(it)}" } ?: "") + (tip?.let { " ($it)" } ?: "")
         if (p.buyable) {
             val practicedThisRestock = s().practice && p.episodeStart > 0 && p.practiceOkAt >= p.episodeStart
-            if (canAutoBuy(p) && !practicedThisRestock) buy(p, p.price)
+            if (canAutoBuy(p) && !practicedThisRestock) { if (fresh) log("$seen - buying it now."); buy(p, p.price) }
             else if (p.buy && s().buying && standby() && overrideDesk != p.id) {
-                if (p.alertedEpisode != p.episodeStart) { store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }; log("${p.label}: buyable - the linked desktop buys it (this phone stands by).") }
+                if (p.alertedEpisode != p.episodeStart) { store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }; log("$seen - the linked desktop buys it (this phone stands by).") }
             }
             else if (!canAutoBuy(p) && !p.purchased && !p.attempted && p.alertedEpisode != p.episodeStart && now() >= s().snoozeUntil) {
                 store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }
+                log("$seen - you were sent a message.")
                 alerts.restock(p, p.price)
             }
-        }
+            else if (fresh) log("$seen.")
+        } else if (tip != null) detail("${p.label}: not in stock when this phone looked (${p.status}).")
         busyWith = "idle"
     }
 

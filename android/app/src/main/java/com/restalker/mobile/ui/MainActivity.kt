@@ -391,7 +391,7 @@ class MainActivity : ComponentActivity() {
         } else {
             store.log("${d.name}: set to ${modeChip(m)}" + (if (m == "pc") (if (fo) ", buys if the PC stops" else ", never buys") else "") + " (from this device).")
             Thread { val ok = try { DeskLink.get().setFor(d.id, m, fo) } catch (e: Exception) { false }
-                runOnUiThread { if (!ok) store.log("${d.name}: the change could not be sent yet - it goes with the next link round."); bump() } }.start()
+                runOnUiThread { if (!ok) store.log("${d.name}: the change could not be sent yet - it goes with the next link round.", quiet = true); bump() } }.start()
         }
         bump()
     }
@@ -900,7 +900,7 @@ class MainActivity : ComponentActivity() {
         val store = RkApp.store()
         var confirmRemove by remember(p.id) { mutableStateOf(false) }
         val deskBuys = remember(r) { DeskLink.standsBy() }
-        val lines = remember(r) { store.log().filter { it.contains(p.label) }.takeLast(60).asReversed() }
+        val lines = remember(r) { com.restalker.mobile.core.Store.shown(store.log()).filter { it.contains(p.label) }.takeLast(60).asReversed() }
         val buys = remember(r) { try { Buys.of(DeskLink.get().buys(DeskLink.name()), p.asin, p.label) } catch (e: Exception) { emptyList() } }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("product-screen")) {
             Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1253,7 +1253,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ActivityTab(r: Int) {
-        val lines = remember(r) { RkApp.store().log().asReversed() }
+        val lines = remember(r) { com.restalker.mobile.core.Store.shown(RkApp.store().log()).asReversed() }
         LazyColumn(Modifier.fillMaxSize().testTag("log")) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 16.dp)) {

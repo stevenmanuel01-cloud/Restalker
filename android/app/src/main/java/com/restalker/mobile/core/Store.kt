@@ -69,10 +69,11 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         synchronized(lock) { purchases = (listOf(p) + purchases).take(500); write("purchases.json", MiniJson.write(purchases.map { it.toMap() })) }
         onChange?.invoke()
     }
-    fun log(line: String) {
+    /** [quiet] (2.13): a detail for Claude's reports only - kept in the log (and sent with a report) but not shown in Activity. */
+    fun log(line: String, quiet: Boolean = false) {
         val t = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(clock()))
         synchronized(lock) {
-            logLines.addLast("$t  $line"); while (logLines.size > LOG_MAX) logLines.removeFirst()
+            logLines.addLast("$t  ${if (quiet) QUIET else ""}$line"); while (logLines.size > LOG_MAX) logLines.removeFirst()
             if (++writes % 10 == 0 || line.startsWith("!")) write("log.txt", logLines.joinToString("\n"))
         }
         onChange?.invoke()
@@ -86,5 +87,11 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
 
     fun newId(): String = synchronized(lock) { "p" + clock().toString(36) + (products.size + 1) }
 
-    companion object { const val LOG_MAX = 400 }
+    companion object {
+        const val LOG_MAX = 400
+        /** 2.13 (owner: "All of the crossed out alerts are useless and shouldn't be included"): the mark of a report-only line. */
+        const val QUIET = "· "
+        /** What Activity (and a product's Latest) shows: every line but the report-only details. */
+        fun shown(lines: List<String>): List<String> = lines.filter { !it.contains("  $QUIET") }
+    }
 }

@@ -1,3 +1,11 @@
+# Restalker Mobile 2.13 (2026-11-18; your notes of 5:41 PM)
+- Activity shows only what matters. No more lines for the app starting, updates being installed (they showed up to 3 times), the
+  watching notice being swiped away, or a device change waiting for the next link round. "Updated to v..." stays. (The hidden lines
+  still go into the reports Claude reads.)
+- A restock is ONE line: what was seen, who spotted it, and what happens now - e.g. "Nauctis Secret Lair Bundle: in stock at $89.99
+  (another Restalker spotted it first) - the linked desktop buys it (this phone stands by)." Before, that took three lines. A tip from
+  the crowd that turned out to be sold out by the time this phone looked no longer adds a line.
+
 # Restalker Mobile 2.12 (2026-11-18; your notes of 3:33 PM)
 - Pull down to refresh: the circle keeps turning while it refreshes and goes away by itself when it is done. (Before, the refresh
   said "done" before the screen even saw it start, so the arrow froze where your finger left it until you changed tabs.)

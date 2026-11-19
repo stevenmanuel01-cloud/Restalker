@@ -123,7 +123,7 @@ object Updater {
             val i = Intent(ctx, UpdateReceiver::class.java).putExtra("version", version).putExtra("code", code)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
             state = "installing v$version"
-            log("Installing the update to v$version (the app restarts by itself; watching continues).")
+            RkApp.store().log("Installing the update to v$version (the app restarts by itself; watching continues).", quiet = true)
             s.commit(PendingIntent.getBroadcast(ctx, 77, i, flags).intentSender)
         }
     }
