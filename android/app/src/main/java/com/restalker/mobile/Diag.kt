@@ -30,6 +30,7 @@ object Diag {
         val svc = WatchService.instance
         sb.append("Watching service: ${if (svc != null) "running (${svc.engine.busyWith}; ${svc.notifier.lastStatus})" else "not running"}\n")
         svc?.dataText()?.takeIf { it.isNotEmpty() }?.let { sb.append("$it\n") }
+        svc?.let { s -> try { sb.append(s.engine.meter.text(s.rxSinceStart())).append("\n") } catch (e: Exception) { } }
         sb.append("Settings: watching=${st.watching} buying=${st.buying} practice=${st.practice} every=${st.intervalSec}s wifiOnly=${st.wifiOnly}" +
             " snoozed=${st.snoozeUntil > System.currentTimeMillis()} resting=${st.cooldownUntil > System.currentTimeMillis()} (streak ${st.cooldownStreak})" +
             " ordersRead=${if (st.ordersReadAt > 0) t.format(Date(st.ordersReadAt)) else "never"}\n")

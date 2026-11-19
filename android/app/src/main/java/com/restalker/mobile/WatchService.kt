@@ -41,7 +41,8 @@ class WatchService : Service() {
             buyerMode = { if (DeskLink.get().linked()) RkApp.store().settings().buyMode else "solo" },     // (not linked: this phone buys)
             pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() },
             onSighting = { a, pr -> CrowdNet.share(a, pr) },                    // 2.6: the Restalker crowd hears this phone's sightings
-            master = { DeskLink.master() }, boughtOf = { p -> DeskLink.boughtOf(p) })        // 2.7: at most 3 purchases of a product
+            master = { DeskLink.master() }, boughtOf = { p -> DeskLink.boughtOf(p) },
+            rxBytes = { android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()) })      // 2.14: Data by activity (diagnostics)        // 2.7: at most 3 purchases of a product
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
@@ -124,6 +125,8 @@ class WatchService : Service() {
 
     private var startRx = 0L; private var startAt = 0L
     val since: Long get() = startAt
+    /** 2.14: what this app has received since watching began (-1 = not known). */
+    fun rxSinceStart(): Long { val rx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); return if (rx < 0 || startRx < 0) -1 else rx - startRx }
     fun hours(): Double = (System.currentTimeMillis() - startAt) / 3_600_000.0
     fun mbPerHour(): Double? {
         val rx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid())

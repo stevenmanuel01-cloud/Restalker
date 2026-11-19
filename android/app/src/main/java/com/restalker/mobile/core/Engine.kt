@@ -55,7 +55,10 @@ class Engine(private val store: Store, private val page: Page, private val alert
              private val onSighting: (String, Double?) -> Unit = { _, _ -> },
              /** 2.7: the owner's device (no purchase limit) and a product's purchases on every linked device. */
              private val master: () -> Boolean = { true },
-             private val boughtOf: (Product) -> Int = { 0 }) {
+             private val boughtOf: (Product) -> Int = { 0 },
+             /** 2.14: the bytes this app has received so far (-1 = not known) - for "Data by activity" in the diagnostics. */
+             rxBytes: () -> Long = { -1L }) {
+    val meter = DataMeter(rxBytes)
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
         data class BuyNow(val id: String) : Cmd()          // the "Buy now" button on a restock message: set to buy, then look at once
@@ -112,17 +115,19 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (st.wifiOnly && net != "wifi") { status("Wi-Fi only is on - waiting for Wi-Fi"); waitFor(30_000); return }
         val watched = store.products().filter { it.watch }
         // 2.8: pictures are looked for also while no product is switched on (a new phone with the whole central list, nothing watched yet)
-        if (watched.isEmpty()) { if (pictureOnce()) return; status("Watching, but no product is switched on."); waitFor(30_000); return }
+        if (watched.isEmpty()) { if (meter.run("pictures") { pictureOnce() }) return; status("Watching, but no product is switched on."); waitFor(30_000); return }
         // 2.2: standing by = the linked PC buys and Who buys is "pc" (with "both" this phone watches at its own pace too)
         val desk = standby()
-        if (watched.any { it.buy } && !desk && now() - st.ordersReadAt > ORDERS_EVERY) { readOrders(); return }   // (the desktop reads them while it buys)
+        if (watched.any { it.buy } && !desk && now() - st.ordersReadAt > ORDERS_EVERY) { meter.run("orders") { readOrders() }; return }   // (the desktop reads them while it buys)
         // 1.4: while the linked desktop watches and buys, this phone looks only every 10 minutes (a backup; it saves battery and data)
         val interval = if (desk) maxOf(STANDBY_MS, st.intervalSec * 1000L) else st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
         val due = watched.minByOrNull { it.lastCheck } ?: return
         val wait = due.lastCheck + interval - now()
         offlineSince = 0
-        if (wait > 0 && pictureOnce()) return
-        if (wait > 20_000) page.rest()                  // 2.0: the page closed and quiet until the next look (battery)
+        if (wait > 0 && meter.run("pictures") { pictureOnce() }) return
+        // 2.0: the page closed and quiet until the next look (battery). 2.14: between EVERY two looks (was: only for a wait over 20 s) -
+        // with 8 products every 90 s the last page stayed open, its scripts and ads still working, between all the looks
+        if (wait > 3_000) page.rest()
         if (wait > 0) { status(if (desk) (when { otherPhoneBuys() -> "Another phone / tablet buys"; desktopBuys() -> "The PC buys"; pcHanded() -> "Another device buys"
             else -> "Not buying here" }) + " · this device stands by (a backup look every 30 min - Settings, Who buys) · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
@@ -272,7 +277,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
     fun check(p0: Product, manual: Boolean = false) {
         freshId = null
         val tip = tipFor?.takeIf { it.first == p0.id }?.second; tipFor = null
-        if (!openAndRead(p0)) { busyWith = "idle"; return }
+        if (!meter.run("looks") { openAndRead(p0) }) { busyWith = "idle"; return }
         val p = store.product(p0.id) ?: return
         if (manual) log("${p.label}: looked at by you - ${p.status}")
         val fresh = freshId == p.id; freshId = null
@@ -282,7 +287,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
             val practicedThisRestock = s().practice && p.episodeStart > 0 && p.practiceOkAt >= p.episodeStart
             if (canAutoBuy(p) && !practicedThisRestock) { if (fresh) log("$seen - buying it now."); buy(p, p.price) }
             else if (p.buy && s().buying && standby() && overrideDesk != p.id) {
-                if (p.alertedEpisode != p.episodeStart) { store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }; log("$seen - the linked desktop buys it (this phone stands by).") }
+                if (p.alertedEpisode != p.episodeStart) { store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }; log("$seen - " + standbyWhy()) }
             }
             else if (!canAutoBuy(p) && !p.purchased && !p.attempted && p.alertedEpisode != p.episodeStart && now() >= s().snoozeUntil) {
                 store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }
@@ -306,6 +311,15 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun mayBuyHere(): Boolean = !otherPhoneBuys() && when (buyerMode()) {
         "pc" -> failover() && !desktopBuys() && !pcHanded()
         else -> true
+    }
+
+    /** 2.14: why this device only stands by, for the Activity line (2.13 always said "the linked desktop buys it" - also when the PC
+     *  had stopped and another phone / tablet was first in line). */
+    private fun standbyWhy(): String = when {
+        otherPhoneBuys() -> "another phone / tablet buys it (this one stands by)."
+        desktopBuys() -> "the linked desktop buys it (this phone stands by)."
+        pcHanded() -> "another device buys it (this one stands by)."
+        else -> "this device does not buy it (Settings, Who buys)."
     }
 
     /** This device only stands by (a backup look every 30 minutes). */
@@ -354,7 +368,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
     // ------------------------------------------------------------------ buying (the desktop's _try_amazon)
     private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT }
 
-    fun buy(p: Product, price: Double?, forcePractice: Boolean = false) {
+    fun buy(p: Product, price: Double?, forcePractice: Boolean = false) = meter.run("checkouts") { buyNow(p, price, forcePractice) }
+
+    private fun buyNow(p: Product, price: Double?, forcePractice: Boolean) {
         val practice = forcePractice || s().practice
         busyWith = "checking out ${p.label}" + if (practice) " (practice)" else ""
         if (!practice && !canAutoBuy(p)) { busyWith = "idle"; return }
