@@ -54,7 +54,8 @@ test("restock message: name, store, price vs MSRP and TCG, devices, link, pictur
   assert.equal(e.url, "https://www.amazon.com/dp/B0HNTNV94J");
   assert.equal(e.fields[1].value, "$323.88  (MSRP $323.88 · TCG $410.50)");
   assert.equal(e.fields[2].value, "3 Restalker devices");
-  assert.equal(e.thumbnail.url, "https://tcgplayer-cdn.tcgplayer.com/x.jpg");
+  assert.equal(e.image.url, "https://tcgplayer-cdn.tcgplayer.com/x.jpg");     // (a medium picture; the name is the link)
+  assert.ok(!JSON.stringify(m).includes("amazon.com/dp/B0HNTNV94J ") && !m.content.includes("http"));
   const w = L.restockMessage({ ...ev, a: "B0GXC89N66", s: "Walmart", n: 1, p: null }, prods[1], null, []);
   assert.equal(w.embeds[0].url, "https://www.walmart.com/ip/1");
   assert.equal(w.embeds[0].fields[1].value, "?  (MSRP $359.99)");
@@ -89,4 +90,35 @@ test("release notes section, set groups, role changes, price info", () => {
   const pi = L.priceInfo(prods[0], [[1, 400, 0], [2, 350, 0], [3, 380, 0]]);
   assert.match(pi, /TCG market now: \$380.00/); assert.match(pi, /low \$350.00 · high \$400.00 · -5.0%/);
   assert.match(L.priceInfo(prods[1], []), /No TCG history yet/);
+});
+
+test("shared checkout lock: first device wins, runs out by itself, bought holds a day, only the holder releases", () => {
+  const t0 = now;
+  const a = L.lockDecide(null, "aaaaaaaaaaaa", t0);
+  assert.equal(a.grant, true); assert.equal(a.row.owner, "aaaaaaaaaaaa"); assert.equal(a.row.until, t0 + L.LOCK_MS);
+  const b = L.lockDecide(a.row, "bbbbbbbbbbbb", t0 + 1000);
+  assert.equal(b.grant, false); assert.equal(b.row.owner, "aaaaaaaaaaaa");                 // the race is lost: no second order
+  assert.equal(L.lockDecide(a.row, "aaaaaaaaaaaa", t0 + 2000).grant, true);               // the holder may claim again
+  assert.equal(L.lockDecide(a.row, "bbbbbbbbbbbb", t0 + L.LOCK_MS + 1).grant, true);      // a stopped device never blocks for long
+  assert.equal(L.lockDecide(null, "a", t0, 10 * 3600_000).row.until, t0 + L.LOCK_MAX_MS); // (no endless claims)
+  assert.equal(L.releaseDecide(a.row, "bbbbbbbbbbbb", "failed", t0), undefined);          // only the holder
+  assert.equal(L.releaseDecide(a.row, "aaaaaaaaaaaa", "failed", t0), null);                // sold out under it: free for the others
+  const bought = L.releaseDecide(a.row, "aaaaaaaaaaaa", "bought", t0);
+  assert.equal(bought.state, "bought"); assert.equal(bought.until, t0 + L.BOUGHT_HOLD_MS);
+  assert.equal(L.lockDecide(bought, "bbbbbbbbbbbb", t0 + L.LOCK_MS + 5).grant, false);    // bought: the others stay out for a day
+  assert.equal(L.lockDecide(bought, "aaaaaaaaaaaa", t0 + 5).row.state, "bought");
+  assert.ok(L.GROUP.test("0123456789abcdef0123456789abcdef") && !L.GROUP.test("xyz"));
+  assert.ok(L.ANY_ASIN.test("B0HNTNV94J") && L.ANY_ASIN.test("bb:walmart_hobbit") && !L.ANY_ASIN.test("bb:Walmart Hobbit"));
+});
+
+test("report and suggestion digests, link codes", () => {
+  assert.equal(L.reportDigest([], now), null);
+  const d = L.reportDigest([{ c: "a", title: "not bought - sold out $89.99" }, { c: "b", title: "not bought - sold out $323.88", note: "it said sold out" },
+    { c: "a", title: "pictures missing" }], now);
+  assert.match(d, /3 from 2 devices/); assert.match(d, /2× not bought - sold out \$ - "it said sold out"/); assert.match(d, /1× pictures missing/);
+  const sd = L.suggestionDigest([{ c: "a", a: "B0NEW00001", name: "New Box" }, { c: "b", a: "B0NEW00001" }, { c: "a", a: "B0HNTNV94J" }], new Set(["B0HNTNV94J"]));
+  assert.match(sd, /New Box - B0NEW00001 - asked by 2 devices/); assert.ok(!sd.includes("B0HNTNV94J"));
+  assert.equal(L.suggestionDigest([{ c: "a", a: "B0HNTNV94J" }], new Set(["B0HNTNV94J"])), null);
+  let i = 0; const code = L.linkCode(() => (i++ % 7) / 7);
+  assert.match(code, /^[A-HJ-NP-Z2-9]{6}$/);
 });

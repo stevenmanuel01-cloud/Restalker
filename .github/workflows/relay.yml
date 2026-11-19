@@ -20,6 +20,7 @@ jobs:
       DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
       DISCORD_PUBLIC_KEY: ${{ secrets.DISCORD_PUBLIC_KEY }}
       DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+      DIGEST_TOPIC: ${{ secrets.CLAUDE_DIGEST_TOPIC }}
     defaults:
       run:
         working-directory: relay
@@ -58,7 +59,7 @@ jobs:
         run: npx wrangler deploy
       - name: The relay's secrets
         run: |
-          python3 -c "import json,os; json.dump({k: os.environ[k].strip() for k in ['DISCORD_BOT_TOKEN','DISCORD_PUBLIC_KEY','DISCORD_APP_ID']}, open('/tmp/s.json','w'))"
+          python3 -c "import json,os; json.dump({k: os.environ[k].strip() for k in ['DISCORD_BOT_TOKEN','DISCORD_PUBLIC_KEY','DISCORD_APP_ID','DIGEST_TOPIC'] if os.environ.get(k, '').strip()}, open('/tmp/s.json','w'))"
           npx wrangler secret bulk /tmp/s.json; rm -f /tmp/s.json
       - name: The relay answers
         run: |

@@ -42,6 +42,12 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS seen(c TEXT PRIMARY KEY, at INTEGER, first INTEGER, sightings INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rate(k TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS locks(g TEXT, a TEXT, owner TEXT, state TEXT, since INTEGER, until INTEGER, PRIMARY KEY(g, a))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, c TEXT, app TEXT, ver TEXT,
+      title TEXT, note TEXT, text TEXT)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS suggest(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, c TEXT, a TEXT, name TEXT)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS dlink(code TEXT PRIMARY KEY, c TEXT, until INTEGER)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS devlink(c TEXT PRIMARY KEY, user TEXT, uname TEXT, at INTEGER)`);
   }
 
   kvGet(k) { const r = this.sql.exec("SELECT v FROM kv WHERE k = ?", k).toArray(); return r.length ? r[0].v : null; }
@@ -95,6 +101,69 @@ export class Hub {
         return json({ ok: true, events: rows, confirm: L.CONFIRM_DEVICES });
       }
       if (u.pathname === "/v1/stats") return json({ ok: true, ...(await this.stats(u.searchParams.has("log"))) });
+      if (u.pathname === "/v1/links") return json({ ok: true, discord: CFG.invite || null });
+      if (req.method === "POST" && ["/v1/h", "/v1/lock", "/v1/release", "/v1/report", "/v1/suggest", "/v1/linkcode"].includes(u.pathname)) {
+        const ip = req.headers.get("cf-connecting-ip") || "?";
+        if (this.rateHit("ipw:" + ip, 300)) return json({ ok: false, error: "too many" }, 429);
+        const b = await req.json().catch(() => null) || {};
+        const c = typeof b.c === "string" && /^[0-9a-f]{12}$/.test(b.c) ? b.c : null;
+        if (!c) return json({ ok: false, error: "device code" }, 400);
+        const now = Date.now();
+        if (u.pathname === "/v1/h") {          // a device's heartbeat (every 15 min): the live "active now" count
+          this.sql.exec(`INSERT INTO seen(c, at, first, sightings) VALUES(?, ?, ?, 0) ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at)`, c, now, now);
+          return json({ ok: true, active: this.active(now) });
+        }
+        if (u.pathname === "/v1/lock" || u.pathname === "/v1/release") {
+          const g = String(b.g || ""), a = String(b.a || "");
+          if (!L.GROUP.test(g) || !L.ANY_ASIN.test(a)) return json({ ok: false, error: "group / product" }, 400);
+          const row = this.sql.exec("SELECT owner, state, since, until FROM locks WHERE g = ? AND a = ?", g, a).toArray()[0] || null;
+          if (u.pathname === "/v1/lock") {
+            const d = L.lockDecide(row, c, now, b.ttl);
+            if (d.grant) this.sql.exec(`INSERT INTO locks(g, a, owner, state, since, until) VALUES(?, ?, ?, ?, ?, ?)
+              ON CONFLICT(g, a) DO UPDATE SET owner = excluded.owner, state = excluded.state, since = excluded.since, until = excluded.until`,
+              g, a, d.row.owner, d.row.state, d.row.since, d.row.until);
+            return json({ ok: true, granted: d.grant, owner: d.row.owner, state: d.row.state, until: d.row.until });
+          }
+          const after = L.releaseDecide(row, c, String(b.result || ""), now);
+          if (after === undefined) return json({ ok: true, released: false });
+          if (after === null) this.sql.exec("DELETE FROM locks WHERE g = ? AND a = ?", g, a);
+          else this.sql.exec("UPDATE locks SET state = ?, until = ? WHERE g = ? AND a = ?", after.state, after.until, g, a);
+          return json({ ok: true, released: true, state: after ? after.state : "free" });
+        }
+        if (u.pathname === "/v1/report") {     // (owner: reports from everyone go to Discord, compiled once a day)
+          if (this.rateHit("rep:" + c, 6 * 24)) return json({ ok: false, error: "too many" }, 429);
+          this.sql.exec(`INSERT INTO reports(at, c, app, ver, title, note, text) VALUES(?, ?, ?, ?, ?, ?, ?)`, now, c,
+            String(b.app || "").slice(0, 10), String(b.ver || "").slice(0, 20), String(b.title || "").slice(0, 200),
+            String(b.note || "").slice(0, 1000), String(b.text || "").slice(0, 262_144));
+          return json({ ok: true });
+        }
+        if (u.pathname === "/v1/suggest") {
+          const a = String(b.a || "");
+          if (!/^[A-Z0-9]{10}$/.test(a)) return json({ ok: false, error: "product code" }, 400);
+          if (this.rateHit("sug:" + c, 30)) return json({ ok: false, error: "too many" }, 429);
+          this.sql.exec("INSERT INTO suggest(at, c, a, name) VALUES(?, ?, ?, ?)", now, c, a, String(b.name || "").slice(0, 150));
+          return json({ ok: true });
+        }
+        if (u.pathname === "/v1/linkcode") {   // (owner: "The user should have the option to connect with discord, but is not required")
+          const code = L.linkCode(Math.random);
+          this.sql.exec("DELETE FROM dlink WHERE c = ? OR until < ?", c, now);
+          this.sql.exec("INSERT OR REPLACE INTO dlink(code, c, until) VALUES(?, ?, ?)", code, c, now + 15 * 60_000);
+          return json({ ok: true, code, minutes: 15 });
+        }
+      }
+      if (u.pathname === "/v1/linked") {
+        const c = u.searchParams.get("c") || "";
+        const r = this.sql.exec("SELECT uname, at FROM devlink WHERE c = ?", c).toArray()[0];
+        return json({ ok: true, linked: !!r, name: r ? r.uname : null });
+      }
+      if (u.pathname === "/__link" && req.method === "POST") {   // (from the /link command - the worker's own call, not public)
+        const b = await req.json().catch(() => ({}));
+        const r = this.sql.exec("SELECT c FROM dlink WHERE code = ? AND until > ?", String(b.code || "").toUpperCase(), Date.now()).toArray()[0];
+        if (!r) return json({ ok: false });
+        this.sql.exec("DELETE FROM dlink WHERE code = ?", String(b.code).toUpperCase());
+        this.sql.exec("INSERT OR REPLACE INTO devlink(c, user, uname, at) VALUES(?, ?, ?, ?)", r.c, String(b.user), String(b.uname || "").slice(0, 60), Date.now());
+        return json({ ok: true, devices: this.sql.exec("SELECT COUNT(*) AS n FROM devlink WHERE user = ?", String(b.user)).one().n });
+      }
       return json({ ok: false, error: "not found" }, 404);
     } catch (e) {
       this.note("! " + u.pathname + ": " + String(e).slice(0, 120));
@@ -254,6 +323,8 @@ export class Hub {
     return out;
   }
 
+  active(now) { return this.sql.exec("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 30 * 60_000).one().n; }
+
   async daily() {
     const ch = CFG.channels || {};
     const now = Date.now();
@@ -262,7 +333,21 @@ export class Hub {
     await this.say(ch.daily_summary, L.dailySummary(evs, devs, now));
     const mv = L.moversText(L.movers(await this.history(), await this.products(), 7, 3));
     if (mv) await this.say(ch.price_movers, mv);
-    return { restocks: evs.length, devices: devs, movers: !!mv };
+    // reports and product suggestions of the last 24 hours -> the private staff channels (and the owner's digest channel)
+    const reps = this.sql.exec("SELECT c, title, note, app, ver, at, text FROM reports WHERE at > ? ORDER BY id", now - 24 * 3600_000).toArray();
+    const rd = L.reportDigest(reps, now);
+    if (rd) await this.say(ch.staff_reports, rd);
+    if (rd && this.env.DIGEST_TOPIC) {
+      const file = reps.map(r => `===== ${new Date(r.at).toISOString()} ${r.app} ${r.ver} device ${r.c}\n${r.title}\n${r.note ? "note: " + r.note + "\n" : ""}\n${r.text}`).join("\n\n");
+      try { await fetch(`https://ntfy.sh/${this.env.DIGEST_TOPIC}`, { method: "PUT", body: file, headers: { Title: `Restalker reports: ${reps.length}`, Filename: "restalker-reports.txt" } }); }
+      catch (e) { this.note("! digest send: " + String(e).slice(0, 80)); }
+    }
+    const sg = this.sql.exec("SELECT c, a, name FROM suggest WHERE at > ?", now - 24 * 3600_000).toArray();
+    const sd = L.suggestionDigest(sg, new Set((await this.products()).map(p => p.a)));
+    if (sd) await this.say(ch.staff_suggestions, sd);
+    this.sql.exec("DELETE FROM reports WHERE at < ?", now - 30 * 86400_000);
+    this.sql.exec("DELETE FROM suggest WHERE at < ?", now - 90 * 86400_000);
+    return { restocks: evs.length, devices: devs, movers: !!mv, reports: reps.length, suggestions: sg.length };
   }
 
   async stats(withLog) {
@@ -272,6 +357,7 @@ export class Hub {
     const last = this.sql.exec(`SELECT a, s, p, n, first_at FROM events WHERE n >= ? ORDER BY id DESC LIMIT 5`, L.CONFIRM_DEVICES).toArray()
       .map(e => ({ ...e, name: (prods.find(p => p.a === e.a) || {}).n || e.a }));
     const out = {
+      active: this.active(now),                      // (heard in the last 30 minutes: "active now")
       devices12h: one("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 12 * 3600_000),
       devicesAll: one("SELECT COUNT(*) AS n FROM seen"),
       restocks24h: one("SELECT COUNT(*) AS n FROM events WHERE first_at > ?", now - 24 * 3600_000),
@@ -346,9 +432,19 @@ async function interactions(req, env, ctx) {
   if (it.type === 2 && name === "follow") return reply("Choose what Restalker pings you about (pick none to stop the pings):", { components: followMenus(member.roles) });
   if (it.type === 2 && name === "status") {
     const s = await (await hub(env).fetch("https://hub/v1/stats")).json();
+    s.devices12h = `${s.active} active now · ${s.devices12h}`;
     const last = (s.last || []).map(e => `• ${e.name} - ${e.s} ${L.money(e.p)} (${e.n} devices) <t:${Math.floor(e.first_at / 1000)}:R>`).join("\n") || "none yet";
     return reply(`**Restalker crowd**\nDevices sharing (last 12 h): **${s.devices12h}** · all time: **${s.devicesAll}**\n` +
       `Restocks spotted (24 h): **${s.restocks24h}** · confirmed: **${s.confirmed24h}**\nLatest confirmed:\n${last}`);
+  }
+  if (it.type === 2 && name === "link") {
+    const code = String(((it.data.options || [])[0] || {}).value || "").trim().toUpperCase();
+    const uname = (member.user || it.user || {}).username || "";
+    const r = await (await hub(env).fetch("https://hub/__link", { method: "POST", body: JSON.stringify({ code, user, uname }) })).json();
+    if (!r.ok) return reply("That code is not valid (codes work for 15 minutes) - make a new one in Restalker: Settings, Discord, Connect.");
+    const role = (CFG.roles || {}).linked;
+    if (role && it.guild_id) await setRole(env, it.guild_id, user, role, true);
+    return reply(`Connected - this Discord account now belongs to ${r.devices} Restalker device${r.devices === 1 ? "" : "s"}. Thank you for sharing!`);
   }
   if (it.type === 2 && name === "price") {
     const a = String(((it.data.options || [])[0] || {}).value || "");

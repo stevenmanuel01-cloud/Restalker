@@ -84,7 +84,9 @@ export function restockMessage(ev, prod, tcg, ping) {
     timestamp: new Date(ev.first_at).toISOString(),
   };
   if (link) embed.url = link;
-  if (prod && typeof prod.i === "string" && prod.i.startsWith("https://")) embed.thumbnail = { url: prod.i };
+  // (owner, 2026-11-19: "I like showing the images more than the long URLs. This image should be slightly smaller though. Just
+  //  enough for people to be able to see the product") - the central list's 200 px photo, shown as the post's picture; the name is the link
+  if (prod && typeof prod.i === "string" && prod.i.startsWith("https://")) embed.image = { url: prod.i };
   const roles = (ping || []).filter(Boolean);
   return {
     content: roles.map(r => `<@&${r}>`).join(" "),
@@ -175,4 +177,61 @@ export function priceInfo(prod, series) {
   } else lines.push("No TCG history yet.");
   if (prod.tp) lines.push(`https://www.tcgplayer.com/product/${prod.tp}`);
   return lines.join("\n");
+}
+
+// ------------------------------------------------------------------------------------------------ the shared checkout lock
+// (owner, 2026-11-19: "it should be happening simultaneously with the PC. Its a race to checkout, so whichever happens first is the
+// winner and should lock the product normally"). One person's linked devices share a group code (made from their link secret - no one
+// else can guess it). Right before "Place your order" a device claims the product; only one device of the group holds it at a time.
+// A claim runs out by itself (a device that stopped mid-checkout never blocks the others for long); "bought" holds it for a day.
+export const LOCK_MS = 10 * 60_000, LOCK_MAX_MS = 15 * 60_000, BOUGHT_HOLD_MS = 24 * 3600_000;
+export const GROUP = /^[0-9a-f]{32}$/;
+export const ANY_ASIN = /^[A-Z0-9]{10}$|^bb:[a-z0-9_]{1,60}$/;      // (Amazon codes, and the PC's other-store product keys)
+
+/** -> { grant: bool, row: the lock after (or the holder's) }. [row]: the current lock or null. */
+export function lockDecide(row, c, now, ttl = LOCK_MS) {
+  const t = Math.max(30_000, Math.min(LOCK_MAX_MS, Number(ttl) || LOCK_MS));
+  if (!row || row.until < now || row.owner === c) {
+    if (row && row.owner === c && row.state === "bought" && row.until >= now) return { grant: true, row };   // (its own purchase stays)
+    return { grant: true, row: { owner: c, state: "checkout", since: now, until: now + t } };
+  }
+  return { grant: false, row };
+}
+
+/** A device says how its checkout ended: "bought" keeps the product held for a day; anything else frees it for the others. Only the
+ *  holder can. -> the lock after (null = free), or undefined when this device was not the holder (nothing changes). */
+export function releaseDecide(row, c, result, now) {
+  if (!row || row.owner !== c) return undefined;
+  if (result === "bought") return { ...row, state: "bought", until: now + BOUGHT_HOLD_MS };
+  return null;
+}
+
+// ------------------------------------------------------------------------------------------------ reports and suggestions
+// (owner, 2026-11-19: "all issues should be reported to discord, which can be sorted, compiled, and sent to me/you for review ...
+// addressed no more than once per day") - the daily digest of everyone's reports.
+export function reportDigest(reports, now) {
+  if (!reports.length) return null;
+  const devs = new Set(reports.map(r => r.c)).size;
+  const by = {};
+  for (const r of reports) { const k = (r.title || "(no title)").replace(/\$[0-9.,]+/g, "$").slice(0, 90); (by[k] = by[k] || []).push(r); }
+  const lines = Object.entries(by).sort((x, y) => y[1].length - x[1].length).slice(0, 15)
+    .map(([k, l]) => `• ${l.length}× ${k}` + (l.find(r => r.note) ? ` - "${l.find(r => r.note).note.slice(0, 120)}"` : ""));
+  return `**Problem reports, last 24 hours: ${reports.length} from ${devs} device${devs === 1 ? "" : "s"}**\n` + lines.join("\n");
+}
+
+export function suggestionDigest(sugg, known) {
+  const fresh = sugg.filter(x => !known.has(x.a));
+  if (!fresh.length) return null;
+  const by = {};
+  for (const x of fresh) { const e = (by[x.a] = by[x.a] || { a: x.a, name: x.name, devs: new Set() }); e.devs.add(x.c); if (!e.name && x.name) e.name = x.name; }
+  const lines = Object.values(by).sort((x, y) => y.devs.size - x.devs.size).slice(0, 20)
+    .map(e => `• ${e.name || "(no name)"} - ${e.a} - asked by ${e.devs.size} device${e.devs.size === 1 ? "" : "s"}`);
+  return "**Products people asked to add to the central list (last 24 hours)**\n" + lines.join("\n");
+}
+
+/** A short code a person types into Discord (/link CODE) to connect a device: no letters that look alike. */
+export function linkCode(rand) {
+  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let s = ""; for (let i = 0; i < 6; i++) s += A[Math.floor(rand() * A.length) % A.length];
+  return s;
 }

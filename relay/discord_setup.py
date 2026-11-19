@@ -65,6 +65,10 @@ def main():
     set_roles = {s: role(s) for s in sets}
     store_roles = {s: role(s, 0x1F3A5F) for s in STORES}
     mod = role("Moderator", 0xF2B134, MANAGE_MESSAGES | KICK | MODERATE, mention=False)
+    linked = role("Restalker user", 0xF2B134, 0, mention=False)      # (given by /link: a device of theirs shares with the crowd)
+    me = call("GET", "/users/@me")["id"]
+    # (owner, 2026-11-19: people choose per channel / per set what reaches them - the server's default is pings only)
+    call("PATCH", f"/guilds/{g}", {"default_message_notifications": 1})
     everyone = g   # (the @everyone role has the server's id)
 
     # ---- channels: five groups; alerts and start-here read-only (threads allowed under alerts)
@@ -100,6 +104,14 @@ def main():
     market = category("MARKET", ro=True)
     community = category("COMMUNITY", ro=False)
     help_ = category("HELP", ro=False)
+    # STAFF (private): everyone's problem reports and product suggestions, compiled once a day (owner, 2026-11-19)
+    if "STAFF" not in cats:
+        ow = [{"id": everyone, "type": 0, "allow": "0", "deny": str(VIEW)},
+              {"id": mod, "type": 0, "allow": str(VIEW | SEND | HISTORY), "deny": "0"},
+              {"id": me, "type": 1, "allow": str(VIEW | SEND | HISTORY | (1 << 14)), "deny": "0"}]
+        c = call("POST", f"/guilds/{g}/channels", {"name": "STAFF", "type": 4, "permission_overwrites": ow}); cats["STAFF"] = c; cat_ow[c["id"]] = ow
+        say("group made: STAFF (private)")
+    staff = category("STAFF", ro=False)
 
     ch = {}
     ch["welcome"] = channel("welcome", start, "What Restalker is and how this server works")
@@ -123,12 +135,13 @@ def main():
     channel("bug-reports", help_, "Something wrong? One post per problem", 15, ["PC", "Phone", "Discord"])
     channel("feature-requests", help_, "Ideas - upvote the ones you want", 15, ["PC", "Phone", "Discord"])
     ch["release_notes"] = channel("release-notes", help_, "New Restalker versions, posted by the bot")
+    ch["staff_reports"] = channel("staff-reports", staff, "Everyone's problem reports, compiled once a day (private)")
+    ch["staff_suggestions"] = channel("product-suggestions", staff, "Products people asked to add to the central list (private)")
     # (#release-notes read-only for members)
     rn = next(c for c in chans if c["id"] == ch["release_notes"])
     if not any(o["id"] == everyone and int(o.get("deny", 0)) & SEND for o in rn.get("permission_overwrites", [])):
         call("PUT", f"/channels/{ch['release_notes']}/permissions/{everyone}", {"type": 0, "allow": str(VIEW | HISTORY | REACT), "deny": str(SEND | THREADS_PUB)})
 
-    me = call("GET", "/users/@me")["id"]
     # ---- the bot may post (and pin) in the read-only channels by itself - so it does not need Administrator
     EMBED = 1 << 14
     bot_allow = str(VIEW | SEND | HISTORY | EMBED | MANAGE_MESSAGES | REACT)
@@ -192,14 +205,19 @@ def main():
             say("AutoMod rule made")
         except RuntimeError as e: say("AutoMod rule not made:", str(e)[:120])
 
-    cfg = {"guild": g, "channels": {**ch, "stores": stores},
-           "roles": {"sets": set_roles, "stores": store_roles, "setGroups": [sets[i:i + 25] for i in range(0, len(sets), 25)], "moderator": mod}}
+    # ---- one invite that never runs out (the app and the PC show it: "Restalker on Discord")
+    inv = next((i for i in call("GET", f"/channels/{ch['welcome']}/invites") if (i.get("inviter") or {}).get("id") == me and not i.get("max_age")), None)
+    if not inv: inv = call("POST", f"/channels/{ch['welcome']}/invites", {"max_age": 0, "max_uses": 0, "unique": False}); say("invite made")
+    cfg = {"guild": g, "invite": "https://discord.gg/" + inv["code"], "channels": {**ch, "stores": stores},
+           "roles": {"sets": set_roles, "stores": store_roles, "setGroups": [sets[i:i + 25] for i in range(0, len(sets), 25)], "moderator": mod, "linked": linked}}
     json.dump(cfg, open(out, "w"), indent=1)
     say("config written:", len(set_roles), "set roles,", len(store_roles), "store roles,", len(ch) + len(stores), "channels")
 
     if base:
         cmds = [{"name": "follow", "description": "Choose the sets and stores Restalker pings you about"},
                 {"name": "status", "description": "The Restalker crowd: devices sharing and the latest restocks"},
+                {"name": "link", "description": "Connect your Restalker device (code from Settings, Discord, Connect)",
+                 "options": [{"type": 3, "name": "code", "description": "The 6-letter code", "required": True}]},
                 {"name": "price", "description": "A product's MSRP and TCG price (now, 3-month low and high)",
                  "options": [{"type": 3, "name": "product", "description": "Product", "required": True, "autocomplete": True}]}]
         call("PUT", f"/applications/{APP}/guilds/{g}/commands", cmds); say("slash commands set: /follow /status /price")
