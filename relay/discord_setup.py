@@ -128,8 +128,19 @@ def main():
     if not any(o["id"] == everyone and int(o.get("deny", 0)) & SEND for o in rn.get("permission_overwrites", [])):
         call("PUT", f"/channels/{ch['release_notes']}/permissions/{everyone}", {"type": 0, "allow": str(VIEW | HISTORY | REACT), "deny": str(SEND | THREADS_PUB)})
 
-    # ---- the bot's intro messages (once each)
     me = call("GET", "/users/@me")["id"]
+    # ---- the bot may post (and pin) in the read-only channels by itself - so it does not need Administrator
+    EMBED = 1 << 14
+    bot_allow = str(VIEW | SEND | HISTORY | EMBED | MANAGE_MESSAGES | REACT)
+    ro = [start, alerts, market] + [c["id"] for c in chans if c.get("parent_id") in (start, alerts, market)] + [ch["release_notes"]]
+    for cid in ro:
+        cur = next((c for c in chans if c["id"] == cid), None)
+        if cur is None: cur = call("GET", f"/channels/{cid}")
+        if any(o["id"] == me and o.get("allow") == bot_allow for o in cur.get("permission_overwrites", [])): continue
+        call("PUT", f"/channels/{cid}/permissions/{me}", {"type": 1, "allow": bot_allow, "deny": "0"})
+    say("bot may post in the read-only channels:", len(ro))
+
+    # ---- the bot's intro messages (once each)
     def intro(cid, body, pin=False):
         msgs = call("GET", f"/channels/{cid}/messages?limit=50")
         if any(m["author"]["id"] == me and m.get("content", "").endswith(MARK) for m in msgs): return
