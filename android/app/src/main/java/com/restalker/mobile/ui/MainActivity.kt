@@ -1528,9 +1528,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 // ---- 2.6: the Restalker crowd
-                Section("crowd", "Restalker crowd", (if (st.crowd) "Sharing" else "Not sharing") + " · ${CrowdNet.count()} contributors") {
+                Section("crowd", "Restalker crowd", (if (st.crowd) "Sharing" else "Not sharing") + " · " + crowdCount()) {
                     Column(Modifier.fillMaxWidth().testTag("crowd")) {
-                        SwitchRow("Share with the Restalker crowd", "${CrowdNet.count()} contributors so far. Shares only when a product of the central list comes in stock " +
+                        SwitchRow("Share with the Restalker crowd", crowdCount().replaceFirstChar { it.uppercase() } + ". Shares only when a product of the central list comes in stock " +
                             "(product, store, price, time) - nothing personal.", st.crowd, "crowd-on") { on ->
                             store.setSettings { it.copy(crowd = on) }; store.log("Sharing with the Restalker crowd switched ${if (on) "ON" else "OFF"}.")
                             if (on) CrowdNet.tick(force = true) }
@@ -1841,3 +1841,8 @@ class MainActivity : ComponentActivity() {
         const val RELEASES = "https://github.com/stevenmanuel01-cloud/Restalker/releases"
     }
 }
+
+/** 2.15 (owner: the count "should be dynamic and tied directly to the total active number of devices working"): the relay's live count
+ *  when known, else the devices heard so far. */
+private fun crowdCount(): String { val a = Relay.active
+    return if (a > 0) "$a device${if (a == 1) "" else "s"} active now" else "${CrowdNet.count()} contributors heard so far" }
