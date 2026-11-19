@@ -672,7 +672,7 @@ class ScreenTests {
         compose.onNodeWithTag("check-B0TEST0701").performScrollTo().performClick()
         compose.waitUntil(3_000) { compose.onAllNodesWithTag("busy-check-B0TEST0701", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         shot("t23_check_spinner")
-        compose.onNodeWithTag("back").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("back").performScrollTo().performClick(); compose.waitForIdle()
         compose.waitUntil(3_000) { compose.onAllNodesWithTag("attn-B0TEST0701", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
         // Settings: navy parts; not signed in to Amazon on the test phone -> the red mark; opening the part takes it away
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
