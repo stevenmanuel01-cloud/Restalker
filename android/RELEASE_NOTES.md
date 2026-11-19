@@ -1,3 +1,12 @@
+# Restalker Mobile 2.14 (2026-11-19; from the phone's own reports overnight)
+- Less data: between two looks the Amazon page is now closed and quiet every time (before, only when the next look was more than 20
+  seconds away - with 8 products every 90 seconds the last page stayed open all night, its scripts and ads still working). Your phone
+  used about 158 MB an hour on mobile data while it covered for the PC.
+- The diagnostics now say where the data goes (Amazon looks, checkouts, orders, pictures, everything else), so any remaining waste
+  can be found.
+- When this phone stands by, Activity says the real reason ("another phone / tablet buys it") - 2.13 always said "the linked desktop
+  buys it", even when the PC was off.
+
 # Restalker Mobile 2.13 (2026-11-18; your notes of 5:41 PM)
 - Activity shows only what matters. No more lines for the app starting, updates being installed (they showed up to 3 times), the
   watching notice being swiped away, or a device change waiting for the next link round. "Updated to v..." stays. (The hidden lines

@@ -14,6 +14,8 @@ object CoreTests {
         val orders = ArrayList<Pair<String, String>>()      // order number -> ASIN
         var url = ""; var places = 0; var placeFail = 0; var noConfirm = false; var signinOrders = false; var silent = false; var signinCheckout = false; var loadFails = false
         var gotoCount = 0; var begins = 0; var pictureUrl: String? = null
+        var rests = 0
+        override fun rest() { rests++ }
         var lockSeenAtReply: Boolean? = null; var store: Store? = null; var replyOk: Boolean? = null
         private val msgs = ArrayList<Map<String, Any?>>(); private var n = 0L; private var waitingAsin: String? = null
         private fun push(m: Map<String, Any?>): Long { n++; msgs.add(m + ("n" to n)); return n }
@@ -1150,6 +1152,30 @@ object CoreTests {
             val w = World(); w.add("B0TEST0002", 120.0, true, price = 99.99); w.check("B0TEST0002")
             val shown = Store.shown(w.store.log())
             shown.count { it.contains("in stock at \$99.99 - buying it now.") } == 1 && shown.none { it.contains("BUYABLE") } }
+        // ---- 2.14 (phone report 2026-11-19: high data use on mobile data while covering for a stopped PC)
+        t("157_data_meter_by_activity_outermost_only") {
+            var rx = 1000L; val m = DataMeter { rx }
+            m.run("looks") { rx += 200 * 1024 }; m.run("looks") { rx += 300 * 1024 }
+            m.run("checkouts") { rx += 1024 * 1024; m.run("looks") { rx += 100 * 1024 } }      // (a look inside a checkout is the checkout's)
+            val t = m.text(5L * 1024 * 1024)
+            val none = DataMeter { -1L }.also { d -> d.run("looks") { } }
+            m.of("looks") == 500L * 1024 && m.count("looks") == 2 && m.of("checkouts") == 1124L * 1024 && m.count("checkouts") == 1 &&
+                t.contains("looks 0.5 MB (2, about 250 KB each)") && t.contains("checkouts 1.1 MB (1,") && t.contains("other (between looks") &&
+                none.of("looks") == 0L && DataMeter { 0L }.text(-1).contains("nothing measured yet") }
+        t("158_engine_meters_looks_and_rests_the_page_between_looks") {
+            var rx = 0L
+            val w = World(); w.add("B0TEST0003", 50.0, false, price = 99.99)
+            val e = Engine(w.store, w.amz, w.said, w.clock, rxBytes = { rx += 1000; rx })
+            e.check(w.p("B0TEST0003"))
+            val r0 = w.amz.rests
+            w.clock.t += 10_000; e.step()                                  // (next look in ~80 s: the page rests meanwhile)
+            e.meter.count("looks") == 1 && e.meter.of("looks") > 0 && w.amz.rests > r0 }
+        t("159_standby_line_says_the_real_reason") {
+            val w = World(desk = false); w.other = true; w.add("B0TEST0004", 120.0, true, price = 89.99)
+            w.check("B0TEST0004")
+            val shown = Store.shown(w.store.log())
+            shown.any { it.contains("in stock at \$89.99 - another phone / tablet buys it (this one stands by).") } &&
+                shown.none { it.contains("the linked desktop buys it") } && w.amz.begins == 0 }
         return results
     }
 
