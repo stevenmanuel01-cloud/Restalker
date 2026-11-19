@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -697,6 +698,42 @@ class ScreenTests {
         compose.onNodeWithText("Today").assertExists()
         Thread.sleep(400); shot("t23_activity_days")
         compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+    }
+
+    /** 2.15 (owner: "the CAP should not be required to watch, but is required for buying"). */
+    @Test fun t24_watch_without_a_cap_buy_asks_for_one() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0801", "Lorwyn Eclipsed Collector Booster Box", "2026", "Lorwyn Eclipsed").copy(cap = 0.0, watch = false))
+        compose.waitForIdle()
+        toList(hasTestTag("product-B0TEST0801"))
+        compose.onNodeWithTag("product-B0TEST0801").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("watch-B0TEST0801").performScrollTo().performClick(); compose.waitForIdle()
+        compose.waitUntil(3_000) { s.products().first { it.asin == "B0TEST0801" }.watch }
+        assertEquals("no cap asked to watch", 0.0, s.products().first { it.asin == "B0TEST0801" }.cap, 0.001)
+        Thread.sleep(300); shot("t24_watch_no_cap")
+        compose.onNodeWithTag("back").performScrollTo().performClick(); compose.waitForIdle()
+        // the add form: no cap and Buy off -> added, watched only; Buy on without a cap -> asks for the cap
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
+        compose.onNodeWithTag("add").performClick()
+        compose.onNodeWithTag("f-link").performTextInput("B0TEST0802")
+        compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()
+        val buyOn = try { compose.onNodeWithTag("f-buy").assertIsOn(); true } catch (e: AssertionError) { false }
+        if (!buyOn) { compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle() }
+        compose.onNodeWithTag("f-save").performClick(); compose.waitForIdle()
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("f-err", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("To buy it, enter the price cap", substring = true).assertExists()
+        compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()      // Buy off: just watch
+        for (k in 0 until 3) {
+            if (s.products().any { it.asin == "B0TEST0802" }) break
+            compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
+            try { compose.waitUntil(5_000) { s.products().any { it.asin == "B0TEST0802" } }; break } catch (e: Throwable) { if (k == 2) throw e }
+        }
+        val q = s.products().first { it.asin == "B0TEST0802" }
+        assertTrue("watched, no cap, not set to buy", q.watch && q.cap == 0.0 && !q.buy)
+        compose.waitForIdle()
+        toList(hasTestTag("product-B0TEST0802"))
+        Thread.sleep(300); shot("t24_added_no_cap")
     }
 
     @Test fun t8_turnPhoneSideways_noCrash() {

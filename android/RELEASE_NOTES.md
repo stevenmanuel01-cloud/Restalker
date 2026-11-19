@@ -14,6 +14,11 @@
 - The header shows how many Restalker devices are active now (each working device checks in every 15 minutes).
 - A product that is not on the Restalker list can be suggested for it (product page).
 - From now on new versions reach your devices first; everyone else gets them when you say so.
+- (your notes of 1:59 PM) A cap is needed only to buy. Watch works without one: a message when it is in stock at any price, and it
+  is shared with the crowd. Buy (and Buy now on a message) asks for the cap first. Adding a product: leave the cap empty to only watch.
+  (Products without a cap stay on this phone - the PC gets a product once it has a cap.)
+- (your notes of 1:59 PM) Each time the app starts it looks once at every product not looked at in the last 6 hours - also the ones not
+  watched - so their prices are there when you set a cap. For products not watched nothing is said, shared or bought.
 
 # Restalker Mobile 2.14 (2026-11-19; from the phone's own reports overnight)
 - Less data: between two looks the Amazon page is now closed and quiet every time (before, only when the next look was more than 20

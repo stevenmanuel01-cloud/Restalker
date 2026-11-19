@@ -59,7 +59,9 @@ data class Product(
 
     /** What the desktop's content.js needs to check the page and buy (a "custom" product: everything comes from here). */
     fun forPage(): Map<String, Any?> = linkedMapOf(
-        "id" to "rkm-$id", "customProduct" to true, "asin" to asin, "url" to url, "cap" to cap,
+        // 2.15 (owner: "the CAP should not be required to watch, but is required for buying"): no cap = watch only - the page counts it in
+        // stock at any price (nothing is ever bought without a cap: Engine.canAutoBuy needs one)
+        "id" to "rkm-$id", "customProduct" to true, "asin" to asin, "url" to url, "cap" to (if (cap > 0) cap else NO_CAP),
         "name" to label, "tokens" to tokens, "forbid" to emptyList<String>(),
     ).also { if (kind in SHAPES) it["rkShape"] = kind }
 
@@ -282,3 +284,6 @@ object BestPrice {
         return out.minByOrNull { it.price }
     }
 }
+
+/** 2.15: the page's cap for a product watched without a cap (any price counts as in stock; never used to buy). */
+const val NO_CAP = 1_000_000.0

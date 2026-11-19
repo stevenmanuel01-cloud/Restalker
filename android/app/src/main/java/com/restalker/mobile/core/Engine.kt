@@ -73,6 +73,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         data class PracticeAny(val asin: String) : Cmd()   // 2.0: a practice checkout of ANY Amazon item that is in stock (nothing is bought)
         data class Crowd(val asin: String) : Cmd()          // 2.6: another Restalker saw it in stock on Amazon - look now
         data class Go(val asin: String) : Cmd()             // 2.2: the PC saw it in stock under the cap (Who buys: phone / both) - look now
+        data class Baseline(val id: String) : Cmd()         // 2.15: the first look when the app starts (prices to set a cap by)
         object Wake : Cmd()
         object Quit : Cmd()
     }
@@ -80,6 +81,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private val q = LinkedBlockingDeque<Cmd>()
     @Volatile var pausedFor: String? = null               // e.g. "you are using the browser" - nothing is opened meanwhile
     @Volatile var busyWith: String = "idle"; private set
+    @Volatile private var quietLook = false              // 2.15: a start-up look at a product that is not watched (nothing said or shared)
     @Volatile private var quit = false
     @Volatile private var overrideDesk: String? = null
 
@@ -145,6 +147,15 @@ class Engine(private val store: Store, private val page: Page, private val alert
             is Cmd.Quit -> quit = true
             is Cmd.Wake -> {}
             is Cmd.CheckNow -> store.product(c.id)?.let { check(it, manual = true) }
+            is Cmd.Baseline -> {
+                // 2.15 (owner: "When the app starts up, it should do an automatic 1 time check of all products so that the data is included as
+                // a base. It is difficult for a user to assess a cap if they have no data showing what the prices are"): a watched product
+                // gets its usual look; one that is not watched only gets its price and stock written down - no message, no sharing, no buying
+                val p = store.product(c.id) ?: return
+                if (now() < s().cooldownUntil || network() == null || (s().wifiOnly && network() != "wifi")) return
+                if (now() - p.lastCheck < BASELINE_FRESH) return
+                if (p.watch) check(p) else { quietLook = true; try { meter.run("looks") { openAndRead(p) } } finally { quietLook = false; busyWith = "idle" } }
+            }
             is Cmd.Go -> {
                 // 2.2 (owner: "buy only on app (so the desktop is doing the searching work but pushing purchasing to the app)"): the PC's
                 // signal - this phone looks at the product at once and buys it if IT sees it in stock under the cap (the PC's word alone
@@ -167,6 +178,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
             is Cmd.BuyNow -> {
                 val p = store.product(c.id) ?: return
                 if (p.purchased || p.attempted) { alerts.needYou("Not bought", "${p.label} was already ordered once - press Re-arm in the app to buy it again.", p); return }
+                if (p.cap <= 0) { alerts.needYou("Not bought - no cap", "${p.label} is watched without a price cap. Open it in the app and set the most you'll pay, then Buy.", p); return }
                 store.update(p.id) { it.copy(buy = true, watch = true) }
                 if (!s().buying) store.setSettings { it.copy(buying = true) }
                 log("${p.label}: Buy now pressed on the message - set to buy, looking at it now.")
@@ -248,7 +260,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val before = store.product(p.id) ?: p
         setSeen(before, text, price, eligible)
         val over = reason == "price above cap"
-        if ((eligible || over) && !(before.buyable || before.overCap)) try { onSighting(p.asin, price) } catch (e: Exception) { }
+        if ((eligible || over) && !(before.buyable || before.overCap) && !quietLook) try { onSighting(p.asin, price) } catch (e: Exception) { }
         if (over != (store.product(p.id)?.overCap ?: false)) store.update(p.id) { it.copy(overCap = over) }
         // 1.5: the product's picture (Amazon's own, from this page) - once
         if ((store.product(p.id)?.image ?: "").isBlank()) takePicture(p)
@@ -278,7 +290,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
             it.copy(status = text, price = price ?: if (buyable) it.price else price, lastCheck = t, buyable = buyable,
                 episodeStart = if (newEp) t else it.episodeStart)
         }
-        if (buyable && !p.buyable) { detail("${p.label}: $text"); freshId = p.id }
+        if (buyable && !p.buyable && !quietLook) { detail("${p.label}: $text"); freshId = p.id }
     }
 
     fun check(p0: Product, manual: Boolean = false) {
@@ -656,6 +668,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val HOLD_NONE_MS = 10_000L        // 2.2: ... and when the PC says nothing at all about this product in that time, it is not trying it
         const val STANDBY_MS = 30 * 60_000L     // 1.6: was 10 min (about 80 MB an hour on the owner's phone); the desktop's view shows meanwhile
         const val PIC_RETRY_MS = 24 * 3600_000L
+        const val BASELINE_FRESH = 6 * 3_600_000L          // 2.15: a product looked at in the last 6 hours is not looked at again on start-up
         fun money(d: Double) = String.format(java.util.Locale.US, "%.2f", d)
         fun secs(ms: Long) = if (ms < 90_000) "in ${(ms + 999) / 1000} s" else "in ${(ms + 59_999) / 60_000} min"
     }

@@ -1255,6 +1255,48 @@ object CoreTests {
             val back = Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(attnDaily = false, attnSeen = s1, modeV = 1).toMap())))
             shown0.size == 2 && shown1.map { it.key } == listOf("battery") && next.size == 2 && off.map { it.key } == listOf("battery") &&
                 s2 == mapOf("battery" to "2026-11-20") && !back.attnDaily && back.attnSeen == s1 && back.modeV == 1 && Settings().attnDaily }
+        // 2.15 (owner: "the CAP should not be required to watch, but is required for buying")
+        t("168_no_cap_watch_tells_at_any_price_never_buys") {
+            val w = World(); val seen = ArrayList<String>()
+            val e = Engine(w.store, w.amz, w.said, w.clock, { "wifi" }, { false }, { false }, { "both" }, { null }, onSighting = { a, _ -> seen.add(a) })
+            w.add("B0NOCAP001", 0.0, buy = true, price = 650.0)          // (Buy on without a cap - e.g. an old record: still never bought)
+            e.check(w.p("B0NOCAP001"))
+            val p = w.p("B0NOCAP001")
+            p.buyable && p.price == 650.0 && w.said.restocks == listOf("B0NOCAP001") && w.amz.begins == 0 && w.amz.places == 0 && seen == listOf("B0NOCAP001") &&
+                Product(id = "x", asin = "B0NOCAP001", cap = 0.0).forPage()["cap"] == NO_CAP && Product(id = "x", asin = "B0NOCAP001", cap = 80.0).forPage()["cap"] == 80.0
+        }
+        t("169_no_cap_buy_now_on_the_message_asks_for_a_cap") {
+            val w = World(); w.add("B0NOCAP002", 0.0, buy = false, price = 90.0)
+            w.engine.send(Engine.Cmd.BuyNow(w.p("B0NOCAP002").id)); w.engine.step()
+            w.amz.begins == 0 && w.said.needYou.any { it.startsWith("Not bought - no cap") } && !w.p("B0NOCAP002").buy
+        }
+        // 2.15 (owner: "When the app starts up, it should do an automatic 1 time check of all products so that the data is included as a base")
+        t("170_start_up_look_writes_prices_of_unwatched_products_quietly") {
+            val w = World(); val seen = ArrayList<String>()
+            val e = Engine(w.store, w.amz, w.said, w.clock, { "wifi" }, { false }, { false }, { "both" }, { null }, onSighting = { a, _ -> seen.add(a) })
+            w.add("B0BASE0001", 0.0, buy = false, price = 120.0); w.store.update("idB0BASE0001") { it.copy(watch = false) }
+            w.add("B0BASE0002", 0.0, buy = false, stock = false); w.store.update("idB0BASE0002") { it.copy(watch = false) }
+            e.send(Engine.Cmd.Baseline("idB0BASE0001")); e.step()
+            e.send(Engine.Cmd.Baseline("idB0BASE0002")); e.step()
+            val a = w.p("B0BASE0001"); val b = w.p("B0BASE0002")
+            val quiet = a.price == 120.0 && a.lastCheck > 0 && b.lastCheck > 0 && b.status.startsWith("out of stock") && w.said.restocks.isEmpty() && seen.isEmpty() &&
+                w.amz.begins == 0 && w.store.log().none { it.contains("B0BASE") && !it.contains("  " + Store.QUIET) && ActivityLog.important(it) }
+            val n = w.amz.gotoCount
+            e.send(Engine.Cmd.Baseline("idB0BASE0001")); e.step()                       // looked at a moment ago: not again
+            val fresh = w.amz.gotoCount == n
+            w.store.update("idB0BASE0001") { it.copy(watch = true) }                     // switched on later, still in stock: the message comes then
+            e.check(w.p("B0BASE0001"))
+            quiet && fresh && w.said.restocks == listOf("B0BASE0001")
+        }
+        t("171_start_up_look_watched_product_usual_look_and_respects_wifi_only") {
+            val w = World(); w.add("B0BASE0003", 100.0, buy = true, price = 95.0)
+            w.store.setSettings { it.copy(wifiOnly = true) }; w.net = "mobile"
+            w.engine.send(Engine.Cmd.Baseline("idB0BASE0003")); w.engine.step()
+            val skipped = w.amz.gotoCount == 0
+            w.net = "wifi"; w.store.setSettings { it.copy(wifiOnly = false) }
+            w.engine.send(Engine.Cmd.Baseline("idB0BASE0003")); w.engine.step()
+            skipped && w.amz.places == 1
+        }
         return results
     }
 

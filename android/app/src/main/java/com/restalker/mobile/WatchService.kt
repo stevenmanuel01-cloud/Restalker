@@ -83,6 +83,9 @@ class WatchService : Service() {
                     "check" -> engine.send(Engine.Cmd.CheckNow(id))
                     // 2.3 (owner: "a button to [refresh all products at once] would be good"): one after another, watched products only
                     "checkall" -> RkApp.store().products().filter { it.watch }.forEach { engine.send(Engine.Cmd.CheckNow(it.id)) }
+                    // 2.15: the start-up look at every product not looked at in the last 6 hours (watched ones first)
+                    "baseline" -> RkApp.store().products().filter { System.currentTimeMillis() - it.lastCheck >= Engine.BASELINE_FRESH }
+                        .sortedBy { if (it.watch) 0 else 1 }.forEach { engine.send(Engine.Cmd.Baseline(it.id)) }
                     "buynow" -> engine.send(Engine.Cmd.BuyNow(id))
                     "practice" -> engine.send(Engine.Cmd.Practice(id))
                     "practiceany" -> engine.send(Engine.Cmd.PracticeAny(id))

@@ -132,7 +132,19 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         if (RkApp.store().settings().watching && WatchService.instance == null) try { WatchService.start(this) } catch (e: Exception) { }
         checkUpdate(explicit = false)                // (2.4: opening the app does not ask again within 6 hours)
+        startLook()
         setContent { RkTheme { Screen() } }
+    }
+
+    /** 2.15 (owner: "When the app starts up, it should do an automatic 1 time check of all products so that the data is included as a
+     *  base"): once each time the app starts, every product not looked at in the last 6 hours gets one look (its price and stock) - also
+     *  the ones not watched (nothing is said, shared or bought for those). (The test build only when a test asks for it.) */
+    private fun startLook() {
+        if (lookedAtStart || (BuildConfig.DEBUG && !startLookInTests)) return
+        lookedAtStart = true
+        val now = System.currentTimeMillis()
+        if (RkApp.store().products().none { now - it.lastCheck >= Engine.BASELINE_FRESH }) return
+        try { WatchService.cmd(this, "baseline") } catch (e: Exception) { }
     }
 
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); sharedText(intent) }
@@ -902,7 +914,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 5.dp)) {
                     Chip(c, bg, fg, Modifier.testTag("pstatus-${p.asin}"))
-                    Text(if (p.cap > 0) "  cap \$${Engine.money(p.cap)}" else "  no cap yet", color = if (p.cap > 0) Look.Muted else Look.AmberText, fontSize = 12.sp, maxLines = 1)
+                    Text(if (p.cap > 0) "  cap \$${Engine.money(p.cap)}" else if (p.watch) "  no cap · watch only" else "  no cap yet", color = if (p.cap > 0) Look.Muted else Look.AmberText, fontSize = 12.sp, maxLines = 1)
                 }
                 Text(buyLine(p, deskBuys), color = if (p.inProgress) Look.Teal else if (p.attempted) Look.Red else Look.Muted, fontSize = 12.sp,
                     fontWeight = if (p.inProgress) FontWeight.SemiBold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
@@ -1024,8 +1036,10 @@ class MainActivity : ComponentActivity() {
                         if (v && p.cap <= 0) { onEdit(p); return@SwitchRow }            // (2.2: a product without a cap gets one first)
                         store.update(p.id) { it.copy(buy = v, watch = it.watch || v) }; store.log("${p.label}: Buy ${if (v) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
-                    SwitchRow("Watch", "Looked at all day; a phone message when it comes back", p.watch, "watch-${p.asin}") { v ->
-                        if (v && p.cap <= 0) { onEdit(p); return@SwitchRow }
+                    // 2.15 (owner: "the CAP should not be required to watch, but is required for buying"): Watch without a cap - messages
+                    // and the crowd at any price; Buy still asks for a cap first
+                    SwitchRow("Watch", if (p.cap > 0) "Looked at all day; a phone message when it comes back" else "Looked at all day; a phone message when it comes back, at any price (no cap needed to watch)",
+                        p.watch, "watch-${p.asin}") { v ->
                         store.update(p.id) { it.copy(watch = v) } }
                     HorizontalDivider(color = Look.Line)
                     // 1.5 (owner: "there is no option to set the app to buy multiple instances of a product"): Buy 1 / 2 / 3 - separate
@@ -1208,7 +1222,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Text("Tip: in the Amazon app, tap Share → Restalker.", color = Look.Muted, fontSize = 12.sp)
                 Asin.parse(link)?.let { a -> Text("Amazon product $a", color = Look.TealText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-                OutlinedTextField(cap, { cap = it; err = ""; bigOk = false }, label = { Text("Most you'll pay (price cap) \$") }, singleLine = true,
+                OutlinedTextField(cap, { cap = it; err = ""; bigOk = false }, label = { Text("Most you'll pay (price cap) \$" + if (buy) "" else " - only to buy") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().testTag("f-cap"))
                 Text("Kind - the page must show the same kind (\"other\" = not checked)", fontSize = 12.sp, color = Look.Muted)
                 FlowRow { listOf("box", "bundle", "pack", "other").forEach { k -> FilterChip(kind == k, { kind = k }, { Text(k) }, Modifier.padding(end = 6.dp)) } }
@@ -1219,8 +1233,10 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.height(10.dp))
                 Button(colors = Look.btn(), enabled = !busy, onClick = {
                     val c = cap.replace("$", "").replace(",", "").trim().toDoubleOrNull()
-                    if (c == null || c <= 0) { err = "Enter the price cap (for example 449.99)."; return@Button }
-                    if (c >= 1000 && !bigOk) { err = "A cap of \$${Engine.money(c)} - is that right? Tap Add again to keep it."; bigOk = true; return@Button }
+                    // 2.15: a cap is needed only to buy - watching works without one
+                    if (cap.isNotBlank() && (c == null || c <= 0)) { err = "The price cap must be a number above zero (for example 449.99) - or leave it empty to only watch."; return@Button }
+                    if (buy && c == null) { err = "To buy it, enter the price cap (for example 449.99). To only watch it, switch Buy off."; return@Button }
+                    if (c != null && c >= 1000 && !bigOk) { err = "A cap of \$${Engine.money(c)} - is that right? Tap Add again to keep it."; bigOk = true; return@Button }
                     busy = true
                     Thread {
                         val asin = Asin.resolve(link) { u -> followOnce(u) }
@@ -1228,8 +1244,8 @@ class MainActivity : ComponentActivity() {
                             busy = false
                             if (asin == null) { err = "That is not an Amazon product link or code. Open the product in the Amazon app, tap Share, and choose Restalker."; return@runOnUiThread }
                             val s = RkApp.store()
-                            if (!s.add(Product(id = s.newId(), asin = asin, name = "", cap = c, kind = kind, watch = true, buy = buy))) err = "That product is already in the list."
-                            else { s.log("Added Amazon $asin (cap \$${Engine.money(c)})" + if (buy) ", set to Buy." else ". Set it to Buy when you want it bought."); onDone() }
+                            if (!s.add(Product(id = s.newId(), asin = asin, name = "", cap = c ?: 0.0, kind = kind, watch = true, buy = buy))) err = "That product is already in the list."
+                            else { s.log("Added Amazon $asin" + (if (c != null) " (cap \$${Engine.money(c)})" else " (watch only - no cap)") + if (buy) ", set to Buy." else ". Set it to Buy when you want it bought."); onDone() }
                         }
                     }.start()
                 }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("f-save")) { Text("Add product", fontSize = 16.sp) }
@@ -1506,7 +1522,7 @@ class MainActivity : ComponentActivity() {
                                     catMsg = when {
                                         r == null -> "The list could not be read - check the internet and try again."
                                         r.added == 0 -> "Nothing new - you have every product already (${r.already})."
-                                        else -> "${r.added} products added (no cap, not watched). Open one, set its cap, then switch Watch / Buy on."
+                                        else -> "${r.added} products added (not watched yet). Switch Watch on for the ones you want; set a cap only to buy."
                                     }
                                     bump()
                                 }
@@ -1834,6 +1850,8 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        @Volatile var lookedAtStart = false          // 2.15: the start-up look - once per start of the app
+        @Volatile var startLookInTests = false
         /** 1.7: the app's screen is in front (an update's "Install" question can then be shown at once). */
         @Volatile var shown = false
         const val SHARE_URL = "https://github.com/stevenmanuel01-cloud/Restalker/releases/latest"
