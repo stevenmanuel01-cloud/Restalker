@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -716,17 +717,21 @@ class ScreenTests {
         // the add form: no cap and Buy off -> added, watched only; Buy on without a cap -> asks for the cap
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
         compose.onNodeWithTag("add").performClick()
+        // (Buy switched on first, the keyboard put away after typing: with big text on a small screen it covers the switch and Add)
+        compose.onNodeWithTag("f-buy").performScrollTo().performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("f-buy").assertIsOn()
         compose.onNodeWithTag("f-link").performTextInput("B0TEST0802")
-        compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()
-        val buyOn = try { compose.onNodeWithTag("f-buy").assertIsOn(); true } catch (e: AssertionError) { false }
-        if (!buyOn) { compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle() }
+        androidx.test.espresso.Espresso.closeSoftKeyboard(); compose.waitForIdle()
+        compose.onNodeWithTag("f-buy").assertIsOn()
         for (k in 0 until 3) {           // (as in t5: the keyboard can take the first tap - tap again, as a person would)
             compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
             try { compose.waitUntil(5_000) { compose.onAllNodesWithText("To buy it, enter the price cap", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }; break }
             catch (e: Throwable) { if (k == 2) throw e }
         }
         assertTrue("not added without a cap while Buy is on", s.products().none { it.asin == "B0TEST0802" })
-        compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()      // Buy off: just watch
+        androidx.test.espresso.Espresso.closeSoftKeyboard(); compose.waitForIdle()
+        compose.onNodeWithTag("f-buy").performScrollTo().performClick(); compose.waitForIdle()      // Buy off: just watch
+        compose.onNodeWithTag("f-buy").assertIsOff()
         for (k in 0 until 3) {
             if (s.products().any { it.asin == "B0TEST0802" }) break
             compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
