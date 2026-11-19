@@ -458,8 +458,8 @@ class ScreenTests {
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Linked with the desktop", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("OK").performClick(); compose.waitForIdle()
         // (scroll the Settings list itself - with big text the nearest scroll could be the tab swiper)
-        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("link-title"))
-        compose.onNodeWithTag("link-title").assertIsDisplayed()
+        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-desk"))
+        compose.onNodeWithTag("link-title", useUnmergedTree = true).assertIsDisplayed()
         // 2.12: the watching icon is off by default (it is switched on and off again here)
         sec("notes")
         val icon0 = RkApp.store().settings().runIcon
