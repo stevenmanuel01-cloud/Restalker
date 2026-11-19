@@ -1317,7 +1317,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable
     /** 2.15 (owner: "In the "Activity" tab, we are still missing color. Lets add a navy bar that displays the date, with all activity then
      *  separated by date ... This should only be displaying checkout activities, instock alerts, etc. Not information about changing things
      *  to watch or buy, or communications with the desktop"): restocks, checkouts, purchases, price drops and problems, one navy bar per day
@@ -1608,14 +1607,13 @@ class MainActivity : ComponentActivity() {
     // ------------------------------------------------------------------------------------------------------------ 2.15: red marks
     /** Everything that needs you now (2.15, owner: "anything that requires user input should be flagged with a small red triangle"). */
     private fun attnItems(): List<com.restalker.mobile.core.Attention.Item> {
-        val A = com.restalker.mobile.core.Attention
         val out = ArrayList<com.restalker.mobile.core.Attention.Item>()
         try {
-            if (!signedIn()) out += A.Item("signin", "amazon", "Sign in to Amazon")
-            if (!notesOk()) out += A.Item("notes", "notes", "Allow notifications")
-            if (!battOk()) out += A.Item("battery", "phone", "Allow watching all day")
-            if (Updater.state.contains("allow Restalker to install") || Updater.state.contains("tap Update now")) out += A.Item("update", "phone", "An update waits for you")
-            for (p in RkApp.store().products()) if (p.watch && attnStatus(p)) out += A.Item("product:" + p.asin, "watch", p.label)
+            if (!signedIn()) out += com.restalker.mobile.core.Attention.Item("signin", "amazon", "Sign in to Amazon")
+            if (!notesOk()) out += com.restalker.mobile.core.Attention.Item("notes", "notes", "Allow notifications")
+            if (!battOk()) out += com.restalker.mobile.core.Attention.Item("battery", "phone", "Allow watching all day")
+            if (Updater.state.contains("allow Restalker to install") || Updater.state.contains("tap Update now")) out += com.restalker.mobile.core.Attention.Item("update", "phone", "An update waits for you")
+            for (p in RkApp.store().products()) if (p.watch && attnStatus(p)) out += com.restalker.mobile.core.Attention.Item("product:" + p.asin, "watch", p.label)
         } catch (e: Exception) { }
         return out
     }
