@@ -691,8 +691,8 @@ class ScreenTests {
         Thread.sleep(400); shot("t23_discord")
         // Activity: a navy bar per day; restocks and checkouts shown, settings changes not
         compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
-        compose.onNodeWithText("CHECKOUT started", substring = true).assertExists()
-        compose.onNodeWithText("in stock at \$350.00", substring = true).assertExists()
+        assertTrue("checkout and restock shown", compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isNotEmpty() &&
+            compose.onAllNodesWithText("in stock at \$350.00", substring = true).fetchSemanticsNodes().isNotEmpty())
         assertTrue("settings changes are not in Activity", compose.onAllNodesWithText("Watching switched ON", substring = true).fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("cap \$485.00.", substring = true).fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Today").assertExists()
@@ -720,9 +720,12 @@ class ScreenTests {
         compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()
         val buyOn = try { compose.onNodeWithTag("f-buy").assertIsOn(); true } catch (e: AssertionError) { false }
         if (!buyOn) { compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle() }
-        compose.onNodeWithTag("f-save").performClick(); compose.waitForIdle()
-        compose.waitUntil(3_000) { compose.onAllNodesWithTag("f-err", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("To buy it, enter the price cap", substring = true).assertExists()
+        for (k in 0 until 3) {           // (as in t5: the keyboard can take the first tap - tap again, as a person would)
+            compose.waitForIdle(); compose.onNodeWithTag("f-save").performClick()
+            try { compose.waitUntil(5_000) { compose.onAllNodesWithText("To buy it, enter the price cap", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }; break }
+            catch (e: Throwable) { if (k == 2) throw e }
+        }
+        assertTrue("not added without a cap while Buy is on", s.products().none { it.asin == "B0TEST0802" })
         compose.onNodeWithTag("f-buy").performClick(); compose.waitForIdle()      // Buy off: just watch
         for (k in 0 until 3) {
             if (s.products().any { it.asin == "B0TEST0802" }) break
