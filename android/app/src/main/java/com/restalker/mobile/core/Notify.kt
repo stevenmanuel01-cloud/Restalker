@@ -20,6 +20,18 @@ object NotifyPrefs {
         else -> true                       // (the "test" message and anything new: always)
     }
 
+    /** 1.0.6: a message of the linked PC, shown by this app (Notifier.fromPc) -> which of this device's kinds it is. The PC says its
+     *  own kind ("purchase bought", "purchase failed", "restock", "push" ...) - a purchase made is "bought", a restock / tracker alert
+     *  "restock", everything else (not bought, needs you, a problem) "need". */
+    fun pcKind(kind: String, title: String): String {
+        val k = kind.lowercase().trim(); val t = title.trim()
+        return when {
+            k in setOf("restock", "tracker", "push") || t.startsWith("IN STOCK", ignoreCase = true) -> "restock"
+            (k.startsWith("purchase") && listOf("bought", "submitted").any { it in k }) || k in setOf("bought", "buy") || t.startsWith("BOUGHT", ignoreCase = true) -> "bought"
+            else -> "need"
+        }
+    }
+
     /** The quick choice that matches the switches (Custom when none matches). */
     fun preset(st: Settings): String = when (listOf(st.nRestock, st.nDrop, st.nBuy, st.nNeed)) {
         listOf(true, true, true, true) -> ALL

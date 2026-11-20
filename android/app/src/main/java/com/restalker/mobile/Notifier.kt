@@ -129,6 +129,26 @@ class Notifier(private val ctx: Context) : Alerts {
             nm.createNotificationChannel(NotificationChannel(CH_DROP, "Price drops", NotificationManager.IMPORTANCE_DEFAULT))
         }
 
+        /** 1.0.6 (owner, 2026-11-20: "The ntfy messages arent really needed anymore since the app can handle notifications"): a message
+         *  of the linked PC (a purchase there, something that needs you there) - it comes sealed over the relay with this device's
+         *  round and is shown as this app's own notification. Not shown when ntfy already shows it on this phone (the PC has ntfy
+         *  alerts set up AND the ntfy app is installed here) - nothing arrives twice. The kinds you switched off in Settings stay off. */
+        fun fromPc(ctx: Context, title: String, text: String, kind: String, url: String?) {
+            val st = RkApp.store().settings()
+            val k = com.restalker.mobile.core.NotifyPrefs.pcKind(kind, title)
+            val twice = try { DeskLink.pcHasChannel() && ntfyInstalled(ctx) } catch (e: Exception) { false }
+            RkApp.store().log("From your PC: $title" + (if (twice) " (ntfy shows it)" else ""), quiet = twice)
+            if (twice || !com.restalker.mobile.core.NotifyPrefs.allowed(st, k)) return
+            val ch = when (k) { "bought" -> CH_BUY; "restock" -> CH_RESTOCK; else -> CH_NEED }
+            val b = NotificationCompat.Builder(ctx, ch).setSmallIcon(R.drawable.ic_note).setContentTitle("PC: $title").setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text)).setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH).setCategory(NotificationCompat.CATEGORY_MESSAGE).setContentIntent(openMain(ctx))
+            if (url != null && url.startsWith("https://")) b.addAction(0, "Open", PendingIntent.getActivity(ctx, 1500 + (url.hashCode() and 0xff),
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            try { NotificationManagerCompat.from(ctx).notify(idFor("pc", title + text.take(40)), b.build()) } catch (e: SecurityException) { }
+        }
+        fun ntfyInstalled(ctx: Context): Boolean = try { ctx.packageManager.getPackageInfo("io.heckel.ntfy", 0); true } catch (e: Exception) { false }
+
         /** "Test message" button: shows that messages reach you (sound and all). */
         fun test(ctx: Context) {
             val n = NotificationCompat.Builder(ctx, CH_BUY).setSmallIcon(R.drawable.ic_note).setContentTitle("Restalker test message")

@@ -507,5 +507,31 @@ class PhoneTests {
         assertTrue("test message shown", shown)
         assertTrue(d.contains("Restalker Mobile v") && d.contains("B0TEST0003") && d.contains("Log (newest last)"))
         assertTrue("no password or card text", !d.contains("password", true) && !d.contains("card number", true))
+        assertTrue("the report says how the link travels (1.0.6)", d.contains("the link's way") || d.contains("the link's way: ?"))
+    }
+
+    /** 1.0.6 (owner, 2026-11-20: "The ntfy messages arent really needed anymore since the app can handle notifications"): a message of
+     *  the linked PC (it comes sealed with the device's round, on the fast channel) is shown as this app's own notification - by its
+     *  kind, and not when that kind is switched off in Settings. */
+    @Test fun t20_the_pcs_alerts_are_shown_by_the_app() {
+        val nm = ctx.getSystemService(android.app.NotificationManager::class.java)
+        fun titles() = nm.activeNotifications.mapNotNull { it.notification?.extras?.getCharSequence("android.title")?.toString() }
+        RkApp.store().setSettings { it.copy(nBuy = true, nNeed = true, nRestock = true) }
+        GoListener.take(mapOf("v" to 1, "r" to "desktop", "al" to mapOf("ti" to "BOUGHT: PC test box", "tx" to "\$99.99 - order 111-1", "k" to "purchase bought",
+            "u" to "https://www.amazon.com/gp/css/order-history")))
+        GoListener.take(mapOf("v" to 1, "r" to "desktop", "al" to mapOf("ti" to "Card code needed at Best Buy", "tx" to "Type it on the PC.", "k" to "purchase cvv")))
+        assertTrue("the PC's purchase and its needs-you message are shown: ${titles()}", waitFor(8_000) { titles().containsAll(listOf("PC: BOUGHT: PC test box", "PC: Card code needed at Best Buy")) })
+        val bought = nm.activeNotifications.first { it.notification?.extras?.getCharSequence("android.title")?.toString() == "PC: BOUGHT: PC test box" }.notification
+        assertEquals("a purchase: the purchases channel", Notifier.CH_BUY, bought.channelId)
+        assertEquals("with Open (the address the PC gave)", listOf("Open"), bought.actions?.map { it.title.toString() } ?: emptyList<String>())
+        assertTrue("noted in Activity's log", RkApp.store().log().any { it.contains("From your PC: BOUGHT: PC test box") })
+        // purchases switched off in Settings: the PC's purchase is not shown either; an empty title is nothing
+        RkApp.store().setSettings { it.copy(nBuy = false) }
+        GoListener.take(mapOf("v" to 1, "r" to "desktop", "al" to mapOf("ti" to "BOUGHT: second box", "tx" to "x", "k" to "purchase bought")))
+        GoListener.take(mapOf("v" to 1, "r" to "desktop", "al" to mapOf("ti" to " ", "tx" to "x")))
+        Thread.sleep(1_500)
+        assertTrue("not shown when that kind is off: ${titles()}", titles().none { it.contains("second box") || it == "PC:  " })
+        RkApp.store().setSettings { it.copy(nBuy = true) }
+        nm.activeNotifications.filter { it.notification?.extras?.getCharSequence("android.title")?.toString()?.startsWith("PC: ") == true }.forEach { nm.cancel(it.id) }
     }
 }

@@ -291,3 +291,58 @@ export function phoneNewer(code, prevCode, ver, prevVer) {
   if (c > 0 && p > 0) return c > p;
   return verNewer(ver, prevVer);
 }
+
+// ------------------------------------------------------------------------------------------------ the devices' own lines (no ntfy)
+// (owner, 2026-11-20: "The ntfy messages arent really needed anymore since the app can handle notifications" - the free message
+// service allows a home 250 messages a day for all its devices together, and the linked devices' product updates alone used them up;
+// then nothing got through, the crowd's sightings included.) What one person's linked devices tell each other, and what the crowd
+// shares, now goes through this relay instead:
+// - a linked group's channel ("rkl-" + 24 letters, the same name as before; "-go" = its fast channel). Every post is SEALED with the
+//   link's secret by the device (encrypted and signed) - the relay stores and hands out noise it cannot read or change. Whoever knows
+//   the channel's name can read that noise and nothing else, exactly as on ntfy.
+// - "crowd": the sightings every Restalker shares (posted here directly with /v1/s, or read from the old crowd channel for versions
+//   that still post there) - product, store, price, time, nothing personal.
+// - ONE request does a device's whole round (POST /v1/sync): "I am here" (the active count, its linked devices), and everything new on
+//   the channels it reads. The answer says when to ask again ("next") - with more devices than the free plan carries, everyone asks
+//   a little less often instead of anyone being refused.
+// ntfy stays for what it is good at: a message to a phone WITHOUT the Restalker app (the ntfy app), and a doorbell for "buy now".
+export const CH_LINK = /^rkl-[a-z0-9]{24}(-go)?$/;
+export const CH_CROWD = "crowd";
+export const SEALED = /^rk1:[A-Za-z0-9_-]{40,700000}$/;
+export const CH_MAX_BYTES = 512 * 1024;
+export const CH_KEEP_MS = 12 * 3600_000, CH_KEEP_N = 80;            // a link channel: 12 hours, the newest 80 posts
+export const GO_KEEP_MS = 2 * 3600_000, GO_KEEP_N = 200;            // its fast channel: 2 hours
+export const CROWD_KEEP_MS = 2 * 3600_000;
+export const CH_RATE = 120;                                         // posts per channel per 10 minutes (a refused post goes over ntfy)
+export const SYNC_RATE = 150;                                       // rounds per device per 10 minutes (usual: 10)
+export const SYNC_CHANNELS = 4, SYNC_ROWS = 60;
+export const SEEN_WRITE_MS = 8 * 60_000;                            // "I am here" is written at most this often per device
+
+export const chOk = ch => typeof ch === "string" && (ch === CH_CROWD || CH_LINK.test(ch));
+export const isGo = ch => typeof ch === "string" && ch.endsWith("-go");
+export const keepOf = ch => ch === CH_CROWD ? { ms: CROWD_KEEP_MS, n: 2000 } : isGo(ch) ? { ms: GO_KEEP_MS, n: GO_KEEP_N } : { ms: CH_KEEP_MS, n: CH_KEEP_N };
+/** What a first read (no mark yet) goes back to: a link 12 hours, its fast channel 30 minutes, the crowd 30 minutes. */
+export const firstBackMs = ch => ch === CH_CROWD ? 30 * 60_000 : isGo(ch) ? 30 * 60_000 : CH_KEEP_MS;
+/** The mark a device sends: the last id it has (digits) - anything else means "from the start" (null). */
+export function sinceId(v) {
+  const s = typeof v === "number" ? String(v) : typeof v === "string" ? v : "";
+  return /^[0-9]{1,15}$/.test(s) ? Number(s) : null;
+}
+/** What a device asks to read: {channel: mark} -> [[channel, id or null]] (only real channel names, a few at most). */
+export function syncReads(r) {
+  if (!r || typeof r !== "object" || Array.isArray(r)) return [];
+  return Object.keys(r).filter(chOk).slice(0, SYNC_CHANNELS).map(ch => [ch, sinceId(r[ch])]);
+}
+/** One stored post, the way ntfy hands a message out (the devices read both the same way). */
+export const line = row => ({ id: String(row.id), time: Math.round(row.at / 100) / 10, event: "message", message: row.m });
+/** When to ask again (seconds): a linked device every minute, one that only reads the crowd every 3 - stretched for everyone alike
+ *  when the day's requests would pass what the free plan carries (never refused, never more than 15 minutes). */
+export const SYNC_BASE_LINKED = 60, SYNC_BASE_CROWD = 180, SYNC_BUDGET_DAY = 60_000, SYNC_MAX = 900;
+export function nextPoll(linked, perDay) {
+  const base = linked ? SYNC_BASE_LINKED : SYNC_BASE_CROWD;
+  const f = perDay > SYNC_BUDGET_DAY ? perDay / SYNC_BUDGET_DAY : 1;
+  return Math.min(SYNC_MAX, Math.ceil(base * f / 5) * 5);
+}
+/** A sighting as the crowd line carries it (the devices' own message shape), and its key (one line per device, product, store, time). */
+export const crowdMsg = s => JSON.stringify({ v: 1, c: s.c, k: "s", a: s.a, s: s.s, st: "in", t: Math.round(s.t / 100) / 10, ...(s.p != null ? { p: s.p } : {}) });
+export const crowdKey = s => `${s.c}|${s.a}|${s.s}|${Math.round(s.t / 1000)}`;

@@ -52,6 +52,7 @@ object Diag {
         sb.append(try { Relay.status() + " · race to checkout: " + (if (DeskLink.get().raceReady()) "on (every linked device knows the shared lock)" else "off (a linked device does not know the shared lock yet)") +
             " · reports go: " + (if (Reporter.direct()) "directly (the owner's device)" else "to the Restalker team") } catch (e: Exception) { "relay: ?" }).append("\n")
         sb.append(try { Quota.status() } catch (e: Exception) { "message service: ?" }).append("\n")
+        sb.append(try { DeskLink.get().wayText() + (if (DeskLink.get().onlyNtfy) "; a linked device reads only the message service (an older version)" else "") } catch (e: Exception) { "the link's way: ?" }).append("\n")
         sb.append("Watch hours (1.0.4): ${com.restalker.mobile.core.WatchHours.words(st)}" + (if (!com.restalker.mobile.core.WatchHours.inside(st, System.currentTimeMillis())) " - outside them now" else "") +
             " · watching notice switched off in the phone's settings: ${try { Notifier.noticeOff(ctx) } catch (e: Exception) { "?" }}\n")
         sb.append("Messages (2.12): ${com.restalker.mobile.core.NotifyPrefs.summary(st)} · watching icon=${st.runIcon} notice swiped away=${st.noticeHidden}\n")

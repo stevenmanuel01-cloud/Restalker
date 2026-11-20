@@ -1,8 +1,8 @@
 {
- "version": "v146",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v146_update.zip",
- "sha256": "b865eb7764ea40137dce3847fd79f720be2245bfc38eec8bc97d82161f0b09c0",
- "size": 768619,
- "notes": "Under the title: \"3 stalkers active now\" (was \"3 Restalker devices active now\") - everyone running Restalker and sharing is a stalker, hunting restocks together. The number is counted in one place and is the same on every device, whatever version it runs; older versions are now counted too, without updating.",
+ "version": "v147",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v147_update.zip",
+ "sha256": "af5eb94b2ae41f493f27612bd649018a4f6274cc0d7b8851b0914766de802134",
+ "size": 775171,
+ "notes": "This PC and its linked phones / tablets now talk through the Restalker relay, not the free message service (its 250 messages a day per home were used up by the linked devices alone). Same sealed link; one request a minute. The crowd's sightings go there too. This PC's own messages (a purchase, something that needs you) now also show in the linked Restalker app (1.0.6). ntfy stays for alerts on a phone without the app, and for a linked device with an older app - it keeps working without updating. Phone (top right) now shows both ways to connect a phone.",
  "files": 84
 }

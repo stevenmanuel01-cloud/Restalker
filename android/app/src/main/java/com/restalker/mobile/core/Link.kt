@@ -88,6 +88,12 @@ interface LinkNet {
     fun post(url: String, body: String, asFile: Boolean): Int
     /** -> the response body (ntfy's JSON lines), or throws */
     fun get(url: String): String
+    /** 1.0.6: this device's round with the Restalker relay in ONE request - "I am here", and what is new on [reads] ({channel: the last
+     *  id read, "" = from the start}). -> {channel: the new posts, each as ntfy hands a message out (id, time, message)}, or null when
+     *  the relay was not reached (the link then works over ntfy alone, as before 1.0.6). */
+    fun sync(reads: Map<String, String>): Map<String, List<Map<String, Any?>>>? = null
+    /** 1.0.6: a sealed post on a channel of the relay -> true when it took it. */
+    fun relayPost(channel: String, body: String): Boolean = false
 }
 
 /** One shared product as posted. */
@@ -122,6 +128,16 @@ class Link(private val store: Store, private val net: LinkNet,
         const val PEND_RETRY = 5 * 60.0
         const val PHONE_ALIVE = BEAT + 15 * 60.0  // 2.0: another phone / tablet counts as there while heard within this (it posts every hour)
         const val PRES_FRESH = 35 * 60.0          // 1.0.4: a device's beat on the relay (every 15 minutes) counts as "running now" this long
+        // 1.0.6 (owner, 2026-11-20: "The ntfy messages arent really needed anymore since the app can handle notifications"): the link
+        // runs on the Restalker relay (one request a minute reads it; no daily limit - the free message service allows a home 250
+        // messages a day for ALL its devices, and the linked devices' updates alone used them up). The posts are the same sealed
+        // posts. ntfy is still used, and only then, for a linked PC / phone that runs a version from before (it reads and posts only
+        // there: heard without the mark "rl", it gets this device's posts there too while it is heard), right after linking (the
+        // other side's version is not known yet), and whenever the relay is not reached. No device has to update for the link to work.
+        const val NTFY_PEER = 3 * 86400.0         // a device that reads only ntfy gets posts there while heard this lately
+        const val NTFY_SLOW = 15 * 60.0           // with no such device, ntfy is still read this often (one may link, or come back)
+        const val SETTLE = 15 * 60.0              // right after linking, ntfy is read with every round
+        fun truthy(x: Any?): Boolean = x == true || ((x as? Number)?.toDouble() ?: 0.0) != 0.0
         private val ASIN = Regex("[A-Z0-9]{10}")
     }
 
@@ -135,7 +151,12 @@ class Link(private val store: Store, private val net: LinkNet,
     private fun remember(s: St) {
         snap = Triple(LinkCrypto.parse(s.code) != null, s.peer, clockMs()); snapPhones = s.dev to s.phones.toMap()
         ident = if (LinkCrypto.parse(s.code) != null) s.code to s.dev else null
+        onlyNtfy = try { LinkCrypto.parse(s.code) != null && ntfyOnly(s, nowS()) } catch (e: Exception) { false }
     }
+    /** 1.0.6: a linked PC / phone still reads only ntfy (a version from before the relay carried the link). */
+    @Volatile var onlyNtfy = false; private set
+    /** 1.0.6: the free message service still matters for this link - the relay is not reached, or a device reads only ntfy. */
+    fun usesNtfy(): Boolean = !relayOk || onlyNtfy
 
     // ---- 1.0.4: presence (owner, 2026-11-20: "it's showing old data for my pc and tablet. Both of these devices are currently active
     // ... Confirm the devices can see and report active links"). "Heard" was only the time of a device's last post on the link channel -
@@ -144,14 +165,14 @@ class Link(private val store: Store, private val net: LinkNet,
     // no message is used): its link group (made from the link secret; no one else can guess it) and a few words about itself (its name,
     // version and kind), SEALED with the link secret - the relay sees only noise. Each device gets the others' beats back and shows the
     // newest sign of life. Buying decisions still go by the link channel only, as before.
-    data class Pres(val d: String, val r: String, val nm: String, val vn: String, val at: Double) {
-        fun toMap(): Map<String, Any?> = linkedMapOf("d" to d, "r" to r, "nm" to nm, "vn" to vn, "at" to at)
+    data class Pres(val d: String, val r: String, val nm: String, val vn: String, val at: Double, val rl: Boolean = false) {
+        fun toMap(): Map<String, Any?> = linkedMapOf("d" to d, "r" to r, "nm" to nm, "vn" to vn, "at" to at, "rl" to rl)
     }
     private val PRES_FILE = "presence.json"
     @Volatile private var pres: Map<String, Pres> = try {
         (MiniJson.obj(store.readFile(PRES_FILE)) ?: emptyMap()).values.mapNotNull { v ->
             val m = v.asMap() ?: return@mapNotNull null
-            Pres(m["d"].asStr() ?: return@mapNotNull null, m["r"].asStr() ?: "", m["nm"].asStr() ?: "", m["vn"].asStr() ?: "", m["at"].asDouble() ?: 0.0)
+            Pres(m["d"].asStr() ?: return@mapNotNull null, m["r"].asStr() ?: "", m["nm"].asStr() ?: "", m["vn"].asStr() ?: "", m["at"].asDouble() ?: 0.0, truthy(m["rl"]))
         }.associateBy { it.d }
     } catch (e: Exception) { emptyMap() }
 
@@ -161,7 +182,7 @@ class Link(private val store: Store, private val net: LinkNet,
         val (_, sec) = LinkCrypto.parse(code) ?: return null
         val mine = try { me() } catch (e: Exception) { emptyMap() }
         return LinkCrypto.seal(sec, MiniJson.write(linkedMapOf("d" to dev, "r" to "phone", "nm" to (mine["nm"] as? String ?: "").take(40),
-            "vn" to (mine["vn"] as? String ?: "").take(12))))
+            "vn" to (mine["vn"] as? String ?: "").take(12), "rl" to 1)))          // (1.0.6: rl - it reads the relay)
     }
 
     /** The other devices' beats from the relay: (what each said - sealed, when the relay heard it in seconds). Anything not sealed with
@@ -177,7 +198,7 @@ class Link(private val store: Store, private val net: LinkNet,
             val d = (m["d"].asStr() ?: continue).take(20)
             if (d.isEmpty() || d == dev || at <= 0 || at > now + 600) continue
             val old = out[d]
-            if (old == null || at >= old.at) out[d] = Pres(d, (m["r"].asStr() ?: "").take(10), (m["nm"].asStr() ?: "").take(40), (m["vn"].asStr() ?: "").take(12), at)
+            if (old == null || at >= old.at) out[d] = Pres(d, (m["r"].asStr() ?: "").take(10), (m["nm"].asStr() ?: "").take(40), (m["vn"].asStr() ?: "").take(12), at, truthy(m["rl"]))
             n++
         }
         out.keys.filter { now - (out[it]?.at ?: 0.0) > 30 * 86400 }.forEach { out.remove(it) }
@@ -193,7 +214,11 @@ class Link(private val store: Store, private val net: LinkNet,
     // ---- the saved state (link.json)
     private class St(var code: String = "", var dev: String = "", var since: String = "", val recs: LinkedHashMap<String, LinkRec> = LinkedHashMap(),
                      var peer: Map<String, Any?> = emptyMap(), var linkedAt: Double = 0.0, var pubAt: Double = 0.0, var dirty: Boolean = false,
-                     val phones: LinkedHashMap<String, Map<String, Any?>> = LinkedHashMap())
+                     val phones: LinkedHashMap<String, Map<String, Any?>> = LinkedHashMap(),
+                     /** 1.0.6: where reading goes on at the relay - the link channel, and its fast channel */
+                     var rsince: String = "", var gsince: String = "",
+                     /** when ntfy was last read, and since when a post is owed to a device that reads only ntfy (0 = none) */
+                     var nAt: Double = 0.0, var owed: Double = 0.0)
 
     private fun load(): St {
         val m = MiniJson.obj(store.readFile(FILE)) ?: return St()
@@ -201,11 +226,13 @@ class Link(private val store: Store, private val net: LinkNet,
             m["linkedAt"].asDouble() ?: 0.0, m["pubAt"].asDouble() ?: 0.0, m["dirty"].asBool())
         m["recs"].asMap()?.values?.forEach { v -> v.asMap()?.let(LinkRec::fromMap)?.let { st.recs[it.a] = it } }
         m["phones"].asMap()?.forEach { (k, v) -> v.asMap()?.let { st.phones[k] = it } }
+        st.rsince = m["rsince"].asStr() ?: ""; st.gsince = m["gsince"].asStr() ?: ""
+        st.nAt = m["nAt"].asDouble() ?: 0.0; st.owed = m["owed"].asDouble() ?: 0.0
         return st
     }
     private fun save(s: St) = store.writeFile(FILE, MiniJson.write(linkedMapOf("code" to s.code, "dev" to s.dev, "since" to s.since,
         "recs" to s.recs.mapValues { it.value.toMap() }, "peer" to s.peer, "linkedAt" to s.linkedAt, "pubAt" to s.pubAt, "dirty" to s.dirty,
-        "phones" to s.phones)))
+        "phones" to s.phones, "rsince" to s.rsince, "gsince" to s.gsince, "nAt" to s.nAt, "owed" to s.owed)))
 
     init {
         remember(load())
@@ -298,10 +325,12 @@ class Link(private val store: Store, private val net: LinkNet,
         // or tablet on the same code is kept apart (1.4-1.9 took any other device as the peer - a second phone looked like a silent desktop)
         if (msg["r"].asStr() == "phone") {
             val d = (msg["d"].asStr() ?: "").take(20)
+            if (d.isNotEmpty() && d !in s.phones && !truthy(msg["rl"])) s.dirty = true     // (1.0.6: new here and reads only ntfy: it gets ours there at once)
             if (d.isNotEmpty()) s.phones[d] = linkedMapOf("at" to (srvTime ?: now), "amz" to msg["amz"].asBool(), "bye" to msg["bye"].asBool(),
                 "av" to (msg["av"].asLong() ?: 0L), "nm" to (msg["nm"].asStr() ?: "").take(40), "bm" to (msg["bm"].asStr() ?: "").take(8),
                 "fo" to (msg["fo"] != false), "vn" to (msg["vn"].asStr() ?: "").take(12),
                 "lk" to msg["lk"].asBool(),                                           // 2.15: it takes part in the shared checkout lock
+                "rl" to truthy(msg["rl"]), "nf" to truthy(msg["nf"]),                 // 1.0.6: it reads the relay (nothing on ntfy for it); it knows one that does not
                 "nt" to (msg["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""),     // 2.9: that device's alerts channel
                 // 2.4: that device's purchases (a post without them keeps the last list heard)
                 "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"], Buys.MAX_SENT) else s.phones[d]?.get("buys").asList()))
@@ -318,6 +347,7 @@ class Link(private val store: Store, private val net: LinkNet,
                 "buys" to (if (msg.containsKey("buys")) Buys.clean(msg["buys"]) else s.peer["buys"].asList()),
                 "mst" to msg["mst"].asBool(),            // 2.7: the PC is the owner's (no purchase limit on its linked devices)
                 "lk" to msg["lk"].asBool(),              // 2.15: the PC takes part in the shared checkout lock
+                "rl" to truthy(msg["rl"]), "nf" to truthy(msg["nf"]),   // 1.0.6: the PC reads the relay (v147 or newer); it knows a device that does not
                 "nt" to (msg["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""),     // 2.9: the PC's alerts channel ("Phone: set up")
                 // 2.7: the TCG price history the PC recorded - sent only when it changed: kept until then
                 "th" to (if (msg.containsKey("th")) cleanHistory(msg["th"]) else s.peer["th"].asMap() ?: emptyMap<String, Any?>()))
@@ -405,7 +435,7 @@ class Link(private val store: Store, private val net: LinkNet,
     }
 
     // ---- the channel
-    private fun postNow(s: St, bye: Boolean = false, hi: Boolean = false, now: Double = nowS()) {
+    private fun postNow(s: St, bye: Boolean = false, hi: Boolean = false, now: Double = nowS(), ntfyOk: Boolean = true) {
         val (ch, sec) = LinkCrypto.parse(s.code) ?: return
         val mine = try { me() } catch (e: Exception) { emptyMap() }
         val o = linkedMapOf<String, Any?>("v" to 1, "d" to s.dev, "r" to "phone", "at" to now, "amz" to (mine["amz"] == true && !bye),
@@ -413,16 +443,101 @@ class Link(private val store: Store, private val net: LinkNet,
             "nt" to (mine["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""), "items" to s.recs.values.map { it.post() },
             "bm" to store.settings().buyMode, "bmAt" to store.settings().buyModeAt / 1000.0,        // 2.3: THIS device's choice (each its own)
             "fo" to store.settings().failover, "nm" to (mine["nm"] as? String ?: "").take(40), "vn" to (mine["vn"] as? String ?: "").take(12),
-            "buys" to Buys.post(store.purchases()), "lk" to true)              // 2.15: this app takes part in the shared checkout lock
+            "buys" to Buys.post(store.purchases()), "lk" to true,              // 2.15: this app takes part in the shared checkout lock
+            "rl" to (if (relayOk) 1 else 0),     // 1.0.6: this device reads the relay right now (0: it is not reached - find it on ntfy)
+            // ... and a device that reads only ntfy is on this link (heard there by this one): the others then look there with every round
+            "nf" to (if (ntfyOnly(s, now)) 1 else 0))
         val set = pendingSet
         set?.let { o["set"] = it }
         if (bye) o["bye"] = true
         if (hi) o["hi"] = true
         val body = LinkCrypto.seal(sec, MiniJson.write(o))
-        val st = net.post("$SERVER/$ch", body, body.length > INLINE_MAX)
-        if (st !in 200..299) throw java.io.IOException("the link server answered $st")
+        // 1.0.6: on the relay - and on ntfy too when a linked device reads only there, the other side is not known yet, or the relay
+        // did not take it. ntfyOk = false: few of the day's free messages are left and this post can wait there.
+        val took = try { net.relayPost(ch, body) } catch (e: Exception) { false }
+        if (took) relayPosts++
+        val old = ntfyNeeded(s, now)
+        if (!took || (old && (ntfyOk || bye))) {
+            val st = try { net.post("$SERVER/$ch", body, body.length > INLINE_MAX) } catch (e: Exception) { if (!took) throw e; -1 }
+            if (st in 200..299) { ntfyPosts++; s.owed = 0.0 }
+            else if (!took) throw java.io.IOException("the link server answered $st")
+            else if (s.owed <= 0) s.owed = now   // (the relay has it; the older device gets it with a later post)
+        } else if (old && s.owed <= 0) s.owed = now
         if (set != null && pendingSet === set) pendingSet = null              // (kept for the next post when this one failed)
         s.pubAt = now; s.dirty = false
+    }
+
+    // ---- 1.0.6: which way (the relay first; ntfy only when needed)
+    @Volatile var relayOk = false; private set
+    @Volatile var relayPosts = 0; private set
+    @Volatile var ntfyPosts = 0; private set
+    @Volatile var relayLines = 0; private set
+    @Volatile var ntfyLines = 0; private set
+    /** The fast channel's messages from the PC (go / res / al), each once - the app gives what to do with them (GoListener.take). */
+    @Volatile var onGo: ((Map<String, Any?>) -> Unit)? = null
+    private val seenPosts = LinkedHashSet<String>()
+    /** A sealed post not taken in yet this run (the same post may come by the relay and by ntfy). */
+    fun fresh(text: String?): Boolean {
+        if (text.isNullOrEmpty()) return false
+        val h = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).take(10).joinToString("") { "%02x".format(it) }
+        synchronized(seenPosts) {
+            if (!seenPosts.add(h)) return false
+            if (seenPosts.size > 400) { val old = seenPosts.iterator(); repeat(100) { _ -> if (old.hasNext()) { old.next(); old.remove() } } }
+            return true
+        }
+    }
+    private fun rlOf(d: String, rec: Map<String, Any?>?): Boolean {
+        val pr = pres[d]
+        return truthy(rec?.get("rl")) || (pr != null && pr.rl && pr.at >= (rec?.get("at").asDouble() ?: 0.0))
+    }
+    /** Something still has to go over ntfy: a linked PC / phone heard in the last 3 days that reads only there (no mark "rl" on its
+     *  last post or its beat), or nobody heard yet in the first day after linking (the other side's version is not known). */
+    private fun ntfyNeeded(s: St, now: Double): Boolean = ntfyOnly(s, now) || (s.peer.isEmpty() && s.phones.isEmpty() && now - s.linkedAt < 86400)
+    /** A linked PC / phone that reads only ntfy, as this device itself heard it. */
+    private fun ntfyOnly(s: St, now: Double): Boolean {
+        val pd = s.peer["d"].asStr() ?: ""
+        if (s.peer.isNotEmpty() && now - (s.peer["at"].asDouble() ?: 0.0) < NTFY_PEER && !rlOf(pd, s.peer)) return true
+        return s.phones.any { (d, v) -> d != s.dev && now - (v["at"].asDouble() ?: 0.0) < NTFY_PEER && !rlOf(d, v) }
+    }
+    /** A device that reads the relay says it heard one that reads only ntfy (its mark "nf"): ntfy is read with every round too. */
+    private fun toldOfNtfy(s: St, now: Double): Boolean =
+        (truthy(s.peer["nf"]) && truthy(s.peer["rl"]) && now - (s.peer["at"].asDouble() ?: 0.0) < NTFY_PEER) ||
+            s.phones.any { (d, v) -> d != s.dev && truthy(v["nf"]) && truthy(v["rl"]) && now - (v["at"].asDouble() ?: 0.0) < NTFY_PEER }
+    /** The linked PC reads the relay (v147 or newer) - GoListener: its heartbeat needs no ntfy message then. */
+    fun pcReadsRelay(): Boolean { val p = snap?.second ?: return false; return p.isNotEmpty() && rlOf(p["d"].asStr() ?: "", p) }
+    /** For the report: how the link travels. */
+    fun wayText(): String = "the link's way (1.0.6): relay ${if (relayOk) "reached" else "NOT reached - everything over the message service"}, " +
+        "$relayPosts posts and $relayLines read there; message service: $ntfyPosts posts, $ntfyLines read"
+
+    /** 1.0.6: a message on the fast channel from this device (its "I am listening" heartbeat): on the relay when the PC reads it there,
+     *  otherwise - or when the relay does not take it - on ntfy as before. Never waits for a round. -> true when one of them took it. */
+    fun postGo(o: Map<String, Any?>): Boolean {
+        val (code, dev) = ident ?: return false
+        val (ch, sec) = LinkCrypto.parse(code) ?: return false
+        val body = LinkCrypto.seal(sec, MiniJson.write(LinkedHashMap(o).also { it["v"] = 1; it["d"] = dev; it["r"] = "phone"; it["at"] = nowS() }))
+        val took = try { net.relayPost("$ch-go", body) } catch (e: Exception) { false }
+        if (took && pcReadsRelay()) return true
+        return (try { net.post("$SERVER/$ch-go", body, false) } catch (e: Exception) { -1 }) in 200..299 || took
+    }
+
+    /** The relay's round: the link channel and its fast channel in one request. -> the other devices' posts, or null (not reached). */
+    private fun readRelay(s: St): List<Pair<Map<String, Any?>, Double?>>? {
+        val (ch, sec) = LinkCrypto.parse(s.code) ?: return emptyList()
+        val got = net.sync(linkedMapOf(ch to s.rsince, "$ch-go" to s.gsince)) ?: return null
+        val out = ArrayList<Pair<Map<String, Any?>, Double?>>()
+        for (m in got[ch] ?: emptyList()) {
+            m["id"].asStr()?.takeIf { it.all(Char::isDigit) && it.isNotEmpty() }?.let { s.rsince = it }
+            val text = m["message"].asStr() ?: continue
+            val o = MiniJson.obj(LinkCrypto.unseal(sec, text) ?: continue) ?: continue
+            if (o["d"].asStr() != s.dev && fresh(text)) { out.add(o to m["time"].asDouble()); relayLines++ }
+        }
+        for (m in got["$ch-go"] ?: emptyList()) {
+            m["id"].asStr()?.takeIf { it.all(Char::isDigit) && it.isNotEmpty() }?.let { s.gsince = it }
+            val text = m["message"].asStr() ?: continue
+            val o = MiniJson.obj(LinkCrypto.unseal(sec, text) ?: continue) ?: continue
+            if (o["r"].asStr() == "desktop" && fresh(text)) try { onGo?.invoke(o) } catch (e: Exception) { }
+        }
+        return out
     }
 
     private fun read(s: St): List<Pair<Map<String, Any?>, Double?>> {
@@ -438,7 +553,7 @@ class Link(private val store: Store, private val net: LinkNet,
             val att = m["attachment"].asMap()?.get("url").asStr()
             if (att != null && att.startsWith("$SERVER/file/")) text = try { net.get(att) } catch (e: Exception) { continue }
             val o = MiniJson.obj(LinkCrypto.unseal(sec, text) ?: continue) ?: continue
-            if (o["d"].asStr() != s.dev) out.add(o to m["time"].asDouble())
+            if (o["d"].asStr() != s.dev && fresh(text)) { out.add(o to m["time"].asDouble()); ntfyLines++ }
         }
         return out
     }
@@ -450,7 +565,17 @@ class Link(private val store: Store, private val net: LinkNet,
         if (LinkCrypto.parse(s.code) == null) return "not linked"
         val now = nowS()
         val first = s.pubAt == 0.0
-        val msgs = try { read(s) } catch (e: Exception) { save(s); return "read failed: ${e.message?.take(80)}" }
+        // 1.0.6: the relay's round first; ntfy too when a device that reads only there is linked, right after linking, when the relay
+        // was not reached, or 15 minutes have passed (an older device may have linked, or come back)
+        var why = ""
+        val rm = try { readRelay(s) } catch (e: Exception) { why = "relay: ${e.message?.take(60)}"; null }
+        relayOk = rm != null
+        val old = ntfyNeeded(s, now)
+        val nobody = s.peer.isEmpty() && s.phones.isEmpty()
+        val ntfyDue = rm == null || old || toldOfNtfy(s, now) || rm.any { truthy(it.first["nf"]) } || now - s.linkedAt < SETTLE || (nobody && now - s.nAt >= 120) || now - s.nAt >= NTFY_SLOW
+        val nm = if (!ntfyDue) null else try { read(s).also { s.nAt = now } } catch (e: Exception) { why = e.message?.take(80) ?: "no answer"; null }
+        if (rm == null && nm == null) { save(s); return "read failed: $why" }
+        val msgs = ((rm ?: emptyList()) + (nm ?: emptyList())).sortedBy { it.second ?: (it.first["at"].asDouble() ?: 0.0) }
         for ((m, srv) in msgs) {
             for ((_, n, old) in merge(s, m, srv, now)) {
                 try { apply(n, old, s.linkedAt) } catch (e: Exception) { store.log("! A change from the desktop could not be made: ${e.message?.take(100)}") }
@@ -460,8 +585,13 @@ class Link(private val store: Store, private val net: LinkNet,
         scan(s, localItems(), now)
         var r = "ok"
         // (1.0.4: the hourly "still here" waits while few of the day's free messages are left - the relay beat says it meanwhile)
-        if (s.dirty || first || (now - s.pubAt >= BEAT && !(try { saveMessages() } catch (e: Exception) { false }))) {
-            try { postNow(s, hi = first, now = now) } catch (e: Exception) { r = "post failed: ${e.message?.take(80)}" }
+        // (1.0.6: with the relay reached the hourly post always goes - there; only its copy for a device that reads only ntfy waits)
+        val low = try { saveMessages() } catch (e: Exception) { false }
+        if (s.owed > 0 && !ntfyNeeded(s, now)) s.owed = 0.0
+        val owed = s.owed > 0 && !low && now - s.owed >= 600                           // (a post an older device still has to get)
+        val urgent = s.dirty || first || owed
+        if (urgent || (now - s.pubAt >= BEAT && (relayOk || !low))) {
+            try { postNow(s, hi = first, now = now, ntfyOk = urgent || !low) } catch (e: Exception) { r = "post failed: ${e.message?.take(80)}" }
         }
         save(s); remember(s)
         r

@@ -15,13 +15,47 @@ object LinkSim {
             return c.responseCode.also { c.inputStream.close() }
         }
         override fun get(url: String): String = java.net.URL(map(url)).readText()
+        // 1.0.6: the relay (SIM_RELAY = a local copy of the real relay code); without it the relay is "not reached", as before 1.0.6
+        var link: Link? = null
+        var code = "0123456789ab"
+        var took: ((Map<String, List<Map<String, Any?>>>) -> Unit)? = null
+        private val relay = System.getenv("SIM_RELAY")
+        private fun call(path: String, body: String, type: String): Map<String, Any?>? {
+            val c = java.net.URL(relay + path).openConnection() as java.net.HttpURLConnection
+            c.requestMethod = "POST"; c.doOutput = true; c.setRequestProperty("Content-Type", type); c.connectTimeout = 5000; c.readTimeout = 10000
+            c.outputStream.use { it.write(body.toByteArray()) }
+            val code = c.responseCode
+            return MiniJson.obj((if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() })
+        }
+        override fun sync(reads: Map<String, String>): Map<String, List<Map<String, Any?>>>? {
+            if (relay.isNullOrEmpty()) return null
+            val body = linkedMapOf<String, Any?>("c" to code, "r" to reads)
+            link?.let { l -> val g = l.lockGroup(); val w = l.who(); if (g != null && w != null) { body["g"] = g; body["w"] = w } }
+            val a = try { call("/v1/sync", MiniJson.write(body), "application/json") } catch (e: Exception) { null } ?: return null
+            if (a["ok"] != true) return null
+            link?.takePresence(a["peers"].asList().mapNotNull { x -> val m = x.asMap() ?: return@mapNotNull null; (m["w"].asStr() ?: return@mapNotNull null) to ((m["at"].asDouble() ?: return@mapNotNull null) / 1000.0) })
+            val out = LinkedHashMap<String, List<Map<String, Any?>>>()
+            a["m"].asMap()?.forEach { (k, v) -> out[k] = v.asList().mapNotNull { it.asMap() } }
+            took?.invoke(out)
+            return out
+        }
+        override fun relayPost(channel: String, body: String): Boolean =
+            !relay.isNullOrEmpty() && try { call("/v1/ch/$channel", body, "text/plain")?.get("ok") == true } catch (e: Exception) { false }
     }
 
     @JvmStatic fun main(args: Array<String>) {
         val dir = File(args[0]); val port = args[1].toInt(); val cmd = args[2]; val a = args.drop(3)
         val clock = System.getenv("SIM_NOW")?.toLongOrNull()?.let { t -> { t } } ?: System::currentTimeMillis
         val store = Store(dir, clock)
-        val link = Link(store, LocalNet(port), me = { mapOf("amz" to true, "nm" to "Sim phone", "vn" to APP_VERSION, "av" to 31L) }, clockMs = clock)
+        val net = LocalNet(port)
+        val link = Link(store, net, me = { mapOf("amz" to true, "nm" to (System.getenv("SIM_NAME") ?: "Sim phone"), "vn" to APP_VERSION, "av" to 31L) }, clockMs = clock)
+        net.link = link
+        net.code = (store.readFile("sim_code.txt") ?: java.util.UUID.randomUUID().toString().replace("-", "").take(12).also { store.writeFile("sim_code.txt", it) }).trim()
+        // (what came on the fast channel with the relay's round - the PC's signals and alerts - is kept for the test to read)
+        link.onGo = { o -> File(dir, "go.jsonl").appendText(MiniJson.write(o) + "\n") }
+        val cs = CrowdState(store, clock)
+        net.took = { m -> m["crowd"]?.takeIf { it.isNotEmpty() }?.let { ev -> val looked = cs.takeRelay(ev, store.products().map { it.asin }.toSet()) { true }
+            File(dir, "crowd.jsonl").appendText(MiniJson.write(linkedMapOf("got" to ev.size, "looked" to looked)) + "\n") } }
         fun prod(asin: String) = store.products().first { it.asin == asin }
         when (cmd) {
             "connect" -> println(link.connect(a[0]) ?: "linked")
@@ -42,6 +76,10 @@ object LinkSim {
             "mode" -> println(store.settings().buyMode + " " + store.settings().failover)
             "state" -> println(link.state().second + " | behind " + link.pcSyncBehindS())
             "unlink" -> { link.unlink(); println("ok") }
+            // 1.0.6: the link's way, the heartbeat of a device that buys instead of the PC, a round of a device that is not linked
+            "way" -> println(link.wayText() + " | pc reads the relay: " + link.pcReadsRelay())
+            "hb" -> println(link.postGo(linkedMapOf("hb" to 1, "bm" to (a.getOrNull(0) ?: "phone"))))
+            "crowdround" -> println(MiniJson.write(net.sync(linkedMapOf("crowd" to cs.rsince))?.mapValues { it.value.size } ?: mapOf("relay" to "not reached")))
             "dump" -> println(MiniJson.write(linkedMapOf("products" to store.products().associate { it.asin to linkedMapOf("n" to it.name, "c" to it.cap, "b" to it.buy, "w" to it.watch, "k" to it.kind, "purchased" to it.purchased, "year" to it.year, "set" to it.set, "q" to it.qty, "dSt" to it.dSt, "dPr" to it.dPr, "dAt" to it.dAt, "msrp" to it.msrp, "others" to it.others, "stock" to it.stock().first, "dImg" to it.dImg, "image" to it.image) },
                 "desktopBuys" to link.desktopBuys(), "state" to link.state().second, "linked" to link.linked(), "log" to store.log().takeLast(12))))
             else -> println("unknown command")

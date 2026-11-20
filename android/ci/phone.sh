@@ -32,6 +32,14 @@ if [ "$SCOPE" = "full" ] && ! grep -q "^OK (\|FAILURES\|Tests run" instrument_a.
 fi
 adb shell am force-stop $P 2>/dev/null || true; sleep 3
 adb shell am instrument -w -r -e debug false -e class $P.ScreenTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_b.txt 2>&1
+# 1.0.6: the screen tests ended without a result (the run itself died - seen once: the test framework read the screen from its own
+# thread while the app drew it, "Detected multithreaded access to SnapshotStateObserver"): say what it said, and run them once more.
+# A fault of the app fails the second run too.
+if ! grep -q "^OK (\|FAILURES\|Tests run" instrument_b.txt; then
+  echo "--- screen tests ended without a result:"; grep -m3 "INSTRUMENTATION_STATUS: stack=\|INSTRUMENTATION_RESULT\|Process crashed" instrument_b.txt | cut -c1-300; tail -5 instrument_b.txt | cut -c1-200
+  adb shell am force-stop $P 2>/dev/null || true; sleep 5
+  adb shell am instrument -w -r -e debug false -e class $P.ScreenTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_b.txt 2>&1
+fi
 grep -E "^OK|FAILURES|Tests run" instrument_a.txt | sed 's/^/phone+link tests: /'
 grep -E "^OK|FAILURES|Tests run" instrument_b.txt | sed 's/^/screen tests: /'
 # (one file for the checks below: both must say OK)
@@ -152,6 +160,11 @@ adb shell settings put system font_scale 1.3; adb shell wm size 720x1280; adb sh
 if ! up; then echo "(the virtual phone dropped off after the screen change - big-text run not possible on this one; it ran on the others)"
 else
 adb shell am instrument -w -r -e debug false -e class $P.ScreenTests -e shotTag _big $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_big.txt 2>&1
+if ! grep -q "^OK (\|FAILURES\|Tests run" instrument_big.txt && adb shell true 2>/dev/null; then      # (1.0.6: ended without a result - once more, as above)
+  echo "--- big-text screen tests ended without a result:"; grep -m3 "INSTRUMENTATION_STATUS: stack=\|INSTRUMENTATION_RESULT\|Process crashed" instrument_big.txt | cut -c1-300
+  adb shell am force-stop $P 2>/dev/null || true; sleep 5
+  adb shell am instrument -w -r -e debug false -e class $P.ScreenTests -e shotTag _big $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_big.txt 2>&1
+fi
 grep -E "^OK|FAILURES|Tests run" instrument_big.txt | tail -3
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument_big.txt | cut -c1-600
 grep -E "ScreenTests.kt:[0-9]+" instrument_big.txt | head -10
