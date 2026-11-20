@@ -15,8 +15,16 @@ up() {   # the virtual phone back and ready (it can drop off for a moment after 
   done
   echo "THE VIRTUAL PHONE STOPPED ANSWERING"; return 1
 }
-adb install -r -g apk/outputs/apk/debug/app-debug.apk
-adb install -r -g apk/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+# 1.0.7: RK_EDITION=play - the Google Play edition (it never updates itself, holds no install / battery-request permission); its test
+# build is "playDebug". Everything else is the same program and gets the same tests.
+EDITION=${RK_EDITION:-github}; [ "$EDITION" = "play" ] && V=playDebug || V=debug
+echo "=== edition: $EDITION"
+adb install -r -g apk/outputs/apk/$V/app-$V.apk
+adb install -r -g apk/outputs/apk/androidTest/$V/app-$V-androidTest.apk
+if [ "$EDITION" = "play" ]; then
+  held=$(adb shell dumpsys package $P | grep -o "android.permission.REQUEST_INSTALL_PACKAGES\|android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION\|android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" | sort -u | tr '\n' ' ')
+  if [ -n "$held" ]; then echo "THE GOOGLE PLAY EDITION HOLDS: $held"; fail=1; else echo "Google Play edition on the phone: no install or battery-request permission: OK"; fi
+fi
 # 2.6: the phone's own log while the app tests run (when the virtual phone dies at the end, its last words are shown)
 adb logcat -c 2>/dev/null || true
 (adb logcat -v time > live_logcat.txt 2>/dev/null &)
@@ -120,7 +128,8 @@ adb shell cmd connectivity airplane-mode disable 2>/dev/null || true; adb shell 
 
 echo "=== the app updates itself (1.7)"
 if ! up; then fail=1; finish; fi
-if [ "$SCOPE" != "full" ]; then echo "(not needed for this change: $SCOPE)"; else
+if [ "$EDITION" = "play" ]; then echo "(the Google Play edition never updates itself - Google Play does)"
+elif [ "$SCOPE" != "full" ]; then echo "(not needed for this change: $SCOPE)"; else
 api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 vc() { adb shell dumpsys package $P | grep -m1 -o 'versionCode=[0-9]*' | cut -d= -f2; }
 put() { adb push "$1" /data/local/tmp/u.apk >/dev/null && adb shell chmod 644 /data/local/tmp/u.apk && adb shell run-as $P cp /data/local/tmp/u.apk cache/u.apk; }
@@ -154,6 +163,21 @@ fi
 if adb shell run-as $P test -s files/crash.txt 2>/dev/null; then echo "THE APP WROTE A CRASH:"; adb exec-out run-as $P cat files/crash.txt | head -30; fail=1; fi
 timeout 60 adb logcat -d > logcat.txt || true
 grep -E "FATAL EXCEPTION|AndroidRuntime" -A12 logcat.txt | head -60
+# 1.0.7, Google Play edition: the short film the store asks for with the background-watching declaration - the screen is recorded
+# while a test starts watching (a tap), shows the notice, leaves the app, comes back and stops. The test's stand-in Amazon only.
+# Never fails the job.
+if [ "$EDITION" = "play" ] && up; then
+  echo "=== the store film (background watching)"
+  adb shell am force-stop $P 2>/dev/null || true; adb shell rm -f /sdcard/rk_watch.mp4 2>/dev/null
+  (adb shell screenrecord --bit-rate 4000000 --time-limit 90 /sdcard/rk_watch.mp4 > screenrecord.txt 2>&1 &); sleep 2
+  timeout 200 adb shell am instrument -w -r -e debug false -e demo 1 -e class $P.ScreenTests#z99_store_demo $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_demo.txt 2>&1
+  adb shell pkill -INT screenrecord 2>/dev/null || adb shell killall -INT screenrecord 2>/dev/null || true; sleep 5
+  mkdir -p store; adb pull /sdcard/rk_watch.mp4 store/restalker-background-watching.mp4 >/dev/null 2>&1 || true
+  grep -E "^OK|FAILURES|Tests run" instrument_demo.txt | tail -2; awk '/INSTRUMENTATION_STATUS: stack=/{print; getline; print}' instrument_demo.txt | cut -c1-400 | head -6
+  if [ -s store/restalker-background-watching.mp4 ] && grep -q "^OK (1 test)" instrument_demo.txt; then echo "store film: recorded ($(stat -c %s store/restalker-background-watching.mp4) bytes)"
+  else echo "STORE FILM NOT RECORDED"; cat screenrecord.txt 2>/dev/null | head -5; fi
+  adb shell am force-stop $P 2>/dev/null || true
+fi
 # (last: changing the screen size has made the virtual phone drop off afterwards - nothing after this needs it)
 echo "=== big text, small screen"
 adb shell settings put system font_scale 1.3; adb shell wm size 720x1280; adb shell wm density 320; sleep 5

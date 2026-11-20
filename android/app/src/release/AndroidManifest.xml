@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- GitHub edition only (1.0.7; the Google Play edition has none of this): the app installs its own updates, and may ask Android
+         directly to be let off battery saving. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 1.7: Android 12+ lets an app that updates ITSELF do so without asking (needs this; no effect on anything else) -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <application>
+        <receiver android:name=".UpdateReceiver" android:exported="false" />
+    </application>
+</manifest>

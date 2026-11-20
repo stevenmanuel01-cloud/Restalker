@@ -377,6 +377,8 @@ export class Hub {
     const now = Date.now();
     this.sql.exec("DELETE FROM rate WHERE at < ?", now - 3600_000);
     this.sql.exec("DELETE FROM events WHERE last_at < ?", now - 60 * 86400_000);
+    // (2026-11-20, the privacy policy says so: a device that has not been heard for 90 days is forgotten - its code and its last time)
+    this.sql.exec("DELETE FROM seen WHERE at < ?", now - 90 * 86400_000);
     this.sql.exec("DELETE FROM msgs WHERE at < ? OR (ch = ? AND at < ?) OR (ch LIKE '%-go' AND at < ?)", now - L.CH_KEEP_MS, L.CH_CROWD, now - L.CROWD_KEEP_MS, now - L.GO_KEEP_MS);
   }
 

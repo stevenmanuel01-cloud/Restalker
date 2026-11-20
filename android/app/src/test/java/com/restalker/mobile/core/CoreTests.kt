@@ -1643,6 +1643,14 @@ object CoreTests {
             val again = CrowdState(w.store) { w.clock.t }
             r1 == listOf("B0TEST0941", "B0TEST0942") && r2.isEmpty() && cs.rsince == "10" && old == "" && cs.since == "ntfyid1" && again.rsince == "10" && again.since == "ntfyid1" &&
                 looked.size == 2 }
+        t("187_a_report_to_the_team_carries_no_order_number_and_the_answer_about_reports_is_kept") {
+            val text = "- 11-20 14:02 B0TEST0001 \$99.99 order 111-1000000-2000001 verified=true\n11-20 14:02  Box: BOUGHT at \$99.99 - order 113-7654321-1234567. Looking it up.\nphone 555-1234567 stays, cap \$120.00, 2026-11-20"
+            val out = Report.noOrders(text)
+            val w = World(); w.store.setSettings { it.copy(reportAsked = true, autoReport = false) }
+            val again = Store(w.dir); val fresh = World()
+            !out.contains("111-1000000-2000001") && !out.contains("113-7654321-1234567") && out.contains("order (hidden) verified=true") && out.contains("order (hidden). Looking") &&
+                out.contains("555-1234567") && out.contains("\$99.99") && out.contains("2026-11-20") && Report.noOrders("") == "" &&
+                again.settings().reportAsked && !again.settings().autoReport && !fresh.store.settings().reportAsked && fresh.store.settings().autoReport }
         t("184_a_message_of_the_pc_is_one_of_this_devices_kinds") {
             NotifyPrefs.pcKind("purchase bought", "BOUGHT: Hobbit Box") == "bought" && NotifyPrefs.pcKind("purchase oldbought", "x") == "bought" &&
                 NotifyPrefs.pcKind("purchase submitted", "Order placed") == "bought" && NotifyPrefs.pcKind("", "Bought: Box at $99") == "bought" &&

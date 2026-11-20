@@ -45,9 +45,10 @@ jobs:
             for r in $(gh api "repos/${{ github.repository }}/actions/workflows/android.yml/runs?status=completed&per_page=30" -q '.workflow_runs[]|select(.head_branch!="main")|"\(.id):\(.head_sha)"' 2>/dev/null); do
               rid=${r%%:*}; sha=${r#*:}
               [ "$(key "$sha")" = "$tree" ] || continue
-              gh run download "$rid" -p 'phone-api*' -D "prev/$rid" >/dev/null 2>&1 || continue
+              gh run download "$rid" -p 'phone-*api*' -D "prev/$rid" >/dev/null 2>&1 || continue
               okc=0; for a in $need; do [ "$(cat prev/$rid/phone-api$a/result.txt 2>/dev/null)" = "success" ] && okc=$((okc+1)); done
-              if [ "$okc" -eq "$(echo $need | wc -w)" ]; then tested=$rid; break; fi
+              # (1.0.7: and the Google Play edition passed on its phone)
+              if [ "$okc" -eq "$(echo $need | wc -w)" ] && [ "$(cat prev/$rid/phone-play-api36/result.txt 2>/dev/null)" = "success" ]; then tested=$rid; break; fi
             done
           fi
           { echo "scope=$sc"; echo "phones=$ph"; echo "tested=$tested"; } >> $GITHUB_OUTPUT
@@ -73,6 +74,25 @@ jobs:
           mkdir -p app/build/next
           for b in 1 2; do gradle --no-daemon -q :app:assembleDebug -PrkCodeBump=$b && cp app/build/outputs/apk/debug/app-debug.apk app/build/next/next$b.apk; done
           gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest
+          # 1.0.7: the Google Play edition - the bundle that is uploaded to the store, an APK of it to look into, and its test build
+          gradle --no-daemon -PrkEdition=play :app:bundlePlay :app:assemblePlay :app:assemblePlayDebug :app:assemblePlayDebugAndroidTest
+          # ... and what each edition is, read from the built files themselves: the Play edition holds none of the three permissions
+          # (installing its own updates, asking to be let off battery saving) and no installer code; the GitHub edition still has
+          # them; both are made for Android 16 (Google Play takes nothing older since 2026-08-31)
+          A=$(ls $ANDROID_HOME/build-tools/*/aapt2 | sort -V | tail -1); bad=0
+          PLAY=app/build/outputs/apk/play/app-play.apk; GH=app/build/outputs/apk/release/app-release.apk; AAB=app/build/outputs/bundle/play/app-play.aab
+          ls -la $PLAY $GH $AAB || bad=1
+          pp=$($A dump permissions $PLAY); gp=$($A dump permissions $GH)
+          for p in REQUEST_INSTALL_PACKAGES UPDATE_PACKAGES_WITHOUT_USER_ACTION REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
+            if echo "$pp" | grep -q "$p"; then echo "THE GOOGLE PLAY EDITION HOLDS $p"; bad=1; fi
+            if ! echo "$gp" | grep -q "$p"; then echo "THE GITHUB EDITION LOST $p"; bad=1; fi
+          done
+          echo "Google Play edition permissions:"; echo "$pp" | grep "uses-permission" | sed 's/.*name=//' | tr '\n' ' '; echo
+          for f in $PLAY $GH; do t=$($A dump badging $f | grep -o "targetSdkVersion:'[0-9]*'"); echo "$f $t"; [ "$t" = "targetSdkVersion:'36'" ] || { echo "NOT MADE FOR ANDROID 16: $f"; bad=1; }; done
+          if unzip -p $PLAY 'classes*.dex' | grep -aq 'Landroid/content/pm/PackageInstaller\$Session;'; then echo "THE GOOGLE PLAY EDITION CARRIES INSTALLER CODE"; bad=1; else echo "Google Play edition: no installer code"; fi
+          unzip -p $GH 'classes*.dex' | grep -aq 'Landroid/content/pm/PackageInstaller\$Session;' || { echo "THE GITHUB EDITION LOST ITS UPDATER"; bad=1; }
+          unzip -l $AAB | grep -q "base/manifest/AndroidManifest.xml" || { echo "THE BUNDLE IS NOT A BUNDLE"; bad=1; }
+          [ $bad -eq 0 ] && echo "EDITIONS: OK" || exit 1
       - name: Central list pictures load (2.8)
         if: always()
         run: |
@@ -104,6 +124,10 @@ jobs:
             android/app/build/outputs/apk/release/*.apk
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/outputs/apk/androidTest/debug/*.apk
+            android/app/build/outputs/apk/play/*.apk
+            android/app/build/outputs/apk/playDebug/*.apk
+            android/app/build/outputs/apk/androidTest/playDebug/*.apk
+            android/app/build/outputs/bundle/play/*.aab
             android/app/build/next/*.apk
             android/app/build/reports/tests/
           if-no-files-found: warn
@@ -116,7 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: ${{ fromJSON(needs.build.outputs.phones || '[30, 33, 34, 35]') }}
+        api: ${{ fromJSON(needs.build.outputs.phones || '[30, 33, 34, 35, 36]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -157,10 +181,58 @@ jobs:
             shots/
             logcat.txt
 
+  # 1.0.7: the Google Play edition on the Android it is made for (the same tests, without the self-update; it also records the short
+  # film the store asks for). Its result is needed before the bundle is handed over.
+  phone-play:
+    needs: build
+    if: needs.build.outputs.ok == 'true' && needs.build.outputs.tested == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: apk, path: apk }
+      - name: Enable KVM (fast virtual phone)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run the Google Play edition on a virtual phone
+        id: run
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          heap-size: 512M
+          cores: 3
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: RK_EDITION=play RK_SCOPE=full bash android/ci/phone.sh
+      - name: Result
+        if: always()
+        run: |
+          echo "${{ steps.run.outcome }}" > result.txt
+          echo "RESULT play api36 = $(cat result.txt)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phone-play-api36
+          path: |
+            result.txt
+            instrument*.txt
+            monkey.txt
+            shots/
+            store/
+            logcat.txt
+
   # A tested, signed APK becomes a GitHub release (once per version). Only with the app's own signing key (repository secret):
   # every version must carry the same key, or a phone refuses the update.
   publish:
-    needs: [build, phone]
+    needs: [build, phone, phone-play]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build.outputs.ok == 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -171,14 +243,14 @@ jobs:
         with: { name: apk, path: apk }
       - uses: actions/download-artifact@v4
         if: needs.build.outputs.tested == ''
-        with: { pattern: "phone-api*", path: results }
+        with: { pattern: "phone-*api*", path: results }
       - uses: actions/download-artifact@v4          # (the same files passed on their branch: those results)
         if: needs.build.outputs.tested != ''
-        with: { pattern: "phone-api*", path: results, run-id: "${{ needs.build.outputs.tested }}", github-token: "${{ github.token }}" }
+        with: { pattern: "phone-*api*", path: results, run-id: "${{ needs.build.outputs.tested }}", github-token: "${{ github.token }}" }
       - name: Every phone passed?
         id: all
         run: |
-          need=$(echo '${{ needs.build.outputs.phones }}' | tr -d '[] ' | tr ',' ' '); [ -n "$need" ] || need="30 33 34 35"
+          need=$(echo '${{ needs.build.outputs.phones }}' | tr -d '[] ' | tr ',' ' '); [ -n "$need" ] || need="30 33 34 35 36"
           n=0; t=0; for a in $need; do t=$((t+1)); r=$(cat results/phone-api$a/result.txt 2>/dev/null); echo "api$a: ${r:-no result}"; [ "$r" = "success" ] && n=$((n+1)); done
           echo "tests: ${{ needs.build.outputs.scope }}${{ needs.build.outputs.tested != '' && format(' (passed on the branch, run {0})', needs.build.outputs.tested) || '' }}"
           if [ $n -eq $t ]; then echo "ok=true" >> $GITHUB_OUTPUT; echo "ALL PHONES PASSED"; else echo "ok=false" >> $GITHUB_OUTPUT; echo "NOT RELEASED: $((t-n)) phone(s) did not pass"; fi
@@ -201,3 +273,25 @@ jobs:
           # the download link and the install steps, then only this version's notes (android/ci/release_body.py)
           python3 android/ci/release_body.py "$VER" > release_body.md || cp android/RELEASE_NOTES.md release_body.md
           gh release create "mobile-v$VER" "restalker-mobile-$VER.apk" --title "Restalker Mobile $VER" --notes-file release_body.md --prerelease
+      # 1.0.7: what goes to Google Play - the app bundle of the Play edition (only when it passed on its own phone), its screenshots
+      # and the short film for the background-watching declaration. Kept on one page of its own ("play-kit"), not on the app's
+      # download page. The bundle is signed with the app's key (Google Play's "upload key").
+      - name: The Google Play upload kit
+        if: steps.all.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HAS_KEY: ${{ secrets.RKM_KEYSTORE_B64 != '' }}
+        run: |
+          VER=$(grep -o 'versionName = "[^"]*"' android/app/build.gradle.kts | cut -d'"' -f2)
+          if [ "$HAS_KEY" != "true" ]; then echo "No signing key - no bundle."; exit 0; fi
+          if [ "$(cat results/phone-play-api36/result.txt 2>/dev/null)" != "success" ]; then echo "THE GOOGLE PLAY EDITION DID NOT PASS ON ITS PHONE - no bundle handed over"; exit 0; fi
+          cp apk/outputs/bundle/play/app-play.aab "restalker-play-$VER.aab"; sha256sum "restalker-play-$VER.aab"
+          files="restalker-play-$VER.aab"
+          mkdir -p kit; cp results/phone-play-api36/shots/*.png kit/ 2>/dev/null || true
+          (cd kit && rm -f *.small.png fail_* && ls | head -80 && zip -q ../play-screenshots.zip *.png) && files="$files play-screenshots.zip" || echo "no screenshots"
+          v=results/phone-play-api36/store/restalker-background-watching.mp4
+          if [ -s "$v" ]; then cp "$v" .; files="$files restalker-background-watching.mp4"; else echo "no store film"; fi
+          gh release view play-kit >/dev/null 2>&1 || gh release create play-kit --prerelease --title "Google Play upload kit" \
+            --notes "Files for the Google Play listing: the app bundle to upload there, screenshots, and the short film for the background-watching declaration. Not for installing on a phone - the app itself is on the newest release."
+          gh release upload play-kit $files --clobber
+          echo "PLAY KIT: $files"

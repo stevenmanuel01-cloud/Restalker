@@ -8,10 +8,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- 1.7: Android 12+ lets an app that updates ITSELF do so without asking (needs this; no effect on anything else) -->
-    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- 1.0.7: three more permissions (installing its own updates, asking to be let off battery saving) are in the GitHub edition
+         only: src/debug and src/release AndroidManifest.xml. The Google Play edition has none of them. -->
 
     <!-- 1.0.6: may ask whether the ntfy app is on this phone (then ntfy shows the linked PC's alerts and this app does not repeat them) -->
     <queries>
@@ -58,7 +56,6 @@
         </service>
 
         <receiver android:name=".ActionReceiver" android:exported="false" />
-        <receiver android:name=".UpdateReceiver" android:exported="false" />
         <receiver android:name=".StandbyAlarm" android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">

@@ -30,7 +30,8 @@ def scope(files, message=""):
     return "full"
 
 
-PHONES = {"look": "[30, 35]", "screens": "[30, 33, 34, 35]", "full": "[30, 33, 34, 35]"}
+# (1.0.7: Android 16 - API 36 - is the one the app is made for now; it is in every run)
+PHONES = {"look": "[30, 36]", "screens": "[30, 33, 34, 35, 36]", "full": "[30, 33, 34, 35, 36]"}
 
 if __name__ == "__main__":
     base = sys.argv[1] if len(sys.argv) > 1 else ""

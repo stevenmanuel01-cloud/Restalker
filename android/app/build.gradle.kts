@@ -6,13 +6,14 @@ plugins {
 
 android {
     namespace = "com.restalker.mobile"
-    compileSdk = 35
+    compileSdk = 36
     defaultConfig {
         applicationId = "com.restalker.mobile"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 33 + (project.findProperty("rkCodeBump")?.toString()?.toIntOrNull() ?: 0)   // (tests: a "newer" copy to update to)
-        versionName = "1.0.6"               // (1.0.0 comes after 2.15: the name starts again, the code above keeps counting; three parts - see Model.kt)
+        targetSdk = 36                      // 1.0.7: Google Play takes new apps only when they target Android 16 (since 2026-08-31)
+        buildConfigField("boolean", "PLAY", "false")
+        versionCode = 34 + (project.findProperty("rkCodeBump")?.toString()?.toIntOrNull() ?: 0)   // (tests: a "newer" copy to update to)
+        versionName = "1.0.7"               // (1.0.0 comes after 2.15: the name starts again, the code above keeps counting; three parts - see Model.kt)
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {
@@ -36,7 +37,26 @@ android {
             val rel = signingConfigs.getByName("release")
             if (rel.storeFile != null) signingConfig = rel
         }
+        // 1.0.7: the Google Play edition - the same app, but it never updates itself (Google Play's rule: an app from the store is
+        // updated by the store alone) and asks for none of the permissions that would let it. "play" is what is uploaded to the
+        // store (as an app bundle); "playDebug" is the same edition for the virtual-phone tests (-PrkEdition=play).
+        create("play") {
+            initWith(getByName("release"))
+            buildConfigField("boolean", "PLAY", "true")
+            matchingFallbacks += "release"
+        }
+        create("playDebug") {
+            initWith(getByName("debug"))
+            buildConfigField("boolean", "PLAY", "true")
+            matchingFallbacks += "debug"
+        }
     }
+    testBuildType = if (project.findProperty("rkEdition")?.toString() == "play") "playDebug" else "debug"
+    // the app's own updater (and its test hook) belong to the GitHub edition only; the Play edition gets a stand-in that does nothing
+    sourceSets["debug"].java.srcDir("src/github/java")
+    sourceSets["release"].java.srcDir("src/github/java")
+    sourceSets["play"].java.srcDir("src/playstore/java")
+    sourceSets["playDebug"].java.srcDir("src/playstore/java")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -69,4 +89,5 @@ dependencies {
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    "playDebugImplementation"("androidx.compose.ui:ui-test-manifest")
 }

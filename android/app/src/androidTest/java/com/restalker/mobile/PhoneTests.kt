@@ -44,6 +44,7 @@ class PhoneTests {
         site = FakeAmazonSite()
         AmazonWeb.testSite = { url, method -> site.handle(url, method) }
         RkApp.resetForTests(File(ctx.filesDir, "rk-test"))
+        RkApp.store().setSettings { it.copy(reportAsked = true) }     // (1.0.7: the Google Play edition's one question is answered; ScreenTests t45 tests it)
     }
 
     @After fun tearDown() {

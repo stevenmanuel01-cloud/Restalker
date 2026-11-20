@@ -98,7 +98,7 @@ object Reporter {
             val ok = if (direct())
                 // 1.6: what you wrote comes first in the report (owner 2026-11-16: "App issues sent" - the report had the log but not the issues)
                 com.restalker.mobile.core.Report.send(store, "Restalker Mobile report", "REPORT: $why\n\n" + Diag.text(ctx), why, put = ::put)
-            else Relay.report(why, note, Diag.text(ctx)).also { ok -> store.log(if (ok) "Report sent to the Restalker team (looked at once a day)." else "! The report could not be sent (no internet?) - try again.", quiet = ok) }
+            else Relay.report(why, note, com.restalker.mobile.core.Report.noOrders(Diag.text(ctx))).also { ok -> store.log(if (ok) "Report sent to the Restalker team (looked at once a day)." else "! The report could not be sent (no internet?) - try again.", quiet = ok) }
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post { done(ok) }
         }.start()
     }
@@ -108,6 +108,7 @@ object Reporter {
      *  alerts and what you send yourself come first). */
     fun auto(ctx: android.content.Context, why: String): Boolean {
         val s = RkApp.store().settings()
+        if (BuildConfig.PLAY && !s.reportAsked) return false          // (1.0.7, Google Play edition: not before you said yes - the Watch page asks once)
         if (!com.restalker.mobile.core.Report.autoDue(s, System.currentTimeMillis())) return false
         if (direct() && !com.restalker.mobile.core.NtfyQuota.may(Quota.q, System.currentTimeMillis(), com.restalker.mobile.core.NtfyQuota.KEEP_FOR_NORMAL)) return false
         RkApp.store().setSettings { it.copy(reportAt = System.currentTimeMillis()) }     // (one at a time)

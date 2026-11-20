@@ -33,6 +33,9 @@ class BrowserActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 1.0.7: an app made for Android 16 is no longer told about Back through onBackPressed - it registers for it (Android 13+)
+        if (android.os.Build.VERSION.SDK_INT >= 33)
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { goBack() }
         url = intent.getStringExtra(EXTRA_URL)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(24, 16, 24, 8); gravity = Gravity.CENTER_VERTICAL }
@@ -101,7 +104,9 @@ class BrowserActivity : Activity() {
     }
 
     @Deprecated("Back goes back a page in the browser first.")
-    override fun onBackPressed() {
+    override fun onBackPressed() = goBack()
+
+    private fun goBack() {
         val w = shared?.web ?: own
         if (w != null && w.canGoBack()) w.goBack() else finish()
     }
