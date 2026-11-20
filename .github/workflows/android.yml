@@ -15,10 +15,44 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read
     outputs:
       ok: ${{ steps.b.outcome == 'success' }}
+      scope: ${{ steps.sc.outputs.scope }}
+      phones: ${{ steps.sc.outputs.phones }}
+      tested: ${{ steps.sc.outputs.tested }}
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      # 1.0.3 (owner, 2026-11-20: "when we are making a simple aesthetic change ... changing the color of something shouldnt require full
+      # operation and checkout testing as this was previously passed and not affected by a color change"): the phone tests this change
+      # needs (android/ci/scope.py: look / screens / full) - and on main, nothing again when the very same files already passed on every
+      # phone on their branch (the merge of a tested branch is the same program).
+      - name: Which tests this change needs
+        id: sc
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then base=$(git rev-parse HEAD^1); else base=$(git merge-base origin/main HEAD); fi
+          out=$(python3 android/ci/scope.py "$base" "$(git log -1 --format=%B)")
+          sc=$(echo "$out" | sed -n 1p); ph=$(echo "$out" | sed -n 2p); tested=""
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            # (the app's own files: android/ and this workflow - a release of the PC on main meanwhile does not count)
+            key() { echo "$(git rev-parse "$1:android" 2>/dev/null)$(git rev-parse "$1:.github/workflows/android.yml" 2>/dev/null)"; }
+            tree=$(key HEAD); need=$(echo "$ph" | tr -d '[] ' | tr ',' ' ')
+            for r in $(gh api "repos/${{ github.repository }}/actions/workflows/android.yml/runs?status=completed&per_page=30" -q '.workflow_runs[]|select(.head_branch!="main")|"\(.id):\(.head_sha)"' 2>/dev/null); do
+              rid=${r%%:*}; sha=${r#*:}
+              [ "$(key "$sha")" = "$tree" ] || continue
+              gh run download "$rid" -p 'phone-api*' -D "prev/$rid" >/dev/null 2>&1 || continue
+              okc=0; for a in $need; do [ "$(cat prev/$rid/phone-api$a/result.txt 2>/dev/null)" = "success" ] && okc=$((okc+1)); done
+              if [ "$okc" -eq "$(echo $need | wc -w)" ]; then tested=$rid; break; fi
+            done
+          fi
+          { echo "scope=$sc"; echo "phones=$ph"; echo "tested=$tested"; } >> $GITHUB_OUTPUT
+          echo "TESTS FOR THIS CHANGE: $sc - phones $ph"
+          [ -n "$tested" ] && echo "THE SAME FILES ALREADY PASSED ON EVERY PHONE (run $tested) - not tested again" || true
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
       - uses: gradle/actions/setup-gradle@v4
@@ -76,13 +110,13 @@ jobs:
 
   phone:
     needs: build
-    if: needs.build.outputs.ok == 'true'
+    if: needs.build.outputs.ok == 'true' && needs.build.outputs.tested == ''
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        api: [30, 33, 34, 35]
+        api: ${{ fromJSON(needs.build.outputs.phones || '[30, 33, 34, 35]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -106,7 +140,7 @@ jobs:
           cores: 3
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bash android/ci/phone.sh
+          script: RK_SCOPE=${{ needs.build.outputs.scope }} bash android/ci/phone.sh
       - name: Result
         if: always()
         run: |
@@ -127,7 +161,7 @@ jobs:
   # every version must carry the same key, or a phone refuses the update.
   publish:
     needs: [build, phone]
-    if: github.ref == 'refs/heads/main' && needs.build.outputs.ok == 'true'
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build.outputs.ok == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -136,12 +170,18 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: apk, path: apk }
       - uses: actions/download-artifact@v4
+        if: needs.build.outputs.tested == ''
         with: { pattern: "phone-api*", path: results }
+      - uses: actions/download-artifact@v4          # (the same files passed on their branch: those results)
+        if: needs.build.outputs.tested != ''
+        with: { pattern: "phone-api*", path: results, run-id: "${{ needs.build.outputs.tested }}", github-token: "${{ github.token }}" }
       - name: Every phone passed?
         id: all
         run: |
-          n=0; for a in 30 33 34 35; do r=$(cat results/phone-api$a/result.txt 2>/dev/null); echo "api$a: ${r:-no result}"; [ "$r" = "success" ] && n=$((n+1)); done
-          if [ $n -eq 4 ]; then echo "ok=true" >> $GITHUB_OUTPUT; echo "ALL PHONES PASSED"; else echo "ok=false" >> $GITHUB_OUTPUT; echo "NOT RELEASED: $((4-n)) phone(s) did not pass"; fi
+          need=$(echo '${{ needs.build.outputs.phones }}' | tr -d '[] ' | tr ',' ' '); [ -n "$need" ] || need="30 33 34 35"
+          n=0; t=0; for a in $need; do t=$((t+1)); r=$(cat results/phone-api$a/result.txt 2>/dev/null); echo "api$a: ${r:-no result}"; [ "$r" = "success" ] && n=$((n+1)); done
+          echo "tests: ${{ needs.build.outputs.scope }}${{ needs.build.outputs.tested != '' && format(' (passed on the branch, run {0})', needs.build.outputs.tested) || '' }}"
+          if [ $n -eq $t ]; then echo "ok=true" >> $GITHUB_OUTPUT; echo "ALL PHONES PASSED"; else echo "ok=false" >> $GITHUB_OUTPUT; echo "NOT RELEASED: $((t-n)) phone(s) did not pass"; fi
       - name: Release the APK
         if: steps.all.outputs.ok == 'true'
         env:
