@@ -206,6 +206,20 @@ export function releaseDecide(row, c, result, now) {
   return null;
 }
 
+// ------------------------------------------------------------------------------------------------ active now
+// "Active now" - one number, counted here, the same for every device whatever version it runs (owner, 2026-11-20: "the count will
+// persist consistently for all active devices regardless of what version people are running ... all versions should be able to be
+// active without requiring updates"):
+// - a version that checks in (the app from 2.15, the PC from v141: POST /v1/h every 15 minutes) is active for 30 minutes after it was
+//   last heard. The check-in needs only the device's code; nothing a later version adds may ever be required of an older one.
+// - a version from before the check-in existed cannot be told to check in. It says hello on the crowd channel every 6 hours while it
+//   runs, and that is all this relay hears of it - so it counts as active for 6.5 hours after it was last heard (hb IS NULL: it has
+//   never checked in). Its own screen still shows the number it works out itself ("total contributors") until it is updated once.
+export const ACTIVE_MS = 30 * 60_000;
+export const ACTIVE_OLD_MS = 6.5 * 3600_000;
+export const ACTIVE_SQL = "SELECT COUNT(*) AS n FROM seen WHERE at > ? OR (hb IS NULL AND at > ?)";
+export const activeArgs = now => [now - ACTIVE_MS, now - ACTIVE_OLD_MS];
+
 // ------------------------------------------------------------------------------------------------ presence of linked devices
 // (owner, 2026-11-20: "it's showing old data for my pc and tablet. Both of these devices are currently active ... Confirm the devices can
 // see and report active links"). A device's "heard" time was only its last post on the ntfy link channel - and ntfy refuses a home's

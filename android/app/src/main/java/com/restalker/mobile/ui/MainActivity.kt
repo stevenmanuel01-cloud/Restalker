@@ -481,7 +481,7 @@ class MainActivity : ComponentActivity() {
                             // the relay's count of devices heard in the last 30 minutes (each working device checks in every 15 minutes)
                             val crowdN = remember(r) { CrowdNet.count() }
                             val activeN = remember(r) { Relay.active }
-                            Text(if (!st.crowd) "Crowd sharing is off (Settings)" else if (activeN > 0) "$activeN Restalker device${if (activeN == 1) "" else "s"} active now"
+                            Text(if (!st.crowd) "Crowd sharing is off (Settings)" else if (activeN > 0) com.restalker.mobile.core.Crowd.activeWords(activeN)
                                 else if (crowdN > 1) "$crowdN total contributors and counting" else "Joining the Restalker crowd",
                                 color = Look.OnNavyDim, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp).testTag("contributors"))
                         }
@@ -1964,6 +1964,7 @@ class MainActivity : ComponentActivity() {
                 "Missed (sold out)" to "It sold out at Amazon before the order went through. Nothing was bought.",
                 "Checkout (2 tries)" to "Restalker tried twice during the same restock.",
                 "Another of your devices buys it" to "Your PC or another linked phone is the one that orders; this one stands by.",
+                "Stalkers active now" to "Every phone, tablet and PC running Restalker and sharing right now - all hunting restocks together. The same number on every device.",
                 "Heard ... ago" to "When a linked device last gave a sign of life (it says \"I am here\" every 15 minutes).",
                 "Watch hours" to "The times of day this device watches by itself (Settings, Amazon, buying and this phone). All day unless you set them.",
                 "b (as in v1.0.2b)" to "A beta: a version only your own devices have until you release it to everyone.",
@@ -2158,7 +2159,7 @@ class MainActivity : ComponentActivity() {
 /** 2.15 (owner: the count "should be dynamic and tied directly to the total active number of devices working"): the relay's live count
  *  when known, else the devices heard so far. */
 private fun crowdCount(): String { val a = Relay.active
-    return if (a > 0) "$a device${if (a == 1) "" else "s"} active now" else "${CrowdNet.count()} contributors heard so far" }
+    return if (a > 0) com.restalker.mobile.core.Crowd.activeWords(a) else "${CrowdNet.count()} contributors heard so far" }
 
 /** 1.0.2: a "cap" line of the log (one per $5 step in older copies). */
 private val CAP_LINE = Regex(": cap \\$[0-9]")

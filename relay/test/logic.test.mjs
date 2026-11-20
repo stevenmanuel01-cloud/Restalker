@@ -159,3 +159,32 @@ test("release notes only for a newer version (a version taken back is not announ
   assert.equal(L.phoneNewer("27", "25", "1.0", "2.14"), true);       // (kept as text)
   assert.equal(L.phoneNewer(0, 25, "1.0", "2.14"), false);           // (a note without a code: by name)
 });
+
+test("active now: one count for every version (the SQL itself, on a real table)", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE seen(c TEXT PRIMARY KEY, at INTEGER, first INTEGER, sightings INTEGER, g TEXT, w TEXT, hb INTEGER)");
+  const put = db.prepare("INSERT INTO seen(c, at, first, sightings, hb) VALUES(?, ?, ?, 0, ?)");
+  const min = 60_000, h = 3600_000;
+  const count = t => db.prepare(L.ACTIVE_SQL).get(...L.activeArgs(t)).n;
+  // versions that check in (every 15 minutes): active for 30 minutes after the last word
+  put.run("new-now", now - 2 * min, now - 9 * h, now - 2 * min);
+  put.run("new-29m", now - 29 * min, now - 9 * h, now - 29 * min);
+  put.run("new-31m", now - 31 * min, now - 9 * h, now - 31 * min);          // stopped: not active
+  put.run("new-5h", now - 5 * h, now - 9 * h, now - 5 * h);                  // stopped hours ago: not active (it WOULD have checked in)
+  assert.equal(count(now), 2);
+  // versions from before check-ins (hello on the crowd channel every 6 hours, never a check-in): active for 6.5 hours
+  put.run("old-1h", now - 1 * h, now - 30 * h, null);
+  put.run("old-6h", now - 6 * h - 20 * min, now - 30 * h, null);
+  put.run("old-7h", now - 7 * h, now - 30 * h, null);                        // missed its hello: not active
+  assert.equal(count(now), 4);
+  // every device asking gets this same number - nothing about the asker is in the count
+  assert.equal(L.activeArgs(now).length, 2); assert.ok(!/\bc\s*=/.test(L.ACTIVE_SQL));
+  // an old version is updated: from its first check-in it follows the 30-minute rule
+  db.prepare("UPDATE seen SET at = ?, hb = ? WHERE c = ?").run(now - 40 * min, now - 40 * min, "old-1h");
+  assert.equal(count(now), 3);
+  // a device that checks in also posts on the crowd channel (at moves, hb stays): still by its last word
+  db.prepare("UPDATE seen SET at = ? WHERE c = ?").run(now - 1 * min, "new-5h");
+  assert.equal(count(now), 4);
+  assert.equal(count(now + 7 * h), 0);
+});
