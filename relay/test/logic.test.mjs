@@ -188,3 +188,32 @@ test("active now: one count for every version (the SQL itself, on a real table)"
   assert.equal(count(now), 4);
   assert.equal(count(now + 7 * h), 0);
 });
+
+test("the devices' own lines: channel names, marks, what a round may read, when to ask again", () => {
+  const ch = "rkl-" + "a2".repeat(12);
+  assert.ok(L.chOk(ch)); assert.ok(L.chOk(ch + "-go")); assert.ok(L.chOk("crowd"));
+  for (const bad of ["rkl-short", ch + "-x", "RKL-" + "a".repeat(24), "crowd2", "", null, 5, ch + "/../x", "rkr-" + "a".repeat(20)]) assert.ok(!L.chOk(bad), String(bad));
+  assert.ok(L.isGo(ch + "-go")); assert.ok(!L.isGo(ch));
+  assert.equal(L.keepOf(ch).n, L.CH_KEEP_N); assert.equal(L.keepOf(ch + "-go").ms, L.GO_KEEP_MS); assert.equal(L.keepOf("crowd").ms, L.CROWD_KEEP_MS);
+  assert.equal(L.sinceId("17"), 17); assert.equal(L.sinceId(17), 17); assert.equal(L.sinceId("0"), 0);
+  for (const bad of ["", "12h", "abc", "-1", "1.5", null, undefined, {}, "9".repeat(16), "1 OR 1=1"]) assert.equal(L.sinceId(bad), null, String(bad));
+  assert.deepEqual(L.syncReads({ [ch]: "5", crowd: "", bad: "1", [ch + "-go"]: "x" }), [[ch, 5], ["crowd", null], [ch + "-go", null]]);
+  assert.deepEqual(L.syncReads(null), []); assert.deepEqual(L.syncReads([ch]), []); assert.deepEqual(L.syncReads("crowd"), []);
+  const many = Object.fromEntries(Array.from({ length: 9 }, (_, i) => ["rkl-" + String(i).repeat(24), "1"]));
+  assert.equal(L.syncReads(many).length, L.SYNC_CHANNELS);
+  // sealed posts only (what a device's seal makes), of a sane size
+  assert.ok(L.SEALED.test("rk1:" + "A".repeat(60))); assert.ok(!L.SEALED.test("rk1:" + "A".repeat(10)));
+  assert.ok(!L.SEALED.test("hello")); assert.ok(!L.SEALED.test("rk1:" + "A".repeat(60) + " <script>")); assert.ok(!L.SEALED.test("rk1:" + "A".repeat(60) + "\n"));
+  // a stored post, handed out the way ntfy hands out a message
+  assert.deepEqual(L.line({ id: 7, at: 1795203760777, m: "rk1:xyz" }), { id: "7", time: 1795203760.8, event: "message", message: "rk1:xyz" });
+  // when to ask again: a linked device every minute, the crowd alone every 3 - stretched for all when the free plan would be passed
+  assert.equal(L.nextPoll(true, 0), 60); assert.equal(L.nextPoll(false, 0), 180); assert.equal(L.nextPoll(true, L.SYNC_BUDGET_DAY), 60);
+  assert.equal(L.nextPoll(true, 2 * L.SYNC_BUDGET_DAY), 120); assert.equal(L.nextPoll(false, 2 * L.SYNC_BUDGET_DAY), 360);
+  assert.equal(L.nextPoll(true, 1e9), L.SYNC_MAX); assert.equal(L.nextPoll(false, 1e9), L.SYNC_MAX);
+  // the crowd's line: the devices' own message shape; one line per device, product, store and second
+  const sg = { c: "aaaaaaaaaaaa", a: "B0HNTNV94J", s: "Amazon", t: 1795203760777, p: 323.88 };
+  assert.deepEqual(JSON.parse(L.crowdMsg(sg)), { v: 1, c: "aaaaaaaaaaaa", k: "s", a: "B0HNTNV94J", s: "Amazon", st: "in", t: 1795203760.8, p: 323.88 });
+  assert.ok(!("p" in JSON.parse(L.crowdMsg({ ...sg, p: null }))));
+  assert.equal(L.crowdKey(sg), L.crowdKey({ ...sg, t: sg.t + 100, p: 1 })); assert.notEqual(L.crowdKey(sg), L.crowdKey({ ...sg, t: sg.t + 2000 }));
+  assert.notEqual(L.crowdKey(sg), L.crowdKey({ ...sg, c: "bbbbbbbbbbbb" }));
+});

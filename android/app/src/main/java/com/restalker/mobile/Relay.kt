@@ -24,19 +24,22 @@ object Relay {
 
     private fun device(): String = try { CrowdNet.state().myId() } catch (e: Exception) { "" }
 
-    private fun call(method: String, path: String, body: Map<String, Any?>? = null, timeoutMs: Int = 6_000): Map<String, Any?>? {
+    private fun call(method: String, path: String, body: Map<String, Any?>? = null, timeoutMs: Int = 6_000, raw: String? = null, list: List<Any?>? = null): Map<String, Any?>? {
         if (!enabled) return null
         return try {
             val c = java.net.URL(base + path).openConnection() as java.net.HttpURLConnection
             try {
                 c.requestMethod = method; c.connectTimeout = timeoutMs; c.readTimeout = timeoutMs
                 c.setRequestProperty("User-Agent", "RestalkerMobile/" + BuildConfig.VERSION_NAME)
-                if (body != null) {
+                if (raw != null) {                       // (1.0.6: a sealed post goes as it is)
+                    c.doOutput = true; c.setRequestProperty("Content-Type", "text/plain")
+                    c.outputStream.use { it.write(raw.toByteArray()) }
+                } else if (body != null || list != null) {
                     c.doOutput = true; c.setRequestProperty("Content-Type", "application/json")
-                    c.outputStream.use { it.write(MiniJson.write(body).toByteArray()) }
+                    c.outputStream.use { it.write(MiniJson.write(body ?: list).toByteArray()) }
                 }
                 val code = c.responseCode
-                val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText().take(200_000) } ?: ""
+                val txt = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText().take(4_000_000) } ?: ""
                 lastError = if (code in 200..299) "" else "HTTP $code"
                 MiniJson.obj(txt)
             } finally { c.disconnect() }
@@ -74,6 +77,68 @@ object Relay {
     }
     @Volatile var peersAt = 0L; private set          // 1.0.4: when the relay last told us about the other linked devices (0 = not yet)
     @Volatile var peersN = 0; private set
+
+    // ---- 1.0.6 (owner, 2026-11-20: "The ntfy messages arent really needed anymore since the app can handle notifications"): what this
+    // device and its linked devices tell each other (core/Link.kt - sealed there, the relay cannot read it) and the crowd's sightings
+    // go through the relay, not through the free message service (a home's 250 messages a day for all its devices were used up by
+    // the linked devices' updates alone). ONE request does the round: "I am here" (the active count, the linked devices' signs of
+    // life), what is new on the link's channels, and the crowd's line; the answer says when to ask again.
+    @Volatile var syncAt = 0L; private set
+    @Volatile var syncs = 0; private set
+    @Volatile var syncFails = 0; private set
+    @Volatile var nextS = 60; private set
+
+    /** [reads]: {channel: the last id read}. The crowd's line is added when sharing is on. -> {channel: new posts} or null (not reached). */
+    fun sync(reads: Map<String, String>): Map<String, List<Map<String, Any?>>>? {
+        if (!enabled) return null
+        val st = RkApp.store().settings()
+        val r = LinkedHashMap(reads)
+        val cs = if (st.crowd) try { CrowdNet.state() } catch (e: Exception) { null } else null
+        if (cs != null) r["crowd"] = cs.rsince
+        val body = linkedMapOf<String, Any?>("c" to device(), "r" to r)
+        try {
+            val l = DeskLink.get()
+            if (l.linked()) { val g = l.lockGroup(); val w = l.who(); if (g != null && w != null) { body["g"] = g; body["w"] = w } }
+        } catch (e: Exception) { }
+        val a = call("POST", "/v1/sync", body, timeoutMs = 12_000)
+        if (a == null || a["ok"] != true) {
+            syncFails++
+            a?.get("next").asLong()?.let { nextS = it.toInt().coerceIn(20, 900) }
+            return null
+        }
+        val now = System.currentTimeMillis()
+        syncAt = now; beatAt = now; syncs++
+        nextS = (a["next"].asLong() ?: 60L).toInt().coerceIn(20, 900)
+        a["active"].asLong()?.let { active = it.toInt(); activeAt = now }
+        try {
+            if (a.containsKey("peers")) {
+                val peers = a["peers"].asList().mapNotNull { x -> val m = x.asMap() ?: return@mapNotNull null; (m["w"].asStr() ?: return@mapNotNull null) to ((m["at"].asDouble() ?: return@mapNotNull null) / 1000.0) }
+                peersAt = now; peersN = DeskLink.get().takePresence(peers)
+            }
+        } catch (e: Exception) { }
+        val out = LinkedHashMap<String, List<Map<String, Any?>>>()
+        a["m"].asMap()?.forEach { (k, v) -> out[k] = v.asList().mapNotNull { it.asMap() } }
+        try { out["crowd"]?.takeIf { it.isNotEmpty() }?.let { CrowdNet.relayTake(it) } } catch (e: Exception) { }
+        try { RkApp.changed() } catch (e: Exception) { }
+        return out
+    }
+
+    /** A sealed post on a channel of the relay -> true when it took it. */
+    fun postCh(channel: String, text: String): Boolean = call("POST", "/v1/ch/$channel", timeoutMs = 12_000, raw = text)?.get("ok") == true
+
+    /** This device's own sighting for the crowd, straight to the relay -> true when taken. */
+    fun share(sighting: Map<String, Any?>): Boolean = call("POST", "/v1/s", timeoutMs = 8_000, list = listOf(sighting))?.get("ok") == true
+
+    /** A device that is not linked still reads the crowd's line (and says "I am here"): every 3 minutes, or as the relay says. A linked
+     *  one does it with its link round (DeskLink), so nothing is asked twice. */
+    fun crowdRound() {
+        if (!enabled || !RkApp.store().settings().crowd) return
+        if (try { DeskLink.get().linked() } catch (e: Exception) { false }) return
+        if (System.currentTimeMillis() - syncTry < maxOf(180, nextS) * 1000L) return
+        syncTry = System.currentTimeMillis()
+        Thread({ try { sync(emptyMap()) } catch (e: Exception) { } }, "relay-round").start()
+    }
+    @Volatile private var syncTry = 0L
 
     /** The race (engine thread): true = this device may place the order, false = another of your devices has it, null = not asked. */
     fun lock(asin: String): Boolean? {
@@ -118,5 +183,6 @@ object Relay {
 
     fun status(): String = if (!enabled) "relay: off (test build)" else
         "relay: active now ${if (active >= 0) active.toString() else "?"}" + (if (lastError.isNotEmpty()) " - last error $lastError" else "") +
-            " · linked devices heard there: " + (if (peersAt > 0) "$peersN (asked ${(System.currentTimeMillis() - peersAt) / 60_000} min ago)" else "not asked yet")
+            " · linked devices heard there: " + (if (peersAt > 0) "$peersN (asked ${(System.currentTimeMillis() - peersAt) / 60_000} min ago)" else "not asked yet") +
+            " · rounds (1.0.6, one request each): $syncs ok, $syncFails failed, last " + (if (syncAt > 0) "${(System.currentTimeMillis() - syncAt) / 60_000} min ago" else "not yet") + ", asks again every $nextS s"
 }

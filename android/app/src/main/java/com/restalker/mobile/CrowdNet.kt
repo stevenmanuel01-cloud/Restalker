@@ -46,7 +46,9 @@ object CrowdNet {
                 try { refreshHistory() } catch (e: Exception) { }
                 if (!st.crowd) return@Thread
                 val cs = state()
-                if (now - cs.helloAt > Crowd.HELLO_EVERY_MS) { post(Crowd.hello(cs.myId())); cs.helloAt = now; cs.save() }
+                // 1.0.6: no "hello" every 6 hours any more - the count is the relay's live one (this device says "I am here" there
+                // with every round), and each hello was one of the home's 250 free messages a day
+                Relay.crowdRound()                           // (not linked: the crowd's line on the relay, every 3 minutes)
                 // 2.8 (owner: "The app does not seem to count total devices"): read also while not watching - every time the app is opened
                 // (at most once a minute) - not only every 2 minutes while watching
                 val due = if (force) now - lastPoll >= 60_000L else st.watching && now - lastPoll >= Crowd.POLL_EVERY_MS - 5_000
@@ -92,12 +94,29 @@ object CrowdNet {
         looks += looked.size
     }
 
-    /** This phone's own look saw [asin] come in stock on Amazon: the crowd hears it (central-list products only). */
+    /** 1.0.6: the crowd's new lines from the relay (Relay.sync) - taken like the old channel's. */
+    fun relayTake(events: List<Map<String, Any?>>) {
+        val mine = RkApp.store().products().filter { it.watch }.map { it.asin }.toSet()
+        val looked = state().takeRelay(events, mine) { a ->
+            val e = WatchService.instance?.engine ?: return@takeRelay false
+            e.send(Engine.Cmd.Crowd(a)); true
+        }
+        looks += looked.size; relayHeard += events.size
+    }
+    @Volatile var relayHeard = 0; private set
+    @Volatile var relayShared = 0; private set
+
+    /** This phone's own look saw [asin] come in stock on Amazon: the crowd hears it (central-list products only).
+     *  1.0.6: on the Restalker relay first (no daily limit; every Restalker from 1.0.6 / PC v147 reads the crowd there), and on the old
+     *  crowd channel too while that takes it - versions before read only there. */
     fun share(asin: String, price: Double?) {
         if (!RkApp.store().settings().crowd || asin !in catalog) return
         Thread({
-            try { post(Crowd.sighting(state().myId(), asin, price, System.currentTimeMillis() / 1000.0)); shared++ }
-            catch (e: Exception) { lastError = "share: ${e.message?.take(80)}" }
+            val sg = Crowd.sighting(state().myId(), asin, price, System.currentTimeMillis() / 1000.0)
+            val took = try { Relay.share(sg) } catch (e: Exception) { false }
+            if (took) relayShared++
+            try { post(sg); shared++ }
+            catch (e: Exception) { if (took) shared++ else lastError = "share: ${e.message?.take(80)}" }
         }, "crowd-share").start()
     }
 
@@ -120,5 +139,5 @@ object CrowdNet {
     }
 
     fun status(): String = "Restalker crowd (2.6): sharing ${if (RkApp.store().settings().crowd) "on" else "off"}; ${count()} contributor(s) heard; " +
-        "this session $shared shared, $looks look(s) because of the crowd; central list ${catalog.size} product(s)" + (if (lastError.isNotEmpty()) "; last problem: $lastError" else "")
+        "this session $shared shared ($relayShared on the relay), $relayHeard read on the relay, $looks look(s) because of the crowd; central list ${catalog.size} product(s)" + (if (lastError.isNotEmpty()) "; last problem: $lastError" else "")
 }

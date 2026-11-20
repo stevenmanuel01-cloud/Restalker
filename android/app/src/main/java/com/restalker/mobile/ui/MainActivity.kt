@@ -361,14 +361,20 @@ class MainActivity : ComponentActivity() {
         val nowMs = System.currentTimeMillis()
         val behind = remember(r) { try { DeskLink.get().pcSyncBehindS() } catch (e: Exception) { -1L } }
         val quota = remember(r) { com.restalker.mobile.core.NtfyQuota.current(com.restalker.mobile.Quota.q, nowMs) }
-        val usedUp = quota != null && quota.left <= 0
+        // 1.0.6: the link runs on the Restalker relay - the day's free messages matter only while the relay is not reached, or for a
+        // linked device that still runs a version from before (it reads only the message service)
+        val viaRelay = remember(r) { try { DeskLink.get().relayOk } catch (e: Exception) { false } }
+        val oldOnes = remember(r) { try { DeskLink.get().onlyNtfy } catch (e: Exception) { false } }
+        val usedUp = quota != null && quota.left <= 0 && (!viaRelay || oldOnes)
         Column(Modifier.fillMaxWidth().then(if (inSection) Modifier else Modifier.background(Color.White, Look.card)).padding(16.dp).testTag("devices")) {
             if (!inSection) Text("Linked devices", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Text("Each phone or tablet has its own buying choice. Changing one here changes only that device.",
                 fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
             if (behind >= 0 || usedUp) Text(
                 (if (usedUp) "Today's free messages for this internet connection are used up (${quota!!.limit} of ${quota.limit})" +
-                    (if (quota.resetAt > nowMs) " - they start again at ${hm(quota.resetAt)}" else "") + ". Until then your devices cannot send each other product changes. "
+                    (if (quota.resetAt > nowMs) " - they start again at ${hm(quota.resetAt)}" else "") +
+                    (if (viaRelay) ". Until then product changes do not reach a linked device that still runs an older version (once it has updated itself it no longer needs them); your other devices are not affected. "
+                     else ". Until then your devices cannot send each other product changes. ")
                 else "The PC is running, but its product updates are not arriving here (last ${com.restalker.mobile.core.Ago.words(behind * 1000)}). ") +
                     "Watching and buying go on: each device looks for itself, and the shared checkout lock still makes sure only one of them orders.",
                 fontSize = 12.sp, lineHeight = 16.sp, color = Look.AmberText,
@@ -2093,8 +2099,9 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxWidth().then(if (inSection) Modifier else Modifier.background(Color.White, Look.card)).padding(16.dp).testTag("alerts")) {
             if (!inSection) Text("Alerts on any device (ntfy)", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             if (ch == null) {
-                Text("Get your restock, purchase and \"needs you\" alerts on any phone, tablet or PC with the free ntfy app - one code for you, " +
-                    "the same on every device you link.", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp))
+                Text("Not needed on a device with this app: it shows its own alerts, and your linked PC's too. This is for a phone, tablet " +
+                    "or PC WITHOUT Restalker - your restock, purchase and \"needs you\" alerts there, with the free ntfy app. One code for you, " +
+                    "the same on every device you link.", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp).testTag("alerts-why"))
                 Button(onClick = {
                     store.setSettings { it.copy(alertTopic = com.restalker.mobile.core.NtfyAlerts.make(), alertsOn = true) }
                     store.log("ntfy alerts set up (your own alert code - linked devices use the same one)."); bump()

@@ -51,6 +51,11 @@ export class Hub {
     // presence of one person's linked devices (logic.js): a device's group and its sealed words, kept with its heartbeat row
     for (const col of ["g TEXT", "w TEXT", "hb INTEGER"]) { try { this.sql.exec("ALTER TABLE seen ADD COLUMN " + col); } catch (e) { /* already there */ } }
     this.sql.exec(`CREATE INDEX IF NOT EXISTS seen_g ON seen(g)`);
+    // the devices' own lines (logic.js): a linked group's sealed posts, its fast channel, and the crowd's sightings
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS msgs(id INTEGER PRIMARY KEY AUTOINCREMENT, ch TEXT, at INTEGER, m TEXT, k TEXT)`);
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS msgs_ch ON msgs(ch, id)`);
+    this.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS msgs_k ON msgs(ch, k) WHERE k IS NOT NULL`);
+    this.mem = new Map(); this.win = { t0: Date.now(), n: 0, perDay: 0 };
   }
 
   kvGet(k) { const r = this.sql.exec("SELECT v FROM kv WHERE k = ?", k).toArray(); return r.length ? r[0].v : null; }
@@ -90,6 +95,9 @@ export class Hub {
     try {
       await this.ensureAlarm();
       if (u.pathname === "/__cron") return json({ ok: true, alarm: await this.state.storage.getAlarm() });
+      const mch = u.pathname.match(/^\/v1\/ch\/([a-z0-9-]{1,40})$/);
+      if (mch && req.method === "POST") return await this.chPost(mch[1], req);
+      if (u.pathname === "/v1/sync" && req.method === "POST") return await this.sync(req);
       if (u.pathname === "/v1/s" && req.method === "POST") {
         // a device posts its own sighting(s) here directly (the apps move to this later; today they post to the crowd channel)
         const ip = req.headers.get("cf-connecting-ip") || "?";
@@ -180,6 +188,65 @@ export class Hub {
     }
   }
 
+  // (in memory: nothing is written for it - a round of every device every minute must not cost a stored row each)
+  memHit(key, max, windowMs = 10 * 60_000) {
+    const now = Date.now();
+    if (this.mem.size > 20000) this.mem.clear();
+    const e = this.mem.get(key);
+    if (!e || now - e.t0 > windowMs) { this.mem.set(key, { t0: now, n: 1 }); return false; }
+    e.n++;
+    return e.n > max;
+  }
+
+  /** A linked device posts on its group's channel (sealed by the device - the relay cannot read it). */
+  async chPost(ch, req) {
+    if (!L.CH_LINK.test(ch)) return json({ ok: false, error: "channel" }, 400);
+    const ip = req.headers.get("cf-connecting-ip") || "?";
+    if (this.memHit("chip:" + ip, 400) || this.memHit("ch:" + ch, L.CH_RATE)) return json({ ok: false, error: "too many" }, 429);
+    const len = Number(req.headers.get("content-length") || 0);
+    if (len > L.CH_MAX_BYTES) return json({ ok: false, error: "too long" }, 413);
+    const m = await req.text();
+    if (m.length > L.CH_MAX_BYTES) return json({ ok: false, error: "too long" }, 413);
+    if (!L.SEALED.test(m)) return json({ ok: false, error: "not sealed" }, 400);
+    const now = Date.now(), keep = L.keepOf(ch);
+    const id = this.sql.exec("INSERT INTO msgs(ch, at, m) VALUES(?, ?, ?) RETURNING id", ch, now, m).one().id;
+    this.sql.exec(`DELETE FROM msgs WHERE ch = ? AND (at < ? OR id <= COALESCE((SELECT id FROM msgs WHERE ch = ? ORDER BY id DESC LIMIT 1 OFFSET ?), 0))`,
+      ch, now - keep.ms, ch, keep.n);
+    return json({ ok: true, id: String(id), time: Math.round(now / 100) / 10 });
+  }
+
+  /** A device's whole round in one request: "I am here" (the active count, its linked devices) and what is new on its channels. */
+  async sync(req) {
+    const b = await req.json().catch(() => null) || {};
+    const c = typeof b.c === "string" && /^[0-9a-f]{12}$/.test(b.c) ? b.c : null;
+    if (!c) return json({ ok: false, error: "device code" }, 400);
+    if (this.memHit("sy:" + c, L.SYNC_RATE)) return json({ ok: false, error: "too many", next: 120 }, 429);
+    const now = Date.now();
+    const { g, w } = L.presenceIn(b);
+    const row = this.sql.exec("SELECT at, g, hb FROM seen WHERE c = ?", c).toArray()[0];
+    // (written when it is new, every 8 minutes, and when its group changed - not with every round)
+    if (!row || row.hb == null || now - row.at >= L.SEEN_WRITE_MS || (row.g || null) !== g) {
+      this.sql.exec(`INSERT INTO seen(c, at, first, sightings, g, w, hb) VALUES(?, ?, ?, 0, ?, ?, ?)
+        ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, w = excluded.w, hb = excluded.hb`, c, now, now, g, w, now);
+    }
+    const out = { ok: true, active: this.active(now), m: {} };
+    if (g) out.peers = L.presenceOut(this.sql.exec("SELECT c, at, w FROM seen WHERE g = ? ORDER BY at DESC LIMIT 40", g).toArray(), c, now);
+    const top = this.sql.exec("SELECT COALESCE(MAX(id), 0) AS n FROM msgs").one().n;
+    let linked = false;
+    for (const [ch, since0] of L.syncReads(b.r)) {
+      if (ch !== L.CH_CROWD) linked = true;
+      const since = since0 != null && since0 <= top ? since0 : null;      // (a mark from before this store was made anew: from the start)
+      const rows = since != null
+        ? this.sql.exec("SELECT id, at, m FROM msgs WHERE ch = ? AND id > ? ORDER BY id LIMIT ?", ch, since, L.SYNC_ROWS).toArray()
+        : this.sql.exec("SELECT id, at, m FROM msgs WHERE ch = ? AND at > ? ORDER BY id LIMIT ?", ch, now - L.firstBackMs(ch), L.SYNC_ROWS).toArray();
+      out.m[ch] = rows.map(L.line);
+    }
+    const wn = this.win; wn.n++;
+    if (now - wn.t0 >= 10 * 60_000) { wn.perDay = Math.round(wn.n * 86400_000 / (now - wn.t0)); wn.t0 = now; wn.n = 0; }
+    out.next = L.nextPoll(linked, wn.perDay);
+    return json(out);
+  }
+
   rateHit(key, max) {
     const now = Date.now();
     const n = this.sql.exec("SELECT COUNT(*) AS n FROM rate WHERE k = ? AND at > ?", key, now - 10 * 60_000).one().n;
@@ -198,8 +265,13 @@ export class Hub {
       this.sql.exec(`INSERT INTO seen(c, at, first, sightings) VALUES(?, ?, ?, 0)
         ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at)`, s.c, s.t || now, s.t || now);
       if (s.hello) { took++; continue; }
+      // (a device from v147 / 1.0.6 posts its sighting here AND on the old crowd channel - the second copy, read there a minute later,
+      // is the same sighting: counted once)
+      if (this.sql.exec("SELECT 1 FROM msgs WHERE ch = ? AND k = ?", L.CH_CROWD, L.crowdKey(s)).toArray().length) { took++; continue; }
       if (this.rateHit("dev:" + s.c, L.RATE_DEVICE)) { dropped++; continue; }
       this.sql.exec("UPDATE seen SET sightings = sightings + 1 WHERE c = ?", s.c);
+      // the crowd's line for the devices that read it here (one line per device, product, store and second - whichever way it came)
+      this.sql.exec("INSERT OR IGNORE INTO msgs(ch, at, m, k) VALUES(?, ?, ?, ?)", L.CH_CROWD, now, L.crowdMsg(s), L.crowdKey(s));
       const open = this.sql.exec(`SELECT * FROM events WHERE a = ? AND s = ? AND last_at >= ? ORDER BY id DESC LIMIT 3`,
         s.a, s.s, s.t - L.MERGE_MS).toArray().map(r => ({ ...r, devs: JSON.parse(r.devs || "[]") }));
       const r = L.merge(open, s);
@@ -305,6 +377,7 @@ export class Hub {
     const now = Date.now();
     this.sql.exec("DELETE FROM rate WHERE at < ?", now - 3600_000);
     this.sql.exec("DELETE FROM events WHERE last_at < ?", now - 60 * 86400_000);
+    this.sql.exec("DELETE FROM msgs WHERE at < ? OR (ch = ? AND at < ?) OR (ch LIKE '%-go' AND at < ?)", now - L.CH_KEEP_MS, L.CH_CROWD, now - L.CROWD_KEEP_MS, now - L.GO_KEEP_MS);
   }
 
   async releases() {
@@ -373,6 +446,7 @@ export class Hub {
       active: this.active(now),                      // (heard in the last 30 minutes: "active now")
       devices12h: one("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 12 * 3600_000),
       devicesAll: one("SELECT COUNT(*) AS n FROM seen"),
+      lines: one("SELECT COUNT(*) AS n FROM msgs"), syncPerDay: this.win.perDay,
       restocks24h: one("SELECT COUNT(*) AS n FROM events WHERE first_at > ?", now - 24 * 3600_000),
       confirmed24h: one("SELECT COUNT(*) AS n FROM events WHERE first_at > ? AND n >= ?", now - 24 * 3600_000, L.CONFIRM_DEVICES),
       last, crowdReadAt: Number(this.kvGet("crowd_at") || 0), tickAt: Number(this.kvGet("tick_at") || 0),

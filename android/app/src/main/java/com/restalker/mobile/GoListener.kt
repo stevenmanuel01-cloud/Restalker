@@ -75,8 +75,10 @@ object GoListener {
                         m["id"].asStr()?.let { since = it }
                         if (hbWanted() && System.currentTimeMillis() - lastHb > HB_MS) { post(ch, sec, dev); lastHb = System.currentTimeMillis() }
                         if (m["event"].asStr() != "message") continue
-                        val o = MiniJson.obj(LinkCrypto.unseal(sec, m["message"].asStr()) ?: continue) ?: continue
+                        val text = m["message"].asStr()
+                        val o = MiniJson.obj(LinkCrypto.unseal(sec, text) ?: continue) ?: continue
                         if (o["r"].asStr() != "desktop") continue
+                        if (!DeskLink.get().fresh(text)) continue          // (1.0.6: the same signal also comes with the relay's round - once)
                         take(o)
                         if (!wanted()) break
                     }
@@ -98,6 +100,14 @@ object GoListener {
             heard++
             try { WatchService.instance?.engine?.send(Engine.Cmd.Go(a)) } catch (e: Exception) { }      // (the engine may not be made yet)
         }
+        // 1.0.6 (owner: "the app can handle notifications"): the PC's own message (a purchase, something that needs you) - shown here
+        // as this app's notification, unless ntfy already shows it on this phone
+        o["al"].asMap()?.let { al ->
+            val ti = (al["ti"].asStr() ?: return@let).take(200)
+            if (ti.isBlank()) return@let
+            heard++
+            try { Notifier.fromPc(RkApp.app, ti, (al["tx"].asStr() ?: "").take(1500), (al["k"].asStr() ?: "").take(20), al["u"].asStr()) } catch (e: Exception) { }
+        }
         o["res"].asMap()?.let { r ->
             val a = r["a"].asStr() ?: return@let
             val k = r["k"].asStr() ?: return@let
@@ -105,17 +115,11 @@ object GoListener {
         }
     }
 
+    /** "I am listening" (every 5 minutes while this device buys INSTEAD of the PC). 1.0.6: on the relay when the PC reads it there
+     *  (no message of the day's 250 is used), otherwise on ntfy as before (core/Link.postGo). */
+    @Suppress("UNUSED_PARAMETER")
     private fun post(ch: String, sec: ByteArray, dev: String) {
         val st = RkApp.store().settings()
-        val body = LinkCrypto.seal(sec, MiniJson.write(linkedMapOf("v" to 1, "d" to dev, "r" to "phone", "hb" to 1,
-            "bm" to st.buyMode, "bmAt" to st.buyModeAt / 1000.0, "fo" to st.failover, "nm" to DeskLink.name(),
-            "at" to System.currentTimeMillis() / 1000.0)))
-        val c = java.net.URL("${com.restalker.mobile.core.Link.SERVER}/$ch").openConnection() as java.net.HttpURLConnection
-        try {
-            c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 15_000; c.readTimeout = 20_000
-            c.setRequestProperty("User-Agent", "RestalkerMobile"); c.setRequestProperty("Title", "rk")
-            val b = body.toByteArray(); c.setFixedLengthStreamingMode(b.size); c.outputStream.use { it.write(b) }
-            c.responseCode
-        } finally { c.disconnect() }
+        DeskLink.get().postGo(linkedMapOf("hb" to 1, "bm" to st.buyMode, "bmAt" to st.buyModeAt / 1000.0, "fo" to st.failover, "nm" to DeskLink.name()))
     }
 }

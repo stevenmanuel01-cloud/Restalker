@@ -1,3 +1,18 @@
+# Restalker Mobile 1.0.6 (2026-11-20; "the ntfy messages aren't really needed anymore")
+- Your linked devices now talk to each other through the Restalker relay, not through the free message service (ntfy). That service
+  allows a home 250 messages a day for all its devices together, and the linked devices' product updates alone used them up - then
+  nothing got through for the rest of the day. The relay has no such limit. Everything is sealed with your link code on the device,
+  as before: the relay cannot read it.
+- One request a minute does the whole round: products and caps, buying choices, who is running, and the crowd's sightings.
+- The crowd's sightings are shared and read on the relay too (and still on the old channel for versions that read only there).
+- Your linked PC's own messages (a purchase there, something that needs you there) now show in this app as its own notification -
+  within a minute, by the kinds you chose in Settings. If this phone also has the ntfy app and the PC has ntfy alerts set up, ntfy
+  shows them (with their buttons) and the app does not repeat them. Needs PC v147.
+- "Buy now" from the PC still rings at once over the open connection, and now also arrives with the next round if that is refused.
+- ntfy stays for: alerts on a phone WITHOUT this app (Settings, Notifications says so), and a linked PC / phone / tablet that still
+  runs an older version - it keeps working without updating; the others send it their updates the old way for as long as it is heard.
+- If the relay cannot be reached, the link works over ntfy exactly as before.
+
 # Restalker Mobile 1.0.5 (2026-11-20; your 2 notes of 11:42 AM)
 - Under the title: "3 stalkers active now" (was "3 Restalker devices active now") - everyone running Restalker and sharing is a
   stalker, hunting restocks together. The same words in Settings and in Words used.

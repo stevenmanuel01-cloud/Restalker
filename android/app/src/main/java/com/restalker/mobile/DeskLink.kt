@@ -24,6 +24,9 @@ object DeskLink {
             c.connectTimeout = 20_000; c.readTimeout = 30_000; c.setRequestProperty("User-Agent", "RestalkerMobile")
             try { return c.inputStream.bufferedReader().use { it.readText() } } finally { c.disconnect() }
         }
+        // 1.0.6: the relay (Relay.kt) - the round also says "I am here" and reads the crowd's line
+        override fun sync(reads: Map<String, String>): Map<String, List<Map<String, Any?>>>? = Relay.sync(reads)
+        override fun relayPost(channel: String, body: String): Boolean = Relay.postCh(channel, body)
     }
 
     @Volatile private var link: Link? = null
@@ -35,7 +38,9 @@ object DeskLink {
         val may = st.buying && st.watching && com.restalker.mobile.core.WatchHours.inside(st, System.currentTimeMillis()) &&
             (st.buyMode != "pc" || (st.failover && l != null && !l.desktopBuys() && !l.pcHanded()))
         mapOf("amz" to may, "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (Updater.mode(RkApp.app) == "silent"), "um" to Updater.mode(RkApp.app), "nt" to (alertChannel() ?: ""), "nm" to name(), "vn" to com.restalker.mobile.core.APP_VERSION)
-    }, saveMessages = { !com.restalker.mobile.core.NtfyQuota.may(Quota.q, System.currentTimeMillis(), com.restalker.mobile.core.NtfyQuota.KEEP_FOR_URGENT) }).also { link = it }
+    }, saveMessages = { !com.restalker.mobile.core.NtfyQuota.may(Quota.q, System.currentTimeMillis(), com.restalker.mobile.core.NtfyQuota.KEEP_FOR_URGENT) }).also {
+        it.onGo = { o -> GoListener.take(o) }        // 1.0.6: the fast channel's messages read on the relay (go / res / the PC's alerts)
+        link = it }
 
     /** 2.3: this device only stands by - another phone / tablet is first in line, or (its choice "pc") the PC buys, handed Amazon to
      *  another device, or this one does not take over. Not linked: never. */
@@ -78,7 +83,8 @@ object DeskLink {
             lastResult = r
             failsInRow = if (r == "ok" || r == "not linked") 0 else failsInRow + 1
             // 1.0.4: the message service refused (429 = its limit) - ask it how many of the day's messages are left and when they start again
-            try { Quota.refresh(force = r.contains("429")) } catch (e: Exception) { }
+            // (1.0.6: only while something of this link still goes over that service - the relay carries the link otherwise)
+            try { if (get().usesNtfy()) Quota.refresh(force = r.contains("429")) } catch (e: Exception) { }
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post { done(r) }
         }, "desk-link").start()
     }

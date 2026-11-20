@@ -65,6 +65,8 @@ class CrowdState(private val store: Store, private val clock: () -> Long = { Sys
     private var id = ""
     private val seen = LinkedHashMap<String, Long>()
     var since = ""; private set
+    /** 1.0.6: where reading the crowd's line on the Restalker relay goes on ("" = from the start). */
+    var rsince = ""; private set
     var helloAt = 0L
     private val looked = HashMap<String, Long>()
     private val hour = ArrayList<Long>()
@@ -74,6 +76,7 @@ class CrowdState(private val store: Store, private val clock: () -> Long = { Sys
         id = m["id"].asStr()?.takeIf { Regex("^[0-9a-f]{12}$").matches(it) } ?: newId()
         m["seen"].asMap()?.forEach { (k, v) -> if (Regex("^[0-9a-f]{12}$").matches(k)) seen[k] = v.asLong() ?: 0L }
         since = m["since"].asStr() ?: ""
+        rsince = m["rsince"].asStr() ?: ""
         helloAt = m["hello"].asLong() ?: 0L
         save()
     }
@@ -84,17 +87,22 @@ class CrowdState(private val store: Store, private val clock: () -> Long = { Sys
     fun count(): Int = synchronized(lock) { (seen.keys + id).size }
 
     fun save() = synchronized(lock) {
-        store.writeFile(FILE, MiniJson.write(linkedMapOf("id" to id, "seen" to LinkedHashMap(seen), "since" to since, "hello" to helloAt)))
+        store.writeFile(FILE, MiniJson.write(linkedMapOf("id" to id, "seen" to LinkedHashMap(seen), "since" to since, "rsince" to rsince, "hello" to helloAt)))
     }
 
     /** ntfy's json lines -> contributors counted; a fresh in-stock sighting on Amazon by another contributor, of a product in [mine],
      *  makes [look](asin) run (once per product in LOOK_GAP_MS, LOOKS_PER_HOUR in all). -> the products looked at. */
-    fun take(lines: List<String>, mine: Set<String>, look: (String) -> Boolean): List<String> {
+    fun take(lines: List<String>, mine: Set<String>, look: (String) -> Boolean): List<String> = takeEvents(lines.mapNotNull { MiniJson.obj(it) }, mine, false, look)
+
+    /** 1.0.6: the crowd's new lines from the Restalker relay (the same messages, read there with the device's round) - taken the same
+     *  way; a sighting that came both ways makes one look (LOOK_GAP). */
+    fun takeRelay(events: List<Map<String, Any?>>, mine: Set<String>, look: (String) -> Boolean): List<String> = takeEvents(events, mine, true, look)
+
+    private fun takeEvents(events: List<Map<String, Any?>>, mine: Set<String>, relay: Boolean, look: (String) -> Boolean): List<String> {
         val now = clock()
         val out = ArrayList<String>()
-        for (line in lines) {
-            val ev = MiniJson.obj(line) ?: continue
-            ev["id"].asStr()?.let { synchronized(lock) { since = it.take(40) } }
+        for (ev in events) {
+            ev["id"].asStr()?.let { id -> synchronized(lock) { if (!relay) since = id.take(40) else if (id.isNotEmpty() && id.all(Char::isDigit)) rsince = id.take(15) } }
             if (ev["event"].asStr() != "message") continue
             val m = Crowd.clean(MiniJson.obj(ev["message"].asStr() ?: ""), now / 1000.0) ?: continue
             synchronized(lock) {

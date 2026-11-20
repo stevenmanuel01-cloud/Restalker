@@ -55,7 +55,10 @@ class WatchService : Service() {
         tick.postDelayed(object : Runnable {
             override fun run() {
                 if (DeskLink.get().linked()) DeskLink.cycleAsync()
-                tick.postDelayed(this, 120_000)
+                // 1.0.6: the round is ONE request to the Restalker relay now (the link, the PC's alerts, the crowd, "I am here") - every
+                // minute, or as the relay asks; every 2 minutes as before while the relay is not reached (the round then goes to ntfy)
+                val relay = try { DeskLink.get().relayOk } catch (e: Exception) { false }
+                tick.postDelayed(this, if (relay) Relay.nextS.coerceIn(60, 900) * 1000L else 120_000L)
             }
         }, 5_000)
         tick.postDelayed(object : Runnable {        // 1.7: the self-check (it sends a report by itself when something is wrong)

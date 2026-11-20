@@ -142,7 +142,16 @@ Started with the phone first? In the app, **Settings** > **Linked devices** > **
 | Both buy | Buys too, alongside the PC. The first to reach Place your order orders; the other stops |
 | Instead of PC | Buys on Amazon in place of the PC, which keeps watching every store and tells it within seconds |
 
-"Heard" is the device's newest sign of life: each device says "I am here" every 15 minutes. The link is encrypted; no passwords, addresses or orders are shared.
+"Heard" is the device's newest sign of life: each device says "I am here" every few minutes. The link is encrypted on your devices (the Restalker relay that carries it cannot read it); no passwords, addresses or orders are shared.
+
+**Alerts on your phone - two ways:**
+
+| Way | What you get | Sign-up |
+| --- | --- | --- |
+| The Restalker app, linked (best) | The app's own alerts and this PC's (a purchase, something that needs you), within a minute | None: scan the code, done |
+| The free ntfy app (any phone, no Restalker app) | This PC's messages, with buttons (Buy one more, Approve ...) | **Alerts** > **Phone: set up**: install ntfy, scan the code shown there, press **Send a test** |
+
+With both on one phone, ntfy shows the PC's messages and the app does not repeat them.
 
 ## Words used
 
@@ -157,7 +166,7 @@ Started with the phone first? In the app, **Settings** > **Linked devices** > **
 | The Restalker crowd | Every Restalker that shares tells the others when it sees a listed product in stock (product, store, price, time - nothing personal) |
 | Stalkers active now | Every PC, phone and tablet running Restalker and sharing right now - all hunting restocks together. The same number on every device |
 | Missed (sold out) | It sold out before the order went through. Nothing was bought |
-| b (as in v146b or 1.0.5b) | A beta: a version only the owner's devices have until it is released to everyone |
+| b (as in v147b or 1.0.6b) | A beta: a version only the owner's devices have until it is released to everyone |
 
 Fair play: Restalker buys each product at most 3 times, counting every linked device, so restocks go to players rather than resellers.
 
@@ -171,5 +180,5 @@ Fair play: Restalker buys each product at most 3 times, counting every linked de
 | A store column says *NOT signed in* | Press Sign in above that store's column, or save its sign-in under Sign-ins |
 | No phone messages | Press Send a test; check the ntfy app is subscribed to exactly the name shown under Phone |
 | The PC is slow | Speed (top bar) to Balanced or Light, or switch some browsers off on the Browsers tab |
-| Linked devices says a device was "heard" long ago | Open Restalker on that device. If it says today's free messages are used up, product changes between your devices wait until the time it shows; watching and buying go on |
+| Linked devices says a device was "heard" long ago | Open Restalker on that device and let it update itself. (A device with a version from before v147 / app 1.0.6 still depends on the free message service's 250 messages a day; newer ones do not) |
 | Anything else | Press **Report problem** (or **Diagnostics** and send the file). It holds no passwords, card code or addresses |

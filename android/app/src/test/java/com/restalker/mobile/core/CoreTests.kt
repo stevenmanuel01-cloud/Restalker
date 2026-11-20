@@ -1572,6 +1572,84 @@ object CoreTests {
             val changeWent = posts.size == n0 + 1
             low = false; w.clock.t += 61 * 60_000L; l.cycle()
             notMine && took && olderLost && waited && changeWent && posts.size == n0 + 2 }
+        t("185_the_link_goes_over_the_relay_and_over_ntfy_only_for_a_device_that_reads_only_there") {
+            val code = LinkCrypto.make(); val (ch, sec) = LinkCrypto.parse(code)!!
+            val ntfyPosts = ArrayList<String>(); val ntfyBox = ArrayList<String>(); var ntfyGets = 0
+            val relayPosts = ArrayList<Pair<String, String>>(); val relayBox = ArrayList<Map<String, Any?>>(); val goBox = ArrayList<Map<String, Any?>>()
+            var relayUp = true; var id = 0
+            val net = object : LinkNet {
+                override fun post(url: String, body: String, asFile: Boolean): Int { ntfyPosts.add(body); return 200 }
+                override fun get(url: String): String { ntfyGets++; return ntfyBox.joinToString("\n") }
+                override fun sync(reads: Map<String, String>): Map<String, List<Map<String, Any?>>>? {
+                    if (!relayUp) return null
+                    fun since(c: String) = reads[c]?.toIntOrNull() ?: 0
+                    return mapOf(ch to relayBox.filter { (it["id"] as String).toInt() > since(ch) }, "$ch-go" to goBox.filter { (it["id"] as String).toInt() > since("$ch-go") })
+                }
+                override fun relayPost(channel: String, body: String): Boolean { if (!relayUp) return false; relayPosts.add(channel to body); return true }
+            }
+            val w = World(); val l = Link(w.store, net, { mapOf("amz" to true, "nm" to "Phone", "vn" to "1.0.6") }) { w.clock.t }
+            val heard = ArrayList<Map<String, Any?>>(); l.onGo = { heard.add(it) }
+            fun msg(d: String, r: String, extra: Map<String, Any?> = emptyMap()): String =
+                LinkCrypto.seal(sec, MiniJson.write(linkedMapOf<String, Any?>("v" to 1, "d" to d, "r" to r, "at" to w.clock.t / 1000.0, "amz" to true, "items" to emptyList<Any>()) + extra))
+            fun onRelay(text: String, go: Boolean = false) { (if (go) goBox else relayBox).add(mapOf("id" to (++id).toString(), "time" to w.clock.t / 1000.0, "event" to "message", "message" to text)) }
+            fun onNtfy(text: String) { ntfyBox.add(MiniJson.write(mapOf("event" to "message", "id" to "n${ntfyBox.size + 1}", "time" to w.clock.t / 1000.0, "message" to text))) }
+            fun lastPost() = MiniJson.obj(LinkCrypto.unseal(sec, relayPosts.last().second))!!
+            // linking with a PC that already posts on the relay (v147): the phone finds it there - not one message on ntfy
+            onRelay(msg("d-pc", "desktop", mapOf("rl" to 1)))
+            l.connect(code); val r1 = l.cycle()
+            val a = r1 == "ok" && ntfyPosts.isEmpty() && relayPosts.size == 1 && relayPosts[0].first == ch && lastPost()["rl"].asDouble() == 1.0 && l.pcReadsRelay() && !l.usesNtfy()
+            // an hour of rounds later (the first 15 minutes after linking are over): ntfy is not even read in a usual round
+            w.clock.t += 20 * 60_000L; l.cycle(); val g0 = ntfyGets
+            w.clock.t += 60_000; l.cycle(); w.clock.t += 60_000; w.add("B0TEST0931", 50.0, false); l.touched(); l.cycle()
+            val b = ntfyGets == g0 && ntfyPosts.isEmpty() && relayPosts.size == 2
+            // the PC says an older app is on the link (nf): ntfy is read in that very round, the older phone is found, it gets ours there too
+            w.clock.t += 60_000
+            onNtfy(msg("p-old", "phone", mapOf("hi" to true, "nm" to "Old phone")))
+            onRelay(msg("d-pc", "desktop", mapOf("rl" to 1, "nf" to 1)))
+            l.cycle()
+            val c = ntfyGets == g0 + 1 && ntfyPosts.size == 1 && l.onlyNtfy && l.usesNtfy() && lastPost()["nf"].asDouble() == 1.0 &&
+                l.devices("Phone").any { it.name == "Old phone" }
+            // the same post by both ways is taken once; the fast channel's messages from the PC reach the app once, a phone's never
+            val go = msg("d-pc", "desktop", mapOf("go" to mapOf("a" to "B0TEST0931")))
+            val al = msg("d-pc", "desktop", mapOf("al" to mapOf("ti" to "BOUGHT: x", "tx" to "y", "k" to "purchase bought")))
+            onRelay(go, go = true); onRelay(al, go = true); onRelay(msg("p-other", "phone", mapOf("hb" to 1)), go = true)
+            w.clock.t += 60_000; l.cycle(); w.clock.t += 60_000; l.cycle()
+            val d = heard.size == 2 && heard[0]["go"].asMap()?.get("a") == "B0TEST0931" && heard[1]["al"].asMap()?.get("ti") == "BOUGHT: x" && !l.fresh(go) && l.fresh("rk1:new")
+            // that phone updates (its post now carries rl): nothing on ntfy any more
+            w.clock.t += 60_000; onRelay(msg("p-old", "phone", mapOf("rl" to 1, "nm" to "Old phone"))); onRelay(msg("d-pc", "desktop", mapOf("rl" to 1, "nf" to 0))); l.cycle()
+            val n1 = ntfyPosts.size; w.clock.t += 60_000; w.add("B0TEST0932", 60.0, false); l.touched(); l.cycle()
+            val e = !l.onlyNtfy && ntfyPosts.size == n1 && lastPost()["nf"].asDouble() == 0.0
+            // the relay is not reached: the round and the post go over ntfy as before 1.0.6, and the post says so (rl 0)
+            relayUp = false; w.clock.t += 60_000; w.add("B0TEST0933", 70.0, false); l.touched(); val r2 = l.cycle()
+            val viaNtfy = MiniJson.obj(LinkCrypto.unseal(sec, ntfyPosts.last()))!!
+            val f = r2 == "ok" && ntfyPosts.size == n1 + 1 && viaNtfy["rl"].asDouble() == 0.0 && l.usesNtfy() && !l.relayOk
+            // its heartbeat on the fast channel: on the relay alone when the PC reads it there, on ntfy when the relay does not take it
+            relayUp = true; w.clock.t += 60_000; l.cycle(); val n2 = ntfyPosts.size; val rp = relayPosts.size
+            val hb1 = l.postGo(mapOf("hb" to 1)) && ntfyPosts.size == n2 && relayPosts.size == rp + 1 && relayPosts.last().first == "$ch-go"
+            relayUp = false; val hb2 = l.postGo(mapOf("hb" to 1)) && ntfyPosts.size == n2 + 1
+            a && b && c && d && e && f && hb1 && hb2 }
+        t("186_the_crowds_line_on_the_relay_is_read_with_its_own_mark") {
+            val w = World(); val cs = CrowdState(w.store) { w.clock.t }
+            fun ev(id: String, c: String, asin: String, t: Double) = mapOf("id" to id, "time" to t, "event" to "message",
+                "message" to MiniJson.write(Crowd.sighting(c, asin, 99.0, t)))
+            val now = w.clock.t / 1000.0
+            val looked = ArrayList<String>()
+            val r1 = cs.takeRelay(listOf(ev("7", "aaaaaaaaaaaa", "B0TEST0941", now), ev("8", "bbbbbbbbbbbb", "B0TEST0941", now), ev("9", "aaaaaaaaaaaa", "B0TEST0942", now),
+                ev("10", "aaaaaaaaaaaa", "B0NOTMINE1", now)), setOf("B0TEST0941", "B0TEST0942")) { looked.add(it); true }
+            val old = cs.since
+            // the same sighting on the old channel a moment later: no second look; the old channel's mark is its own
+            val r2 = cs.take(listOf(MiniJson.write(mapOf("id" to "ntfyid1", "event" to "message", "message" to MiniJson.write(Crowd.sighting("aaaaaaaaaaaa", "B0TEST0941", 99.0, now))))),
+                setOf("B0TEST0941", "B0TEST0942")) { looked.add(it); true }
+            val again = CrowdState(w.store) { w.clock.t }
+            r1 == listOf("B0TEST0941", "B0TEST0942") && r2.isEmpty() && cs.rsince == "10" && old == "" && cs.since == "ntfyid1" && again.rsince == "10" && again.since == "ntfyid1" &&
+                looked.size == 2 }
+        t("184_a_message_of_the_pc_is_one_of_this_devices_kinds") {
+            NotifyPrefs.pcKind("purchase bought", "BOUGHT: Hobbit Box") == "bought" && NotifyPrefs.pcKind("purchase oldbought", "x") == "bought" &&
+                NotifyPrefs.pcKind("purchase submitted", "Order placed") == "bought" && NotifyPrefs.pcKind("", "Bought: Box at $99") == "bought" &&
+                NotifyPrefs.pcKind("purchase failed", "NOT bought: sold out") == "need" && NotifyPrefs.pcKind("purchase cvv", "Card code needed") == "need" &&
+                NotifyPrefs.pcKind("purchase approve", "Approve shipping?") == "need" && NotifyPrefs.pcKind("", "Amazon wants you to sign in") == "need" &&
+                NotifyPrefs.pcKind("restock", "x") == "restock" && NotifyPrefs.pcKind("push", "TrackaLacker: in stock") == "restock" &&
+                NotifyPrefs.pcKind("", "IN STOCK: Box") == "restock" && NotifyPrefs.pcKind("error", "") == "need" }
         t("183_the_live_count_says_stalkers") {
             Crowd.activeWords(3) == "3 stalkers active now" && Crowd.activeWords(1) == "1 stalker active now" && Crowd.activeWords(12) == "12 stalkers active now" &&
                 !Crowd.activeWords(2).contains("device") }

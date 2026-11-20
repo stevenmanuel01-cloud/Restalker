@@ -13,6 +13,11 @@
     <!-- 1.7: Android 12+ lets an app that updates ITSELF do so without asking (needs this; no effect on anything else) -->
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
+    <!-- 1.0.6: may ask whether the ntfy app is on this phone (then ntfy shows the linked PC's alerts and this app does not repeat them) -->
+    <queries>
+        <package android:name="io.heckel.ntfy" />
+    </queries>
+
     <application
         android:name=".RkApp"
         android:allowBackup="false"
