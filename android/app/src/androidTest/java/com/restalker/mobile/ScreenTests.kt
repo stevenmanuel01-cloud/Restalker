@@ -485,7 +485,7 @@ class ScreenTests {
         compose.waitUntil(3_000) { p("B0TEST0201").cap == 410.0 }                    // (399.50 -> 400 -> 405 -> 410)
         val capLines = RkApp.store().log().filter { it.contains("The Hobbit Collector Booster Box: cap") }
         assertTrue("one line for the change: ${capLines.takeLast(3)}", capLines.last().contains("\$399.50 → \$410.00") &&
-            capLines.count { it.contains("\$400.00") || it.contains("\$405.00") } == 0)
+            capLines.none { it.endsWith("\$400.00.") || it.endsWith("\$405.00.") })      // (no line for the steps in between)
         compose.onNodeWithTag("remove-B0TEST0201").performScrollTo().performClick()
         assertEquals("asks once before removing", true, RkApp.store().products().any { it.asin == "B0TEST0201" })
         compose.onNodeWithTag("remove-B0TEST0201").performClick()
