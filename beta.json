@@ -1,8 +1,8 @@
 {
- "version": "v142",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v142_update.zip",
- "sha256": "cc506e5633952a1d424418d449566a3178a74ce61e50b66c4f8ff3e3231c5345",
- "size": 760388,
- "notes": "Beta versions show a b after the number (v142b) until released to everyone",
+ "version": "v143",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v143_update.zip",
+ "sha256": "8b7dbd40c50fbb59c8528f107a26ba97a0afde3632475f6151ea3438c4e8a736",
+ "size": 761320,
+ "notes": "Fewer requests to ntfy (the crowd over one open connection) - the PC no longer goes silent from '429 Too Many Requests'; beta versions show a b",
  "files": 84
 }
