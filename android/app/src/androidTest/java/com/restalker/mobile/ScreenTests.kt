@@ -881,8 +881,8 @@ class ScreenTests {
         compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
         val parts = listOf("desk", "amazon", "notes", "catalog", "community", "about")
         for (k in parts) { compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-$k")) }
-        assertTrue("6 parts", compose.onAllNodes(androidx.compose.ui.test.SemanticsMatcher("a part") { n ->
-            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.TestTag)?.startsWith("sech-") == true }).fetchSemanticsNodes().size == 6)
+        val old = listOf("devices", "phone", "practice", "ntfy", "discord", "crowd", "share", "problems")
+        assertTrue("6 parts, the old ones joined in", old.all { compose.onAllNodesWithTag("sech-$it").fetchSemanticsNodes().isEmpty() })
         compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-desk")); Thread.sleep(300); shot("t26_settings")
         sec("about")
         compose.onNodeWithTag("glossary").performScrollTo().assertIsDisplayed()
