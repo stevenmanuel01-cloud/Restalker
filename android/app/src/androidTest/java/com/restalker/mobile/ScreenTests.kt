@@ -476,14 +476,14 @@ class ScreenTests {
         compose.onNodeWithTag("capfield-B0TEST0201").performImeAction()
         compose.waitUntil(3_000) { p("B0TEST0201").cap == 399.5 }
         // ... and - / + are held 30 s from the first tap, then saved and noted once (not one line per \$5)
-        val n0 = RkApp.store().log().count { it.contains("B0TEST0201") || it.contains("The Hobbit Collector Booster Box: cap") }
+        RkApp.store().log("t11 cap marker")
         repeat(3) { compose.onNodeWithTag("capup-B0TEST0201").performClick(); compose.waitForIdle() }
         compose.onNodeWithTag("capheld-B0TEST0201", useUnmergedTree = true).assertExists()
         assertEquals("not saved yet", 399.5, p("B0TEST0201").cap, 0.001)
         Thread.sleep(300); shot("t11_cap_held")
         compose.onNodeWithTag("capsave-B0TEST0201").performScrollTo().performClick(); compose.waitForIdle()
         compose.waitUntil(3_000) { p("B0TEST0201").cap == 410.0 }                    // (399.50 -> 400 -> 405 -> 410)
-        val capLines = RkApp.store().log().filter { it.contains("The Hobbit Collector Booster Box: cap") }
+        val capLines = RkApp.store().log().let { l -> l.drop(l.indexOfLast { it.endsWith("t11 cap marker") } + 1) }.filter { it.contains("The Hobbit Collector Booster Box: cap") }      // (this try's lines only)
         assertTrue("one line for the change: ${capLines.takeLast(3)}", capLines.last().contains("\$399.50 → \$410.00") &&
             capLines.none { it.endsWith("\$400.00.") || it.endsWith("\$405.00.") })      // (no line for the steps in between)
         compose.onNodeWithTag("remove-B0TEST0201").performScrollTo().performClick()
