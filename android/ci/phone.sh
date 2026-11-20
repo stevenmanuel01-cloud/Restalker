@@ -3,6 +3,10 @@
 # 3) 3000 random taps with the internet OFF (no real store is ever reached)  4) prints the notes and screenshots.
 set -u
 P=com.restalker.mobile
+# 1.0.3: RK_SCOPE (android/ci/scope.py) - "look" / "screens": only the screen tests (normal and big text) and the random taps; the
+# phone + link + checkout tests, the reports and the self-update run only for "full" (anything that watches, buys, links or updates)
+SCOPE=${RK_SCOPE:-full}; [ -n "$SCOPE" ] || SCOPE=full
+echo "=== tests for this change: $SCOPE"
 fail=0
 up() {   # the virtual phone back and ready (it can drop off for a moment after a screen-size change)
   for i in $(seq 1 3); do
@@ -18,8 +22,11 @@ adb logcat -c 2>/dev/null || true
 (adb logcat -v time > live_logcat.txt 2>/dev/null &)
 # 2.6: the two groups of app tests run one after the other (the phone and link tests, then the screen tests) with a fresh app in
 # between - one long run made the API 33 / 34 virtual phones stop answering near its end
+if [ "$SCOPE" != "full" ]; then echo "OK (0 tests) - phone, link and checkout tests not needed for this change ($SCOPE)" > instrument_a.txt
+else
 adb shell am instrument -w -r -e debug false -e class $P.PhoneTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_a.txt 2>&1
-if ! grep -q "^OK (\|FAILURES\|Tests run" instrument_a.txt; then        # (ended without a result: say what it said, and run it once more)
+fi
+if [ "$SCOPE" = "full" ] && ! grep -q "^OK (\|FAILURES\|Tests run" instrument_a.txt; then        # (ended without a result: say what it said, and run it once more)
   echo "--- phone+link tests ended without a result:"; tail -15 instrument_a.txt | cut -c1-200
   sleep 5; adb shell am instrument -w -r -e debug false -e class $P.PhoneTests $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_a.txt 2>&1
 fi
@@ -60,8 +67,9 @@ if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP
   finish; fi
 
 echo "=== the phone's reports, read back from outside (the way Claude reads them)"
-code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
-if [ -z "$code" ]; then echo "no report code from the test"; fail=1; else
+if [ "$SCOPE" != "full" ]; then echo "(not needed for this change: $SCOPE)"; code=skip; else code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
+fi
+if [ "$code" = "skip" ]; then :; elif [ -z "$code" ]; then echo "no report code from the test"; fail=1; else
   got=""; for i in 1 2 3 4 5 6; do got=$(curl -s -A "Restalker-CI" "https://ntfy.sh/$code/json?poll=1&since=all" || true)
     echo "$got" | grep -q '"sent by you' && echo "$got" | grep -q 'automatic: Sign in to Amazon' && break; sleep 5; done
   if echo "$got" | grep -q '"sent by you' && echo "$got" | grep -q 'automatic: Sign in to Amazon'; then
@@ -104,6 +112,7 @@ adb shell cmd connectivity airplane-mode disable 2>/dev/null || true; adb shell 
 
 echo "=== the app updates itself (1.7)"
 if ! up; then fail=1; finish; fi
+if [ "$SCOPE" != "full" ]; then echo "(not needed for this change: $SCOPE)"; else
 api=$(adb shell getprop ro.build.version.sdk | tr -d '\r')
 vc() { adb shell dumpsys package $P | grep -m1 -o 'versionCode=[0-9]*' | cut -d= -f2; }
 put() { adb push "$1" /data/local/tmp/u.apk >/dev/null && adb shell chmod 644 /data/local/tmp/u.apk && adb shell run-as $P cp /data/local/tmp/u.apk cache/u.apk; }
@@ -131,6 +140,7 @@ if [ ! -f apk/next/next1.apk ] || [ ! -f apk/next/next2.apk ]; then echo "NO NEW
     else echo "NO 'TAP TO INSTALL' NOTICE ON API $api"; fail=1; fi
   fi
   adb shell dumpsys package $P | grep -m1 -i "installerPackageName"
+fi
 fi
 
 if adb shell run-as $P test -s files/crash.txt 2>/dev/null; then echo "THE APP WROTE A CRASH:"; adb exec-out run-as $P cat files/crash.txt | head -30; fail=1; fi
