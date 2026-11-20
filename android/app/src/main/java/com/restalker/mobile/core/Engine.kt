@@ -138,7 +138,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         // with 8 products every 90 s the last page stayed open, its scripts and ads still working, between all the looks
         if (wait > 3_000) page.rest()
         if (wait > 0) { status(if (desk) (when { otherPhoneBuys() -> "Another phone / tablet buys"; desktopBuys() -> "The PC buys"; pcHanded() -> "Another device buys"
-            else -> "Not buying here" }) + " · this device stands by (a backup look every 30 min - Settings, Who buys) · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
+            else -> "Not buying here" }) + " · this device stands by (a backup look every 30 min - Settings, Linked devices) · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
 
@@ -338,7 +338,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         otherPhoneBuys() -> "another phone / tablet buys it (this one stands by)."
         desktopBuys() -> "the linked desktop buys it (this phone stands by)."
         pcHanded() -> "another device buys it (this one stands by)."
-        else -> "this device does not buy it (Settings, Who buys)."
+        else -> "this device does not buy it (Settings, Linked devices)."
     }
 
     /** This device only stands by (a backup look every 30 minutes). */

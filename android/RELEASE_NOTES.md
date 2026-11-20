@@ -1,3 +1,17 @@
+# Restalker Mobile 1.0.2 (2026-11-19; your notes of 11:40 PM)
+- Watch: every year's bar says what is in it - "11 products · 4 watched · 2 set to buy".
+- Watch: Watch and Buy buttons right on each product (amber = on). Buy on a product without a cap opens it so you can set the cap.
+- Product page: a cap changed with the bar or - / + is held for 30 seconds from the first change, then saved and noted once
+  ("cap $555.00 → $580.00") - no line per $5 step. "Save now" saves at once; a cap typed in the box (Done) is saved at once.
+- Product page: the price bar runs from a bit under the lowest to a quarter over the highest price (price now, cap, MSRP, TCG and
+  every store's current listing), so the marks spread out instead of bunching up.
+- Product page: no Change cap or Practice checkout buttons (the cap is right at the bar; Practice checkout is in Settings).
+- Settings: 6 parts instead of 13 - Linked devices; Amazon, buying and this phone; Notifications (with ntfy); Products; Community
+  (Discord, the crowd, sharing the app); Help and about (problems, "Send a report to Claude", the words used, About).
+- Activity: one entry per event - the product, then one line: what was seen, what was done and how it ended
+  ("In stock $89.99 → checkout (2 tries) → missed (sold out)"). Reports are no longer listed there.
+- A beta now shows a "b" after its version (v1.0.2b). Once you release it to everyone, the same copy shows v1.0.2 - nothing is renumbered.
+
 # Restalker Mobile 1.0.1 (2026-11-19; your notes of 9:39 PM)
 - Share Restalker: under the QR code it now says what to do when the other phone blocks the install. Newer Samsung phones do that
   (Auto Blocker) even after you allow it: Settings > Security and privacy > Auto Blocker > off, install, then switch it back on.

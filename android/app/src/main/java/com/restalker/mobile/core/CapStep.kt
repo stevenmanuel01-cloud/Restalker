@@ -29,12 +29,18 @@ object CapStep {
      *  from half the MSRP to twice the MSRP, rounded to an easy step ($5 / 10 / 25 / 50 / 100 by size). No MSRP: the same around the TCG
      *  price, else the cap, else the price now. A price outside it sits at that end (its label still says the real price).
      *  (2.8-2.9: $0 to the highest price seen + 10%.) */
-    fun range(now: Double?, cap: Double, msrp: Double?, tcg: Double?): Pair<Double, Double> {
-        val ok = { v: Double? -> v?.takeIf { it.isFinite() && it > 0 && it < 100000 } }
-        val base = ok(msrp) ?: ok(tcg) ?: ok(cap) ?: ok(now) ?: return 0.0 to 50.0
-        val step = when { base < 40 -> 5.0; base < 100 -> 10.0; base < 250 -> 25.0; base < 600 -> 50.0; else -> 100.0 }
-        val lo = Math.floor(base * 0.5 / step) * step
-        val hi = maxOf(Math.ceil(base * 2.0 / step) * step, lo + step)
+    /** 1.0.2 (owner, 2026-11-19: "We should have some other way of showing the bar limit rather than just twice the msrp. Maybe instead
+     *  it's approximately 25% more than the current highest listing?"): the bar runs from 75% of the lowest to 125% of the highest of the
+     *  price now, the cap, the MSRP, the TCG price and the other stores' current listings [listings] - so the marks spread over the bar
+     *  instead of bunching in a corner. Rounded to an easy step ($5 / 10 / 25 / 50 / 100 by how wide it is). */
+    fun range(now: Double?, cap: Double, msrp: Double?, tcg: Double?, listings: List<Double> = emptyList()): Pair<Double, Double> {
+        val vals = (listOf(now, cap, msrp, tcg) + listings).mapNotNull { v -> v?.takeIf { it.isFinite() && it > 0 && it < 100000 } }
+        if (vals.isEmpty()) return 0.0 to 50.0
+        val lo0 = vals.min() * 0.75; val hi0 = vals.max() * 1.25
+        val w = hi0 - lo0
+        val step = when { w < 60 -> 5.0; w < 150 -> 10.0; w < 400 -> 25.0; w < 1000 -> 50.0; else -> 100.0 }
+        val lo = Math.floor(lo0 / step) * step
+        val hi = maxOf(Math.ceil(hi0 / step) * step, lo + step)
         return lo to hi
     }
 
