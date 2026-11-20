@@ -767,7 +767,10 @@ class ScreenTests {
         // Activity: a navy bar per day; restocks and checkouts shown, settings changes not
         compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
         // 1.0.2: one entry for the restock - what was seen, what was done (and how it ended, once it has)
-        assertTrue("one entry: restock + checkout", compose.onAllNodesWithText("In stock \$350.00 → checkout", substring = true).fetchSemanticsNodes().size == 1)
+        // (the big-text pass runs after the normal one on the same day: its entry is there too - so: the joined entry, no separate lines)
+        assertTrue("one entry: restock + checkout", compose.onAllNodesWithText("In stock \$350.00 → checkout", substring = true).fetchSemanticsNodes().isNotEmpty() &&
+            compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isEmpty() &&
+            compose.onAllNodesWithText("buying it now", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue("settings changes are not in Activity", compose.onAllNodesWithText("Watching switched ON", substring = true).fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("cap \$485.00.", substring = true).fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Today").assertExists()
