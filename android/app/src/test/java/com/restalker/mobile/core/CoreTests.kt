@@ -339,13 +339,13 @@ object CoreTests {
             Report.valid(c1) && c1 == c2 && ok && sent.single().first == "https://ntfy.sh/$c1" && sent.single().second["Filename"] == "restalker-mobile-report.txt" &&
                 String(sent.single().third).endsWith(" END") && w.store.log().last().contains("Report sent")
         }
-        t("37 report: no internet -> told, no crash; automatic reports at most every 30 minutes and only when on") {
+        t("37 report: no internet -> told, no crash; automatic reports at most every 2 hours and only when on") {
             val w = World()
             var tries = 0
             val bad = Report.send(w.store, "t", "x", "y", retryMs = 1) { _, _, _ -> tries++; throw java.io.IOException("no internet") }
             val s0 = w.store.settings().copy(reportAt = 1_000_000L)
-            !bad && tries == 3 && w.store.log().last().contains("could not be sent") && Report.autoDue(s0, 1_000_000L + 31 * 60_000L) &&
-                !Report.autoDue(s0, 1_000_000L + 10 * 60_000L) && !Report.autoDue(s0.copy(autoReport = false), 9_000_000_000L)
+            !bad && tries == 3 && w.store.log().last().contains("could not be sent") && Report.autoDue(s0, 1_000_000L + 121 * 60_000L) &&
+                !Report.autoDue(s0, 1_000_000L + 100 * 60_000L) && !Report.autoDue(s0.copy(autoReport = false), 9_000_000_000L)
         }
         t("38 a checkout that does not buy is a problem (a report may go); its Amazon messages are in the log") {
             val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.placeFail = 1; w.check("B0TEST0001")
@@ -1110,7 +1110,8 @@ object CoreTests {
             val w = World(); val now = w.clock.t
             w.store.add(Product("a", "B0DROP0001", "Over", cap = 400.0, watch = true, overCap = true, price = 700.0, lastCheck = now))
             w.store.add(Product("b", "B0DROP0002", "Not watched", cap = 400.0, watch = false, overCap = true, price = 700.0, lastCheck = now))
-            w.store.add(Product("c", "B0DROP0003", "Under cap", cap = 400.0, watch = true, buyable = true, price = 350.0, lastCheck = now))
+            // (1.0.4: under the cap and set to Buy - bought by itself, never a drop alert)
+            w.store.add(Product("c", "B0DROP0003", "Under cap, Buy on", cap = 400.0, watch = true, buy = true, buyable = true, price = 350.0, lastCheck = now))
             val got = ArrayList<Triple<String, Double, Double>>()
             val n1 = PriceDrop.scan(w.store, now) { p, was, pr -> got += Triple(p.id, was, pr) }
             w.store.update("a") { it.copy(price = 640.0, lastCheck = now + 60_000) }
@@ -1122,8 +1123,65 @@ object CoreTests {
             w.store.update("a") { it.copy(dSt = "over", dPr = 590.0, dAt = now + 180_000) }
             val n4 = PriceDrop.scan(w.store, now + 180_000) { p, was, pr -> got += Triple(p.id, was, pr) }
             n1 == 0 && n2 == 1 && n3 == 0 && n4 == 1 && got == listOf(Triple("a", 700.0, 640.0), Triple("a", 640.0, 590.0)) &&
-                w.store.product("a")!!.dropRef == 590.0 && w.store.product("b")!!.dropRef == null && w.store.product("c")!!.dropRef == null &&
+                w.store.product("a")!!.dropRef == 590.0 && w.store.product("b")!!.dropRef == null &&
                 Product.fromMap(MiniJson.obj(MiniJson.write(w.store.product("a")!!.toMap()))!!)!!.dropRef == 590.0 }
+        // ---- 1.0.4 (owner, 2026-11-20: "the alert option should include things that are under our cap as well ... watched but not armed")
+        t("174_price_drop_under_the_cap_when_watched_but_not_set_to_buy") {
+            val w = World(); val t0 = w.clock.t; val m = 60_000L
+            val got = ArrayList<Triple<String, Double, Double>>()
+            val scan = { at: Long -> PriceDrop.scan(w.store, at) { p, was, pr -> got += Triple(p.id, was, pr) } }
+            // u: watched, NOT set to Buy, in stock under its cap
+            w.store.add(Product("u", "B0DROP0011", "Under cap, watch only", cap = 400.0, watch = true, buyable = true, price = 350.0, lastCheck = t0))
+            // n: watched without a cap (in stock at any price)
+            w.store.add(Product("n", "B0DROP0012", "No cap", cap = 0.0, watch = true, buyable = true, price = 90.0, lastCheck = t0))
+            val first = scan(t0)                                   // the first sight under the cap: the mark, no alert (a restock message said it)
+            w.store.update("u") { it.copy(price = 340.0, lastCheck = t0 + m) }      // $10 = 2.9%: not enough
+            val small = scan(t0 + m)
+            w.store.update("u") { it.copy(price = 310.0, lastCheck = t0 + 2 * m) }  // $40 from the mark: alert
+            w.store.update("n") { it.copy(price = 80.0, lastCheck = t0 + 2 * m) }   // $10 = 11%: alert
+            val big = scan(t0 + 2 * m)
+            val again = scan(t0 + 3 * m)                           // nothing new: no second alert
+            val marks = w.store.product("u")!!.let { it.dropRef == 310.0 && it.dropSt == "in" }
+            val kept = Product.fromMap(MiniJson.obj(MiniJson.write(w.store.product("u")!!.toMap()))!!)!!.dropSt == "in"
+            first == 0 && small == 0 && big == 2 && again == 0 && got == listOf(Triple("u", 350.0, 310.0), Triple("n", 90.0, 80.0)) && marks && kept }
+        t("175_price_drop_coming_under_the_cap_or_back_in_stock_is_a_restock_not_a_drop") {
+            val w = World(); val t0 = w.clock.t; val m = 60_000L
+            val got = ArrayList<Triple<String, Double, Double>>()
+            val scan = { at: Long -> PriceDrop.scan(w.store, at) { p, was, pr -> got += Triple(p.id, was, pr) } }
+            w.store.add(Product("x", "B0DROP0021", "Comes under the cap", cap = 400.0, watch = true, overCap = true, price = 450.0, lastCheck = t0))
+            scan(t0)
+            // over the cap -> under it ($450 -> $390): the restock message says it; no drop alert on top
+            w.store.update("x") { it.copy(overCap = false, buyable = true, price = 390.0, lastCheck = t0 + m) }
+            val under = scan(t0 + m)
+            // a further drop under the cap: alert
+            w.store.update("x") { it.copy(price = 360.0, lastCheck = t0 + 2 * m) }
+            val further = scan(t0 + 2 * m)
+            // sold out, then back in stock even cheaper: a new restock (its own message), not a drop
+            w.store.update("x") { it.copy(buyable = false, price = null, lastCheck = t0 + 3 * m) }
+            val out = scan(t0 + 3 * m)
+            val cleared = w.store.product("x")!!.dropSt == ""
+            w.store.update("x") { it.copy(buyable = true, price = 300.0, lastCheck = t0 + 4 * m) }
+            val back = scan(t0 + 4 * m)
+            // and from there a further drop alerts again
+            w.store.update("x") { it.copy(price = 270.0, lastCheck = t0 + 5 * m) }
+            val later = scan(t0 + 5 * m)
+            // back over the cap at a higher price: no alert, the mark stays (as over the cap before)
+            w.store.update("x") { it.copy(buyable = false, overCap = true, price = 450.0, lastCheck = t0 + 6 * m) }
+            val up = scan(t0 + 6 * m)
+            under == 0 && further == 1 && out == 0 && cleared && back == 0 && later == 1 && up == 0 &&
+                got == listOf(Triple("x", 390.0, 360.0), Triple("x", 300.0, 270.0)) && w.store.product("x")!!.dropSt == "over" }
+        t("176_price_drop_set_to_buy_under_the_cap_never_alerts_and_switching_buy_off_starts_fresh") {
+            val w = World(); val t0 = w.clock.t; val m = 60_000L
+            var n = 0
+            w.store.add(Product("b", "B0DROP0031", "Buy on", cap = 400.0, watch = true, buy = true, buyable = true, price = 350.0, lastCheck = t0))
+            n += PriceDrop.scan(w.store, t0) { _, _, _ -> }
+            w.store.update("b") { it.copy(price = 250.0, lastCheck = t0 + m) }
+            n += PriceDrop.scan(w.store, t0 + m) { _, _, _ -> }               // Buy on: bought by itself - no drop alert
+            w.store.update("b") { it.copy(buy = false) }
+            n += PriceDrop.scan(w.store, t0 + 2 * m) { _, _, _ -> }           // Buy switched off: measured from the price now ($250), no alert
+            w.store.update("b") { it.copy(price = 230.0, lastCheck = t0 + 3 * m) }
+            val after = PriceDrop.scan(w.store, t0 + 3 * m) { _, _, _ -> }    // a further $20 (8%): alert
+            n == 0 && after == 1 && w.store.product("b")!!.dropRef == 230.0 }
         t("152_price_drop_alerts_skip_ntfy_when_pc_has_channel") {
             val pcT = "phone-pcchannel123"
             !NtfyAlerts.shouldSend(true, pcT, "drop", true) && NtfyAlerts.shouldSend(true, pcT, "drop", false) &&
@@ -1236,7 +1294,7 @@ object CoreTests {
                 "11-18 14:44:48  Updated to v2.11.", "11-19 05:04:00  X: ANOTHER: another of your devices got to Place your order first - not ordered here.")
             val drop = listOf("11-18 15:28:09  · The watching notice was swiped away - watching goes on.",
                 "11-19 05:03:00  ! Report could not be sent (no internet?) - try again.",        // (1.0.2: reports are not events)
-                "11-19 04:40:05  Report sent to Claude (code rkr-abc): automatic: X: not bought - sold out",
+                "11-19 04:40:05  Report sent (code rkr-abc): automatic: X: not bought - sold out",
                 "11-17 17:50:25  Phone / tablet 51c1: set to Both buy (from this device).", "11-17 17:38:33  The Hobbit Collector Booster Box: cap \$485.00.",
                 "11-17 17:38:33  X: Buy ON.", "11-16 11:01:39  Watching switched ON.", "11-16 15:11:52  From the desktop: Reality Fracture Collector Booster Box added (cap \$330.00).",
                 "11-19 04:40:04    checkout step: FLOW_BLOCKED - sold out", "11-16 15:10:49  Linked with the desktop. Products are shared from now on.",
@@ -1349,7 +1407,7 @@ object CoreTests {
                 "11-19 04:39:10  Nauctis Secret Lair Bundle: in stock at \$89.99 - buying it now.",
                 "11-19 04:39:11  Nauctis Secret Lair Bundle: CHECKOUT started (\$89.99, cap \$90.00)",
                 "11-19 04:40:02  Nauctis Secret Lair Bundle: not bought - Amazon checkout: Amazon took the product out of the checkout - sold out under us (Amazon says: \"Sorry, the quantity you requested is no longer available.\")",
-                "11-19 04:40:05  Report sent to Claude (code rkr-abc): automatic: Nauctis Secret Lair Bundle: not bought - Amazon checkout",
+                "11-19 04:40:05  Report sent (code rkr-abc): automatic: Nauctis Secret Lair Bundle: not bought - Amazon checkout",
                 "11-19 04:41:00  Nauctis Secret Lair Bundle: CHECKOUT started (\$89.99, cap \$90.00)",
                 "11-19 04:41:40  Nauctis Secret Lair Bundle: not bought - Amazon checkout: Amazon took the product out of the checkout - sold out under us",
                 "11-19 13:47:00  Nauctis Collector Booster Box: in stock at \$323.88 (another Restalker spotted it first) - another phone / tablet buys it (this one stands by).",
@@ -1381,6 +1439,139 @@ object CoreTests {
             val ev = ActivityLog.events(raw.filter { ActivityLog.important(it) })
             ev.map { it.text } == listOf("In stock \$85.00 → checkout → another of your devices ordered it", "In stock \$80.00 → you were sent a message")
         }
+        // ---- 1.0.4 (owner, 2026-11-20, notes 1-3): how old the data is; presence of the linked devices; watch hours; the message limit
+        t("177_in_stock_now_only_when_seen_in_the_last_6_hours_and_ages_in_words") {
+            val now = 1_800_000_000_000L; val h = 3_600_000L
+            val fresh = Product("a", "B0AGE00001", cap = 100.0, watch = false, overCap = true, price = 120.0, lastCheck = now - 5 * h)
+            val old = fresh.copy(id = "b", lastCheck = now - 7 * h)
+            val pcFresh = old.copy(id = "c", dSt = "in", dPr = 90.0, dAt = now - 60_000)          // the linked PC saw it a minute ago
+            val pcOld = Product("d", "B0AGE00004", cap = 100.0, dSt = "over", dPr = 130.0, dAt = now - 17 * h)
+            val out = Product("e", "B0AGE00005", cap = 100.0, lastCheck = now - 1000)
+            fresh.hot(now) && !old.hot(now) && old.inStock && pcFresh.hot(now) && !pcOld.hot(now) && pcOld.inStock && !out.hot(now) &&
+                Ago.words(2_000) == "just now" && Ago.words(54_000) == "54s ago" && Ago.words(12 * 60_000L) == "12 min ago" &&
+                Ago.words(6 * h + 5 * 60_000) == "6 h ago" && Ago.words(47 * h) == "47 h ago" && Ago.words(72 * h) == "3 days ago" &&
+                Product.HOT_FRESH_MS == Engine.BASELINE_FRESH }
+        t("178_watch_hours_rule") {
+            val W = WatchHours
+            val utc = java.util.TimeZone.getTimeZone("UTC"); val la = java.util.TimeZone.getTimeZone("America/Los_Angeles")
+            val t = java.time.ZonedDateTime.of(2026, 11, 20, 23, 30, 0, 0, java.time.ZoneId.of("UTC")).toInstant().toEpochMilli()
+            val night = Settings(hoursOn = true, hoursFrom = 22 * 60, hoursTo = 7 * 60)
+            val day = Settings(hoursOn = true, hoursFrom = 9 * 60, hoursTo = 17 * 60)
+            W.minuteOfDay(t, utc) == 23 * 60 + 30 && W.minuteOfDay(t, la) == 15 * 60 + 30 &&
+                W.inside(Settings(), t, utc) &&                                              // off: all day
+                W.inside(night, t, utc) && !W.inside(night, t, la) &&                        // over midnight: 11:30 PM in, 3:30 PM out
+                W.inside(true, 22 * 60, 7 * 60, 6 * 60 + 59) && !W.inside(true, 22 * 60, 7 * 60, 7 * 60) && W.inside(true, 22 * 60, 7 * 60, 22 * 60) &&
+                !W.inside(day, t, utc) && W.inside(day, t, la) && W.inside(true, 9 * 60, 17 * 60, 9 * 60) && !W.inside(true, 9 * 60, 17 * 60, 17 * 60) &&
+                W.inside(true, 600, 600, 5) &&                                               // the same time twice: all day
+                W.label(22 * 60) == "10:00 PM" && W.label(0) == "12:00 AM" && W.label(12 * 60 + 5) == "12:05 PM" && W.label(7 * 60 + 30) == "7:30 AM" &&
+                W.words(Settings()) == "All day" && W.words(night) == "10:00 PM - 7:00 AM" && W.step(0, -30) == 1410 && W.step(1410, 30) == 0 &&
+                Settings.fromMap(MiniJson.obj(MiniJson.write(night.toMap()))) == night && !Settings.fromMap(mapOf("watching" to true)).hoursOn &&
+                Settings.fromMap(mapOf("hoursFrom" to 99999L, "hoursTo" to -5L)).let { it.hoursFrom == 1439 && it.hoursTo == 0 } }
+        t("179_outside_the_watch_hours_nothing_is_looked_at_or_bought_but_check_now_still_runs") {
+            val utc = java.util.TimeZone.getTimeZone("UTC")
+            val w = World()
+            val eng = Engine(w.store, w.amz, w.said, w.clock, { "wifi" }, zone = { utc })
+            w.add("B0TEST0901", 120.0, true, stock = true, price = 99.0)
+            val min = WatchHours.minuteOfDay(w.clock.t, utc)
+            // the hours end right now: outside
+            w.store.setSettings { it.copy(hoursOn = true, hoursFrom = WatchHours.step(min, -120), hoursTo = min) }
+            repeat(5) { eng.step() }
+            val idle = w.amz.gotoCount == 0 && w.amz.places == 0 && !eng.inHours() && w.said.last.startsWith("Outside your watch hours")
+            eng.send(Engine.Cmd.Crowd("B0TEST0901")); eng.send(Engine.Cmd.Go("B0TEST0901")); eng.step(); eng.step()
+            val tipsIgnored = w.amz.gotoCount == 0
+            // inside again: it is looked at and bought
+            w.store.setSettings { it.copy(hoursFrom = WatchHours.step(min, -60), hoursTo = WatchHours.step(min, 60)) }
+            repeat(8) { eng.step() }
+            idle && tipsIgnored && eng.inHours() && w.amz.places == 1 && w.p("B0TEST0901").purchased
+        }
+        t("180_message_limit_answer_and_what_waits") {
+            val now = 1_800_000_000_000L
+            val body = "{\"username\":\"*\",\"role\":\"anonymous\",\"limits\":{\"basis\":\"ip\",\"messages\":250,\"attachment_total_size\":20971520}," +
+                "\"stats\":{\"messages\":230,\"messages_remaining\":20,\"reset_at\":${now / 1000 + 3600}}}"
+            val q = NtfyQuota.parse(body, now)!!
+            val empty = q.copy(left = 0)
+            q.limit == 250 && q.left == 20 && q.resetAt == now + 3_600_000L && NtfyQuota.parse("<html>", now) == null && NtfyQuota.parse("{}", now) == null &&
+                !NtfyQuota.may(q, now, NtfyQuota.KEEP_FOR_URGENT) && NtfyQuota.may(q.copy(left = 41), now, NtfyQuota.KEEP_FOR_URGENT) &&
+                !NtfyQuota.may(q.copy(left = 100), now, NtfyQuota.KEEP_FOR_NORMAL) && NtfyQuota.may(null, now, 100) &&      // not known: send
+                NtfyQuota.may(q, now + 3_600_001L, 100) &&                                    // the count started again: send
+                NtfyQuota.may(q, now + 7 * 3_600_000L, 100) &&                                // an old answer: not trusted
+                NtfyQuota.usedUp(empty, now) && !NtfyQuota.usedUp(q, now) && !NtfyQuota.usedUp(empty, now + 3_600_001L) && !NtfyQuota.usedUp(null, now) &&
+                NtfyQuota.fromMap(MiniJson.obj(MiniJson.write(q.toMap()))) == q }
+        t("181_presence_from_the_relay_shows_a_running_pc_and_tablet_while_the_link_channel_is_silent") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val posts = ArrayList<String>()
+            val net = object : LinkNet {
+                override fun post(url: String, body: String, asFile: Boolean): Int { posts.add(body); return 200 }
+                override fun get(url: String): String = posts.mapIndexed { i, b -> MiniJson.write(mapOf("event" to "message", "id" to "m$i", "time" to 1_800_000_000L + i, "message" to b)) }.joinToString("\n")
+            }
+            val wa = World(); val la = Link(wa.store, net, { mapOf("amz" to true, "nm" to "Phone", "vn" to "1.0.4") }) { wa.clock.t }
+            la.connect(code)
+            val t0 = wa.clock.t / 1000.0
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "d-x", "r" to "desktop", "at" to t0, "amz" to true, "lk" to true, "items" to emptyList<Any>()))))
+            posts.add(LinkCrypto.seal(sec, MiniJson.write(mapOf("v" to 1, "d" to "p-tab", "r" to "phone", "at" to t0, "amz" to true, "nm" to "Tablet", "vn" to "2.14", "bm" to "both", "items" to emptyList<Any>()))))
+            la.cycle()
+            // 17 hours later nothing new came over the link channel (the day's free messages were used up) ...
+            wa.clock.t += 17 * 3_600_000L
+            val t1 = wa.clock.t / 1000.0
+            val stale = la.devices("Phone")
+            val staleLine = la.state().second
+            // ... but the relay heard the PC 4 minutes ago and the tablet 9 minutes ago (their sealed words), plus someone else's beat
+            fun w(d: String, r: String, nm: String, vn: String) = LinkCrypto.seal(sec, MiniJson.write(mapOf("d" to d, "r" to r, "nm" to nm, "vn" to vn)))
+            val other = LinkCrypto.seal(ByteArray(32) { 7 }, MiniJson.write(mapOf("d" to "d-evil", "r" to "desktop", "nm" to "x", "vn" to "v1")))
+            val took = la.takePresence(listOf(w("d-x", "desktop", "PC", "v145") to t1 - 240, w("p-tab", "phone", "Tablet", "1.0.4") to t1 - 540,
+                w("p-new", "phone", "Old phone", "1.0.4") to t1 - 100, other to t1 - 5, "garbage" to t1, w("d-x", "desktop", "PC", "v145") to t1 + 9999))
+            val d = la.devices("Phone")
+            val pc = d.first { it.pc }; val tab = d.first { it.id == "p-tab" }; val nw = d.first { it.id == "p-new" }
+            val line = la.state().second
+            // the buying rules still go by the link channel alone: the PC's post is 17 h old -> this phone buys
+            val buyRule = !la.desktopBuys() && la.pcSyncBehindS() in (17 * 3600L - 5)..(17 * 3600L + 5)
+            // its own words are sealed with the link secret and say who it is
+            val mine = MiniJson.obj(LinkCrypto.unseal(sec, la.who()))!!
+            // a new link forgets the old link's presence; kept across a restart otherwise
+            val again = Link(wa.store, net, { mapOf("nm" to "Phone") }) { wa.clock.t }.devices("Phone").first { it.pc }.agoS
+            la.unlink()
+            stale.first { it.pc }.agoS >= 17 * 3600 && staleLine.contains("silent") && took == 3 &&
+                pc.agoS in 235..245 && pc.vn == "v145" && pc.syncAgoS >= 17 * 3600 && tab.agoS in 535..545 && tab.vn == "1.0.4" && tab.mode == "both" &&
+                nw.agoS in 95..105 && nw.name == "Old phone" && nw.mode == "" && d.none { it.id == "d-evil" } && d.size == 4 &&
+                line.contains("the PC is running") && line.contains("17 h ago") && buyRule &&
+                mine["d"].asStr()!!.startsWith("p-") && mine["r"] == "phone" && mine["nm"] == "Phone" && mine["vn"] == "1.0.4" &&
+                again in 235..245 && la.who() == null && la.devices("Phone").isEmpty() && la.takePresence(listOf(w("d-x", "desktop", "PC", "v145") to t1)) == 0 }
+        t("182_a_choice_made_on_the_pc_reaches_this_device_and_the_hourly_post_waits_when_messages_are_low") {
+            val code = LinkCrypto.make(); val (_, sec) = LinkCrypto.parse(code)!!
+            val posts = ArrayList<String>(); val inbox = ArrayList<String>()
+            val net = object : LinkNet {
+                override fun post(url: String, body: String, asFile: Boolean): Int { posts.add(body); return 200 }
+                override fun get(url: String): String = inbox.joinToString("\n")
+            }
+            var low = false
+            val w = World(); val l = Link(w.store, net, { mapOf("amz" to true, "nm" to "Phone") }, { low }) { w.clock.t }
+            l.connect(code); l.cycle()
+            val dev = MiniJson.obj(LinkCrypto.unseal(sec, posts.last()))!!["d"].asStr()!!
+            fun desk(set: Map<String, Any?>?) {
+                val t = w.clock.t / 1000.0
+                val o = linkedMapOf<String, Any?>("v" to 1, "d" to "d-x", "r" to "desktop", "at" to t, "amz" to true, "items" to emptyList<Any>())
+                if (set != null) o["set"] = set
+                inbox.add(MiniJson.write(mapOf("event" to "message", "id" to "m${inbox.size + 1}", "time" to t, "message" to LinkCrypto.seal(sec, MiniJson.write(o)))))
+            }
+            w.clock.t += 60_000
+            desk(mapOf("d" to "p-someone-else", "bm" to "phone", "fo" to true, "at" to w.clock.t / 1000.0)); l.cycle()
+            val notMine = w.store.settings().buyMode == "pc"
+            w.clock.t += 60_000
+            desk(mapOf("d" to dev, "bm" to "both", "fo" to false, "at" to w.clock.t / 1000.0)); l.cycle()
+            val took = w.store.settings().let { it.buyMode == "both" && !it.failover } && w.store.log().any { it.contains("changed on the PC") }
+            // an older change than this device's own choice does not win
+            w.store.setSettings { it.copy(buyMode = "pc", buyModeAt = w.clock.t + 5_000) }
+            w.clock.t += 60_000
+            desk(mapOf("d" to dev, "bm" to "phone", "fo" to true, "at" to (w.clock.t - 120_000) / 1000.0)); l.cycle()
+            val olderLost = w.store.settings().buyMode == "pc"
+            // the hourly "still here": waits while few messages are left; a change still goes out at once
+            l.cycle(); val n0 = posts.size
+            low = true; w.clock.t += 61 * 60_000L; l.cycle()
+            val waited = posts.size == n0
+            w.add("B0TEST0911", 50.0, false); l.touched(); l.cycle()
+            val changeWent = posts.size == n0 + 1
+            low = false; w.clock.t += 61 * 60_000L; l.cycle()
+            notMine && took && olderLost && waited && changeWent && posts.size == n0 + 2 }
         return results
     }
 

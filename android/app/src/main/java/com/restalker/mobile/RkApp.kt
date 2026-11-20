@@ -28,7 +28,7 @@ class RkApp : Application() {
                 if (s.readFile("lastav") != v) { if (DeskLink.get().linked()) DeskLink.get().touched(); s.writeFile("lastav", v) }
             } catch (e: Exception) { }
         }.start()
-        // 1.7: a crash is written down; the self-check sends it to Claude by itself the next time the app runs
+        // 1.7: a crash is written down; the self-check reports it by itself the next time the app runs
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             try {
@@ -47,6 +47,9 @@ class RkApp : Application() {
         private val main = Handler(Looper.getMainLooper())
         /** Called on the main thread whenever products / settings / the log change (the screens redraw). */
         val listeners = CopyOnWriteArrayList<() -> Unit>()
+
+        /** 1.0.4: something the screen shows changed outside the store (the linked devices' beats): redraw. */
+        fun changed() { main.post { listeners.forEach { it() } } }
 
         private var lastDir: File? = null
         @Synchronized fun store(dirOverride: File? = null): Store {

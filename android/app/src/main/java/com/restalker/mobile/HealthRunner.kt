@@ -30,6 +30,7 @@ object HealthRunner {
             linked = link.linked(), linkFailsInRow = DeskLink.failsInRow, linkLast = DeskLink.lastResult,
             mbPerHour = svc?.mbPerHour(), hoursWatching = svc?.hours() ?: 0.0, busy = svc?.engine?.busyWith?.startsWith("checking out") ?: false,
             updateFail = Updater.failed,
+            outsideHours = !com.restalker.mobile.core.WatchHours.inside(s.settings(), now),
             crash = try { crashFile(ctx).takeIf { it.isFile }?.readText()?.take(4000) } catch (e: Exception) { null })
     }
 

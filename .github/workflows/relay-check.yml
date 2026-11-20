@@ -1,5 +1,5 @@
-# Prints the live relay's stats, its recent log and ~70 s of its own log stream (nothing secret) - Claude reads it (the relay's
-# address is not reachable from Claude's workspace).
+# Prints the live relay's stats, its recent log and ~70 s of its own log stream (nothing secret), for looking at the relay
+# from the outside.
 name: relay-check
 on:
   push:

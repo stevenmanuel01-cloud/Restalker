@@ -48,6 +48,7 @@ class WatchService : Service() {
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
+        wasInside = try { com.restalker.mobile.core.WatchHours.inside(store.settings(), System.currentTimeMillis()) } catch (e: Exception) { null }   // 1.0.4
         // 1.4: the desktop link - a round every minute (when linked). 1.0.3: every 2 minutes - fewer requests to ntfy, which allows each
         // home internet address about one every 10 seconds for ALL its Restalker devices together (the PC's "go" signals still arrive at
         // once over the fast channel; opening the app still does a round at once)
@@ -65,7 +66,8 @@ class WatchService : Service() {
                 Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
                 CrowdNet.tick()                             // 2.6: the Restalker crowd (read every 2 minutes while watching)
                 Relay.heartbeat()                           // 2.15: "active now" (every 15 minutes)
-                // 2.12: price drop alerts - watched products for sale over the cap that got clearly cheaper (this phone's look or the PC's)
+                hoursCheck()                                // 1.0.4: the watch hours began / ended
+                // 2.12: price drop alerts - watched products that got clearly cheaper (this phone's look or the PC's); 1.0.4: under the cap too
                 try { com.restalker.mobile.core.PriceDrop.scan(RkApp.store(), System.currentTimeMillis()) { p, was, pr -> notifier.priceDrop(p, was, pr) } } catch (e: Exception) { }
                 tick.postDelayed(this, 60_000)
             }
@@ -116,17 +118,34 @@ class WatchService : Service() {
      *  the wake lock (looks every minute or so even with the screen off). */
     fun standbyCheck() {
         val sb = try { standsBy() } catch (e: Exception) { false }
-        if (sb != Notifier.standby) {
-            Notifier.standby = sb
+        // 1.0.4: outside the watch hours the phone may sleep too (no looks until they begin); the 15-minute alarm wakes it to begin on time
+        val out = try { !com.restalker.mobile.core.WatchHours.inside(RkApp.store().settings(), System.currentTimeMillis()) } catch (e: Exception) { false }
+        if (sb != Notifier.standby || out != Notifier.outside) {
+            Notifier.standby = sb; Notifier.outside = out
             notifier.refreshNotice()
         }
         try {
             val w = wake ?: return
-            if (sb && w.isHeld) w.release() else if (!sb && !w.isHeld) w.acquire()
+            if ((sb || out) && w.isHeld) w.release() else if (!sb && !out && !w.isHeld) w.acquire()
         } catch (e: Exception) { }
         // 2.1: asleep in standby, the phone is still woken every 15 minutes (an alarm): the link is read and, when the PC has stopped,
         // this phone takes over within 15 minutes - without keeping the phone awake all the time
-        if (sb) StandbyAlarm.schedule(this) else StandbyAlarm.cancel(this)
+        if (sb || out) StandbyAlarm.schedule(this) else StandbyAlarm.cancel(this)
+    }
+
+    /** 1.0.4: the watch hours began or ended since the last minute - noted once, the other linked devices are told (this device does
+     *  not buy outside its hours), and the engine is woken so it starts at once. */
+    private var wasInside: Boolean? = null
+    fun hoursCheck() {
+        val st = RkApp.store().settings()
+        val inside = com.restalker.mobile.core.WatchHours.inside(st, System.currentTimeMillis())
+        val before = wasInside; wasInside = inside
+        if (before == null || before == inside) return
+        if (st.watching) RkApp.store().log(if (inside) "Watch hours: watching again (${com.restalker.mobile.core.WatchHours.words(st)})."
+            else "Watch hours: paused until ${com.restalker.mobile.core.WatchHours.label(st.hoursFrom)}.", quiet = true)
+        Thread { try { DeskLink.get().touched() } catch (e: Exception) { } }.start()
+        standbyCheck(); GoListener.check()
+        try { engine.send(Engine.Cmd.Wake) } catch (e: Exception) { }
     }
 
     /** 2.2: this phone only stands by - another phone / tablet is first in line, or the PC buys and Who buys is "pc". */

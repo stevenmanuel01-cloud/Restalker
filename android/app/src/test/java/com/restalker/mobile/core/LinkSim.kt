@@ -21,7 +21,7 @@ object LinkSim {
         val dir = File(args[0]); val port = args[1].toInt(); val cmd = args[2]; val a = args.drop(3)
         val clock = System.getenv("SIM_NOW")?.toLongOrNull()?.let { t -> { t } } ?: System::currentTimeMillis
         val store = Store(dir, clock)
-        val link = Link(store, LocalNet(port), clockMs = clock)
+        val link = Link(store, LocalNet(port), me = { mapOf("amz" to true, "nm" to "Sim phone", "vn" to APP_VERSION, "av" to 31L) }, clockMs = clock)
         fun prod(asin: String) = store.products().first { it.asin == asin }
         when (cmd) {
             "connect" -> println(link.connect(a[0]) ?: "linked")
@@ -33,6 +33,14 @@ object LinkSim {
             "remove" -> { store.remove(prod(a[0]).id); println("ok") }
             "bought" -> { val p = prod(a[0]); store.addPurchase(Purchase(clock(), p.asin, p.label, p.cap, "111-0000000-0000000", true)); store.update(p.id) { it.copy(purchased = true, buy = false) }; println("ok") }
             "cycle" -> println(link.cycle())
+            // 1.0.4: presence and choices, for the test with the real desktop code and the real relay code
+            "who" -> println(link.who() ?: "")
+            "group" -> println(link.lockGroup() ?: "")
+            "presence" -> println(link.takePresence(a.chunked(2).map { it[0] to it[1].toDouble() }))
+            "devices" -> println(MiniJson.write(link.devices("Sim phone").map { linkedMapOf("id" to it.id, "pc" to it.pc, "me" to it.me, "name" to it.name, "mode" to it.mode,
+                "failover" to it.failover, "agoS" to it.agoS, "vn" to it.vn, "syncAgoS" to it.syncAgoS) }))
+            "mode" -> println(store.settings().buyMode + " " + store.settings().failover)
+            "state" -> println(link.state().second + " | behind " + link.pcSyncBehindS())
             "unlink" -> { link.unlink(); println("ok") }
             "dump" -> println(MiniJson.write(linkedMapOf("products" to store.products().associate { it.asin to linkedMapOf("n" to it.name, "c" to it.cap, "b" to it.buy, "w" to it.watch, "k" to it.kind, "purchased" to it.purchased, "year" to it.year, "set" to it.set, "q" to it.qty, "dSt" to it.dSt, "dPr" to it.dPr, "dAt" to it.dAt, "msrp" to it.msrp, "others" to it.others, "stock" to it.stock().first, "dImg" to it.dImg, "image" to it.image) },
                 "desktopBuys" to link.desktopBuys(), "state" to link.state().second, "linked" to link.linked(), "log" to store.log().takeLast(12))))

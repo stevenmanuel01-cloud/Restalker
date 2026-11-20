@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   # (v127, owner: "im getting email alerts which is not desired": GitHub e-mails the owner for every FAILED run. A failed build or
-  #  test now ends the run as finished, not failed - Claude reads the results itself; nothing is released unless every phone passed)
+  #  test now ends the run as finished, not failed - the results are read from the run itself; nothing is released unless every phone passed)
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40

@@ -31,9 +31,11 @@ object DeskLink {
         val st = RkApp.store().settings()
         // 2.3: amz = this device may buy NOW (its own choice: "pc" only when the PC stopped and it takes over); nm = its name for the others
         val l = link
-        val may = st.buying && st.watching && (st.buyMode != "pc" || (st.failover && l != null && !l.desktopBuys() && !l.pcHanded()))
+        // (1.0.4: outside this device's watch hours it does not buy - the PC and the other devices are told so)
+        val may = st.buying && st.watching && com.restalker.mobile.core.WatchHours.inside(st, System.currentTimeMillis()) &&
+            (st.buyMode != "pc" || (st.failover && l != null && !l.desktopBuys() && !l.pcHanded()))
         mapOf("amz" to may, "av" to BuildConfig.VERSION_CODE.toLong(), "au" to (Updater.mode(RkApp.app) == "silent"), "um" to Updater.mode(RkApp.app), "nt" to (alertChannel() ?: ""), "nm" to name(), "vn" to com.restalker.mobile.core.APP_VERSION)
-    }).also { link = it }
+    }, saveMessages = { !com.restalker.mobile.core.NtfyQuota.may(Quota.q, System.currentTimeMillis(), com.restalker.mobile.core.NtfyQuota.KEEP_FOR_URGENT) }).also { link = it }
 
     /** 2.3: this device only stands by - another phone / tablet is first in line, or (its choice "pc") the PC buys, handed Amazon to
      *  another device, or this one does not take over. Not linked: never. */
@@ -75,7 +77,49 @@ object DeskLink {
             val r = try { get().cycle() } catch (e: Exception) { "failed: ${e.message?.take(80)}" } finally { running = false }
             lastResult = r
             failsInRow = if (r == "ok" || r == "not linked") 0 else failsInRow + 1
+            // 1.0.4: the message service refused (429 = its limit) - ask it how many of the day's messages are left and when they start again
+            try { Quota.refresh(force = r.contains("429")) } catch (e: Exception) { }
             if (done != null) android.os.Handler(android.os.Looper.getMainLooper()).post { done(r) }
         }, "desk-link").start()
+    }
+}
+
+/** 1.0.4: what the free message service (ntfy.sh) says about this internet address's day - how many of its 250 messages are left and
+ *  when the count starts again (core/NtfyQuota.kt). Asked after a refusal (at most every 10 minutes) and every 3 hours while linked;
+ *  kept in the app's folder. Asking uses no message. */
+object Quota {
+    private const val FILE = "ntfy_quota.json"
+    @Volatile private var loaded = false
+    @Volatile private var kept: com.restalker.mobile.core.NtfyQuota.Q? = null
+    @Volatile private var askedAt = 0L
+    val q: com.restalker.mobile.core.NtfyQuota.Q? get() {
+        if (!loaded) { loaded = true; kept = try { com.restalker.mobile.core.NtfyQuota.fromMap(com.restalker.mobile.core.MiniJson.obj(RkApp.store().readFile(FILE))) } catch (e: Exception) { null } }
+        return kept
+    }
+    /** Tests: forget it. */
+    fun reset() { loaded = true; kept = null; askedAt = 0 }
+    fun set(v: com.restalker.mobile.core.NtfyQuota.Q?) { loaded = true; kept = v }
+
+    /** Call from a background thread. */
+    fun refresh(force: Boolean = false) {
+        if (BuildConfig.DEBUG) return                                   // (the test phones never ask the real service)
+        val now = System.currentTimeMillis()
+        if (now - askedAt < (if (force) 10 * 60_000L else 3 * 3_600_000L)) return
+        askedAt = now
+        val body = try {
+            val c = java.net.URL(com.restalker.mobile.core.NtfyQuota.URL).openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 15_000; c.readTimeout = 20_000; c.setRequestProperty("User-Agent", "RestalkerMobile")
+            try { if (c.responseCode != 200) null else c.inputStream.bufferedReader().use { it.readText().take(20_000) } } finally { c.disconnect() }
+        } catch (e: Exception) { null }
+        val v = com.restalker.mobile.core.NtfyQuota.parse(body, now) ?: return
+        kept = v; loaded = true
+        try { RkApp.store().writeFile(FILE, com.restalker.mobile.core.MiniJson.write(v.toMap())) } catch (e: Exception) { }
+        RkApp.changed()
+    }
+
+    fun status(): String {
+        val v = q ?: return "message service: not asked yet"
+        val t = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.US)
+        return "message service (ntfy, per internet address): ${v.left} of ${v.limit} messages left today, the count starts again ${if (v.resetAt > 0) t.format(java.util.Date(v.resetAt)) else "?"} (asked ${t.format(java.util.Date(v.at))})"
     }
 }

@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
     private var update = mutableStateOf<Pair<String, String>?>(null)
     private var reportResult = mutableStateOf<String?>(null)
     private var linkMsg = mutableStateOf<String?>(null)
-    /** 1.6: "Report a problem" first asks what went wrong (optional) - your words go to Claude with the report. */
+    /** 1.6: "Report a problem" first asks what went wrong (optional) - your words go with the report. */
     private var asking = mutableStateOf(false)
     private fun report() { asking.value = true }
     private fun sendReport(note: String) {
@@ -102,8 +102,10 @@ class MainActivity : ComponentActivity() {
         val n = note.replace(Regex("\\s+"), " ").trim().take(1500)
         Reporter.send(this, if (n.isEmpty()) "sent by you" else "sent by you - your note: $n", n) { ok ->
             reportResult.value = if (!ok) "Could not send it (no internet?). Try again."
-                else if (Reporter.toClaude()) "Sent to Claude.\nYour report code:\n${com.restalker.mobile.core.Report.code(RkApp.store())}\n\nTell Claude \"reported\" (the first time, also send this code)."
-                else "Sent to the Restalker team. Problems are looked at once a day - for help sooner, ask in the Restalker Discord (Settings, Discord)."
+                // 1.0.4 (owner: "it should be a generic message to allow automatic reporting, and sending a manual report"): the same plain words for everyone;
+                // the owner's devices also show their report code (it is how their reports are found)
+                else if (Reporter.direct()) "Report sent.\nYour report code:\n${com.restalker.mobile.core.Report.code(RkApp.store())}"
+                else "Report sent to the Restalker team. Problems are looked at once a day - for help sooner, ask in the Restalker Discord (Settings, Community)."
         }
     }
     private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
@@ -257,7 +259,7 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(note, { note = it }, minLines = 3, maxLines = 6, placeholder = { Text("For example: no pictures on the Hobbit box") },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("report-note"))
                 }
-            }, confirmButton = { Button(colors = Look.btn(), onClick = { asking.value = false; sendReport(note) }, modifier = Modifier.testTag("report-send")) { Text(if (Reporter.toClaude()) "Send to Claude" else "Send") } },
+            }, confirmButton = { Button(colors = Look.btn(), onClick = { asking.value = false; sendReport(note) }, modifier = Modifier.testTag("report-send")) { Text("Send") } },
                 dismissButton = { TextButton(onClick = { asking.value = false }) { Text("Cancel") } })
         }
         reportResult.value?.let { msg ->
@@ -353,10 +355,24 @@ class MainActivity : ComponentActivity() {
         val store = RkApp.store()
         val list = remember(r, st) { try { DeskLink.get().devices(DeskLink.name()) } catch (e: Exception) { emptyList() } }
         var renaming by remember { mutableStateOf(false) }
+        // 1.0.4 (owner, 2026-11-20: "it's showing old data for my pc and tablet. Both of these devices are currently active, so there may
+        // be a communication problem"): "heard" is now the newest sign of life (a post on the link, or the device's beat on the Restalker
+        // relay every 15 minutes), and when the link itself is behind this says so - and why, when the message service told us
+        val nowMs = System.currentTimeMillis()
+        val behind = remember(r) { try { DeskLink.get().pcSyncBehindS() } catch (e: Exception) { -1L } }
+        val quota = remember(r) { com.restalker.mobile.core.NtfyQuota.current(com.restalker.mobile.Quota.q, nowMs) }
+        val usedUp = quota != null && quota.left <= 0
         Column(Modifier.fillMaxWidth().then(if (inSection) Modifier else Modifier.background(Color.White, Look.card)).padding(16.dp).testTag("devices")) {
             if (!inSection) Text("Linked devices", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Text("Each phone or tablet has its own buying choice. Changing one here changes only that device.",
                 fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 2.dp))
+            if (behind >= 0 || usedUp) Text(
+                (if (usedUp) "Today's free messages for this internet connection are used up (${quota!!.limit} of ${quota.limit})" +
+                    (if (quota.resetAt > nowMs) " - they start again at ${hm(quota.resetAt)}" else "") + ". Until then your devices cannot send each other product changes. "
+                else "The PC is running, but its product updates are not arriving here (last ${com.restalker.mobile.core.Ago.words(behind * 1000)}). ") +
+                    "Watching and buying go on: each device looks for itself, and the shared checkout lock still makes sure only one of them orders.",
+                fontSize = 12.sp, lineHeight = 16.sp, color = Look.AmberText,
+                modifier = Modifier.padding(top = 8.dp).fillMaxWidth().background(Look.AmberSoft, RoundedCornerShape(10.dp)).padding(10.dp).testTag("link-health"))
             for (d in list) {
                 HorizontalDivider(color = Look.Line, modifier = Modifier.padding(vertical = 10.dp))
                 Column(Modifier.testTag(if (d.me) "dev-me" else if (d.pc) "dev-pc" else "dev-${d.id}")) {
@@ -364,16 +380,21 @@ class MainActivity : ComponentActivity() {
                         Text(d.name + if (d.me) " (this device)" else "", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
                         if (d.me) TextButton(onClick = { renaming = true }, modifier = Modifier.testTag("dev-rename")) { Text("Rename") }
                     }
-                    val alive = d.agoS < 20 * 60
+                    // (1.0.4: running = heard within 35 minutes - a device says "I am here" every 15)
+                    val alive = d.agoS < com.restalker.mobile.core.Link.PRES_FRESH.toLong()
                     Text(when {
-                        d.me -> "Version ${com.restalker.mobile.core.APP_VERSION}"
-                        else -> listOfNotNull(d.vn.takeIf { it.isNotBlank() }?.let { "Version $it" }, "heard ${agoS(d.agoS)}").joinToString(" · ")
-                    }, fontSize = 12.sp, color = if (d.me || alive) Look.Muted else Look.AmberText)
+                        d.me -> "Version ${shownVersion()}"
+                        else -> listOfNotNull(d.vn.takeIf { it.isNotBlank() }?.let { "Version $it" }, (if (alive) "running · " else "") + "heard ${agoS(d.agoS)}").joinToString(" · ")
+                    }, fontSize = 12.sp, color = if (d.me || alive) Look.Muted else Look.AmberText, modifier = Modifier.testTag(if (d.me) "dev-heard-me" else if (d.pc) "dev-heard-pc" else "dev-heard-${d.id}"))
                     if (d.pc) {
                         val handed = try { DeskLink.get().pcHanded() } catch (e: Exception) { false }
                         Text(if (handed) "Does not buy on Amazon now: a device below is set to Instead of PC. It keeps watching every store."
                             else "Buys on Amazon, and watches every store.", fontSize = 12.sp, color = Look.Ink, lineHeight = 16.sp,
                             modifier = Modifier.padding(top = 2.dp).testTag("dev-pc-line"))
+                    } else if (d.mode.isEmpty()) {
+                        // (1.0.4: known by its beat only - its own first update has not come over the link yet)
+                        Text("Linked. Its buying choice shows here once its first update has arrived.", fontSize = 12.sp, color = Look.Ink, lineHeight = 16.sp,
+                            modifier = Modifier.padding(top = 2.dp).testTag("dev-line-${d.id}"))
                     } else {
                         Text(modeLine(d.mode, d.failover), fontSize = 12.sp, color = Look.Ink, lineHeight = 16.sp,
                             modifier = Modifier.padding(top = 2.dp).testTag("dev-line-${if (d.me) "me" else d.id}"))
@@ -443,8 +464,8 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // 2.11 (owner: "I want to incorporate the logo into the app and not just as the icon to open")
-                        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_launcher), contentDescription = "Restalker",
-                            modifier = Modifier.padding(end = 12.dp).size(48.dp).clip(RoundedCornerShape(12.dp)).testTag("logo"))
+                        // 1.0.4 (owner: "Make the restalker icon slightly bigger, maybe 30%-50%"): 72 instead of 48 where it fits (logoDp)
+                        Logo(logoDp(), "logo")
                         Column(Modifier.weight(1f)) {
                             // 1.0 (owner: "My version of the app should clearly distinguish itself as "beta" whereas all other versions
                             // should be standard"): an amber BETA mark right after the version while this copy is newer than the one
@@ -471,19 +492,32 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     Spacer(Modifier.height(14.dp))
-                    Row(Modifier.fillMaxWidth().background(Look.NavyCard, RoundedCornerShape(16.dp)).padding(start = 16.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            val watched = products.count { it.watch }
-                            Text(if (st.watching) "Watching $watched product${if (watched == 1) "" else "s"}" else "Not watching", color = Color.White,
-                                fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                            val line = if (!st.watching) "Switch on to start" else svc?.notifier?.lastStatus?.ifBlank { null } ?: "starting..."
-                            Text(line, color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 17.sp, maxLines = 3, modifier = Modifier.testTag("status"))
-                            if (linked) Text(if (deskBuys) "Desktop linked · this device watches (Settings, Linked devices)" else "Desktop linked · this device buys", color = Look.Mint, fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp).testTag("linkchip"))
+                    // 1.0.4 (owner, 2026-11-20: "There should be an option to start/stop the app from running on the watch page. Right now
+                    // it's unclear if I swipe the app away if it continues to watch in the background"): the little switch became a
+                    // Stop / Start button that says what it does, and the line under it says what happens when the app is closed
+                    Column(Modifier.fillMaxWidth().background(Look.NavyCard, RoundedCornerShape(16.dp)).padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
+                        val inHours = remember(r) { com.restalker.mobile.core.WatchHours.inside(st, System.currentTimeMillis()) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                val watched = products.count { it.watch }
+                                Text(if (!st.watching) "Not watching" else if (!inHours) "Waiting for your watch hours" else "Watching $watched product${if (watched == 1) "" else "s"}", color = Color.White,
+                                    fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.testTag("watch-title"))
+                                val line = if (!st.watching) "Press Start to watch" else svc?.notifier?.lastStatus?.ifBlank { null } ?: "starting..."
+                                Text(line, color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 17.sp, maxLines = 3, modifier = Modifier.testTag("status"))
+                                if (linked) Text(if (deskBuys) "Desktop linked · this device watches (Settings, Linked devices)" else "Desktop linked · this device buys", color = Look.Mint, fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp).testTag("linkchip"))
+                            }
+                            Button(onClick = { setWatching(!st.watching) },
+                                colors = if (st.watching) ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Look.Ink) else Look.btn(),
+                                contentPadding = PaddingValues(horizontal = 14.dp),
+                                modifier = Modifier.padding(start = 8.dp).heightIn(min = 44.dp).semantics { stateDescription = if (st.watching) "on" else "off" }.testTag("watching")) {
+                                Icon(if (st.watching) Icons.Filled.Close else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
+                                Text(if (st.watching) "Stop" else "Start", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
                         }
-                        Switch(checked = st.watching, onCheckedChange = { setWatching(it) }, modifier = Modifier.testTag("watching"),
-                            colors = Look.sw())
+                        Text(if (st.watching) "Runs in the background - also after you close the app or swipe it away. Stop ends it."
+                            else "Stopped: nothing is watched or bought until you press Start.",
+                            color = Look.OnNavyDim, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp).testTag("watch-hint"))
                     }
                 }
             }
@@ -541,8 +575,11 @@ class MainActivity : ComponentActivity() {
             // 1.5 (owner: "the app does not show anything in stock when sorted. There are several items in stock, just above the cap" -
             // and: "an additional filter in the app for watched (separate from armed)"): In stock = for sale at ANY price (the phone's own
             // look or the linked desktop's, whichever is newer); Watched = watched, whether set to buy or not
-            val shown = products.filter { when (filter.intValue) { 1 -> it.inStock && !it.purchased; 2 -> it.buy; 3 -> it.watch; else -> true } }
-            val hot = shown.filter { it.inStock && !it.purchased }
+            // 1.0.4 (owner, 2026-11-20: "it shows items in stock though they aren't watched ... there should be an indicator of how old the
+            // data is"): "in stock NOW" = seen for sale in the last 6 hours (Product.hot). A product that is not watched is looked at once
+            // when the app starts, or by the linked PC - an older sighting stays on its card with its age, but is not "now"
+            val shown = products.filter { when (filter.intValue) { 1 -> it.hot(now) && !it.purchased; 2 -> it.buy; 3 -> it.watch; else -> true } }
+            val hot = shown.filter { it.hot(now) && !it.purchased }
             if (filter.intValue == 0 && hot.isNotEmpty()) {
                 // 1.0 (owner: '"Instock now" should be a collapsible field like the others'): it folds with a tap and stays folded, like the
                 // years (its count stays on the bar, and every year's bar still says how many of its products are in stock)
@@ -554,7 +591,7 @@ class MainActivity : ComponentActivity() {
             val years = shown.groupBy { Groups.of(it).first }.toList().sortedBy { Groups.yearRank(it.first) }
             for ((year, inYear) in years) {
                 val yKey = "y:$year"
-                stickyHeader(key = yKey) { GroupHeader(year, inYear.size, inYear.count { it.inStock && !it.purchased }, yKey in folded, "grp-$year", sub = groupWords(inYear)) { fold(yKey) } }
+                stickyHeader(key = yKey) { GroupHeader(year, inYear.size, inYear.count { it.hot(now) && !it.purchased }, yKey in folded, "grp-$year", sub = groupWords(inYear)) { fold(yKey) } }
                 if (yKey in folded) continue
                 for ((set, inSet) in inYear.groupBy { Groups.of(it).second }.toList().sortedBy { it.first.lowercase() }) {
                     val sKey = "s:$year|$set"
@@ -645,10 +682,25 @@ class MainActivity : ComponentActivity() {
             Text("Getting started", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Step(notes, "Allow notifications", "Allow") { openNotifSettings() }
             Step(signed, "Sign in to Amazon in the app", "Sign in") { openBrowser(BrowserActivity.SIGNIN_URL) }
-            Step(batt, "Let it watch all day (battery)", "Allow") { openBattery() }
+            Step(batt, "Let it keep running in the background (battery)", "Allow") { openBattery() }
             Step(products.isNotEmpty(), "Add a product, or link the desktop", "Add") { onAdd() }
             Step(practiced, "Run one Practice checkout (Settings, Amazon, buying and this phone)", null) {}
             if (!batt) Text("Samsung / Xiaomi / OnePlus: also set Restalker to \"Unrestricted\" in the phone's battery settings.", fontSize = 12.sp, color = Look.Muted)
+        }
+    }
+
+    /** 1.0.4: one time of the watch hours - the time, and half an hour earlier / later. */
+    @Composable
+    fun HourRow(label: String, min: Int, tag: String, set: (Int) -> Unit) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(label, fontSize = 12.sp, color = Look.Muted)
+                Text(com.restalker.mobile.core.WatchHours.label(min), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.testTag("$tag-now"))
+            }
+            OutlinedButton(onClick = { set(com.restalker.mobile.core.WatchHours.step(min, -30)) }, contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.heightIn(min = 44.dp).testTag("$tag-minus")) { Text("Earlier", fontSize = 13.sp, maxLines = 1) }
+            OutlinedButton(onClick = { set(com.restalker.mobile.core.WatchHours.step(min, 30)) }, contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.padding(start = 6.dp).heightIn(min = 44.dp).testTag("$tag-plus")) { Text("Later", fontSize = 13.sp, maxLines = 1) }
         }
     }
 
@@ -665,8 +717,11 @@ class MainActivity : ComponentActivity() {
     private fun chip(p: Product): Triple<String, Color, Color> {
         val (st, pr, _) = p.stock()
         val money = pr?.let { " · \$${Engine.money(it)}" } ?: ""
+        // 1.0.4: seen for sale longer ago than 6 hours - said as the past, in grey (its age is on the line below)
+        val old = p.inStock && !p.hot(System.currentTimeMillis())
         return when {
             p.purchased && p.qty <= 1 -> Triple("Bought", Look.TealSoft, Look.TealText)
+            old -> Triple((if (st == "in") "Was in stock" else "Was over cap") + money, Look.GreySoft, Look.GreyText)
             st == "in" -> Triple("In stock$money", Look.TealSoft, Look.TealText)
             st == "over" -> Triple("Over cap$money", Look.OrangeSoft, Look.OrangeText)
             st == "out" -> Triple("Out of stock", Look.GreySoft, Look.GreyText)
@@ -690,7 +745,8 @@ class MainActivity : ComponentActivity() {
         p.purchased -> "Bought${p.orderNumber?.let { " · order $it" } ?: ""}"
         p.attempted -> "An order may have been placed - check Amazon"
         p.lockedUntil > System.currentTimeMillis() -> "Paused after failed tries until ${hm(p.lockedUntil)}"
-        !p.watch -> "Off (not watched)"
+        // 1.0.4 (owner: "there should be an indicator of how old the data is"): a product that is not watched says when it was last seen
+        !p.watch -> "Off (not watched) · " + seenText(p).ifEmpty { "not looked at yet" }
         p.buy && deskBuys -> listOf(qtyText(p).ifEmpty { "Buy on" }, "the desktop buys it", seenText(p)).filter { it.isNotEmpty() }.joinToString(" · ")
         p.buy -> listOf(qtyText(p).ifEmpty { "Buy on" }, seenText(p)).filter { it.isNotEmpty() }.joinToString(" · ")
         else -> listOf("Alerts only", seenText(p)).filter { it.isNotEmpty() }.joinToString(" · ")
@@ -1379,8 +1435,41 @@ class MainActivity : ComponentActivity() {
     }
 
     // =================================================================== Bought / Activity
+    /** 1.0.4 (owner, 2026-11-20: "Make the restalker icon slightly bigger, maybe 30%-50%, depending on what fits nicely on the screen size
+     *  without causing wrapping text ... easily recognizable and defined. It should also occur on all tabs"): Bought, Activity and
+     *  Settings start with the same navy bar as Watch - the logo, the tab's name and the version. */
     @Composable
-    fun TabHeader(text: String) = Text(text, fontWeight = FontWeight.Bold, fontSize = 24.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 10.dp))
+    fun TabHeader(text: String) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth().background(Look.Navy).padding(start = 20.dp, end = 16.dp, top = 16.dp, bottom = 16.dp).testTag("brand-$text"),
+                verticalAlignment = Alignment.CenterVertically) {
+                Logo(logoDp(), "logo-$text")
+                Column(Modifier.weight(1f)) {
+                    Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 26.sp)
+                    Text("Restalker Mobile v" + shownVersion(), color = Look.OnNavyDim, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp).testTag("brand-version-$text"))
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+
+    /** 1.0.4: the logo's size in the header - 72 (half again as big as 1.0.3's 48) on a phone of usual width, 64 on a narrow one or
+     *  with big text, 56 on a very narrow one - so the title beside it keeps its lines. */
+    @Composable
+    fun logoDp(): Int {
+        val cfg = androidx.compose.ui.platform.LocalConfiguration.current
+        return when {
+            cfg.screenWidthDp >= 400 && cfg.fontScale <= 1.15f -> 72
+            cfg.screenWidthDp >= 350 && cfg.fontScale <= 1.3f -> 64
+            else -> 56
+        }
+    }
+
+    @Composable
+    fun Logo(size: Int, tag: String) {
+        androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_launcher), contentDescription = "Restalker",
+            modifier = Modifier.padding(end = 12.dp).size(size.dp).clip(RoundedCornerShape((size / 4).dp)).testTag(tag))
+    }
 
     /** 1.0: how the Bought list is grouped now (Buys.ALL / PRODUCT / STORE / DEVICE). */
     private val boughtBy = mutableIntStateOf(Buys.ALL)
@@ -1451,7 +1540,7 @@ class MainActivity : ComponentActivity() {
         val days = remember(r) { L.eventsByDay(L.events(RkApp.store().log().filter { L.important(it) })) }
         val now = System.currentTimeMillis()
         LazyColumn(Modifier.fillMaxSize().testTag("log")) {
-            // (1.0.2: "Send to Claude" / "Report a problem" moved to Settings, Help and about - Activity shows only what happened)
+            // (1.0.2: the report button moved to Settings, Help and about - Activity shows only what happened)
             item { TabHeader("Activity") }
             if (days.isEmpty()) item { MascotNote("Nothing yet - restocks, checkouts and purchases show up here.") }
             // 1.0 (owner: "Activities are now sorted correctly, but should also be collapsible"): a day folds with a tap on its bar (the
@@ -1513,6 +1602,28 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (linked) { SubHead("Each device and its buying choice"); LinkedDevices(st, r, inSection = true) }
+                    // 1.0.4 (owner, 2026-11-20: "If a user starts using the program with a mobile device, how do we get them to download and
+                    // link their PC? ... Maybe a manual email with a link the program can send which the user can open on their PC?"): the
+                    // steps, and "Send me the link" (the phone's own share sheet: e-mail it to yourself, open it on the PC). The link itself
+                    // is made the usual way round - the PC shows the code, this phone scans it - so no camera is needed on the PC, and
+                    // this phone's products go to the PC at the first link.
+                    else {
+                        SubHead("No Restalker on your PC yet?")
+                        Column(Modifier.fillMaxWidth().padding(16.dp).testTag("getpc")) {
+                            Text("Restalker for Windows watches every store (Amazon, Target, Walmart, Best Buy, GameStop) and the restock trackers all day, " +
+                                "and tells this phone at once. It is free, and each one works on its own too.", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted)
+                            listOf("Tap Send me the link and e-mail it to yourself.", "On the PC, open the e-mail and the link: the page has the download and the 4 start-up steps.",
+                                "In Restalker on the PC click Phone - it shows a code.", "Here, tap Scan the desktop's QR code (above) and point the phone at it. Your products here go to the PC.")
+                                .forEachIndexed { i, t -> Text("${i + 1}. $t", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Ink, modifier = Modifier.padding(top = 4.dp)) }
+                            Button(onClick = {
+                                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "Restalker for my PC")
+                                    .putExtra(Intent.EXTRA_TEXT, "Restalker for Windows - open this on the PC:\n$PC_URL\n\nThen in Restalker on the PC click Phone, and scan the code it shows with the app " +
+                                        "(Settings, Linked devices, Scan the desktop's QR code)."), "Send me the link"))
+                            }, colors = Look.btn(), modifier = Modifier.padding(top = 10.dp).heightIn(min = 44.dp).testTag("getpc-send")) { Text("Send me the link", fontWeight = FontWeight.SemiBold) }
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(PC_URL.removePrefix("https://"), fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 6.dp).testTag("getpc-url")) }
+                        }
+                    }
                 }
                 // ---- Amazon and buying
                                 // ---- 2.0: a practice checkout with ANY Amazon item in stock (nothing is bought)
@@ -1546,6 +1657,33 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     HorizontalDivider(color = Look.Line)
+                    // 1.0.4 (owner, 2026-11-20: "Is it possible to allow the user to select times of the day to start and stop the watcher
+                    // automatically? It might be nice to allow the device to look hard overnight when it's not otherwise in use")
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).testTag("hours")) {
+                        val WH = com.restalker.mobile.core.WatchHours
+                        val setHours: ((Settings) -> Settings) -> Unit = { f ->
+                            val nu = store.setSettings(f)
+                            store.log("Watch hours: ${WH.words(nu)}.")
+                            WatchService.instance?.let { it.hoursCheck(); it.engine.send(Engine.Cmd.Wake) }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Watch hours", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                Text(WH.words(st) + if (!WH.inside(st, System.currentTimeMillis())) " · outside them now" else "", fontSize = 12.sp, color = Look.Muted,
+                                    modifier = Modifier.testTag("hours-now"))
+                            }
+                            FilterChip(!st.hoursOn, { if (st.hoursOn) setHours { it.copy(hoursOn = false) } }, { Text("All day", fontSize = 13.sp) }, Modifier.padding(start = 4.dp).testTag("hours-all"))
+                            FilterChip(st.hoursOn, { if (!st.hoursOn) setHours { it.copy(hoursOn = true) } }, { Text("Set hours", fontSize = 13.sp) }, Modifier.padding(start = 4.dp).testTag("hours-set"))
+                        }
+                        if (st.hoursOn) {
+                            HourRow("Start", st.hoursFrom, "hours-from") { v -> setHours { it.copy(hoursFrom = v) } }
+                            HourRow("Stop", st.hoursTo, "hours-to") { v -> setHours { it.copy(hoursTo = v) } }
+                            Text("Outside these hours this device does not look or buy by itself (Check now and Buy now still work; a linked PC keeps going). " +
+                                "For a hard look overnight: set the night's hours here and choose Look every 60 s above.",
+                                fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp, modifier = Modifier.padding(top = 6.dp))
+                        }
+                    }
+                    HorizontalDivider(color = Look.Line)
                     SwitchRow("Wi-Fi only", "Saves mobile data", st.wifiOnly, "wifionly") { on -> store.setSettings { it.copy(wifiOnly = on) }; store.log("Wi-Fi only switched ${if (on) "ON" else "OFF"}.") }
                     SubHead("Practice checkout")
                     Column(Modifier.fillMaxWidth().padding(16.dp).testTag("practice-any")) {
@@ -1576,7 +1714,9 @@ class MainActivity : ComponentActivity() {
                         store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true, explicit = true) }
                     HorizontalDivider(color = Look.Line)
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                        Step(batt, "Watching all day allowed (battery)", "Allow") { openBattery() }
+                        // 1.0.4 (owner: "I'm not sure I understand "watching all day""): said in plain words - this is the phone's battery
+                        // setting that lets the app keep running in the background (without it Android puts it to sleep)
+                        Step(batt, if (batt) "Android lets Restalker keep running in the background (battery setting)" else "Android may put Restalker to sleep - allow it to keep running (battery setting)", "Allow") { openBattery() }
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(onClick = { openBrowser(null) }, modifier = Modifier.testTag("browser")) { Text("Show browser") }
                             TextButton(onClick = {
@@ -1659,13 +1799,14 @@ class MainActivity : ComponentActivity() {
                 }
                 // ---- 2.6 (owner: 'a section at the bottom of settings for "about"')
                                 Section("about", "Help and about", "Restalker Mobile v" + shownVersion() + (if (DeskLink.master()) " · master" else "") + " · problems, words used", mascot = true) {
-                    SwitchRow(if (Reporter.toClaude()) "Send problems to Claude" else "Send problems to the Restalker team",
-                        if (Reporter.toClaude()) "Automatic, at most every 30 min" else "Automatic, looked at once a day (nothing personal is sent)", st.autoReport, "autoreport") { on ->
+                    // 1.0.4 (owner: "a generic message to allow automatic reporting, and sending a manual report")
+                    SwitchRow("Send problem reports automatically",
+                        if (Reporter.direct()) "When something goes wrong - at most one every 2 hours (nothing personal is sent)" else "When something goes wrong - looked at once a day (nothing personal is sent)", st.autoReport, "autoreport") { on ->
                         store.setSettings { it.copy(autoReport = on) }; store.log("Automatic problem reports switched ${if (on) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
                     Row(Modifier.fillMaxWidth().clickable { report() }.padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 24.dp).testTag("report"),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (Reporter.toClaude()) "Send a report to Claude now" else "Report a problem now", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                        Text("Send a report now", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                         Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Look.Muted)
                     }
                     SubHead("Words used")
@@ -1817,10 +1958,14 @@ class MainActivity : ComponentActivity() {
                 "Buy" to "Restalker orders it by itself when it is in stock at or under your cap (one order, unless you chose 2 or 3).",
                 "Cap" to "The most you will pay. Needed only to buy.",
                 "In stock" to "Seen for sale - by this device, your PC or another Restalker.",
+                "In stock now" to "Seen for sale in the last 6 hours. Older than that it says \"Was in stock\" in grey.",
+                "Checked / seen ... ago" to "How old that look is. A watched product is looked at all day; one that is not watched only once when the app opens, or by your linked PC.",
                 "Over cap" to "For sale, but above your cap - not bought.",
                 "Missed (sold out)" to "It sold out at Amazon before the order went through. Nothing was bought.",
                 "Checkout (2 tries)" to "Restalker tried twice during the same restock.",
                 "Another of your devices buys it" to "Your PC or another linked phone is the one that orders; this one stands by.",
+                "Heard ... ago" to "When a linked device last gave a sign of life (it says \"I am here\" every 15 minutes).",
+                "Watch hours" to "The times of day this device watches by itself (Settings, Amazon, buying and this phone). All day unless you set them.",
                 "b (as in v1.0.2b)" to "A beta: a version only your own devices have until you release it to everyone.",
             ).forEach { (w, m) ->
                 Text(androidx.compose.ui.text.buildAnnotatedString {
@@ -1894,7 +2039,8 @@ class MainActivity : ComponentActivity() {
         SwitchRow("Restocks", "In stock at or under your cap (when it is not bought by itself)", st.nRestock, "n-restock") { on ->
             store.setSettings { it.copy(nRestock = on) }; store.log("Restock messages switched ${if (on) "ON" else "OFF"}.") }
         HorizontalDivider(color = Look.Line)
-        SwitchRow("Price drops", "For sale over your cap, but at least 5% cheaper than before", st.nDrop, "n-drop") { on ->
+        // 1.0.4 (owner: "the alert option should include things that are under our cap as well ... watched but not armed")
+        SwitchRow("Price drops", "A watched product gets at least 5% cheaper - over your cap, or under it when it is not set to Buy", st.nDrop, "n-drop") { on ->
             store.setSettings { it.copy(nDrop = on) }; store.log("Price drop messages switched ${if (on) "ON" else "OFF"}.") }
         HorizontalDivider(color = Look.Line)
         SwitchRow("Purchases", "Bought (or not), and practice checkouts", st.nBuy, "n-buy") { on ->
@@ -1907,22 +2053,33 @@ class MainActivity : ComponentActivity() {
         SwitchRow("Remind me daily", "The red marks of things that need you come back each day until they are done", st.attnDaily, "attn-daily") { on ->
             store.setSettings { it.copy(attnDaily = on) }; attnTick.intValue++ }
         HorizontalDivider(color = Look.Line)
-        // the watching notice (1.5 / 2.0 / 2.12): Android requires a notice while an app watches all day - it can be tucked away completely
+        // the watching notice (1.5 / 2.0 / 2.12): Android requires a notice while an app watches all day
         SwitchRow("Show a \"watching\" icon", if (st.runIcon) "An icon at the top while it watches" else
-            "No icon, no sound, not on the lock screen - just a line at the very bottom of your notifications (swipe it away and it stays away)",
+            "No icon, no sound, not on the lock screen - just a line at the very bottom of your notifications",
             st.runIcon, "runicon") { on ->
             store.setSettings { it.copy(runIcon = on, noticeHidden = if (on) false else it.noticeHidden) }; store.log("Running icon switched ${if (on) "ON" else "OFF"}.")
             WatchService.instance?.notifier?.refreshNotice()
         }
+        HorizontalDivider(color = Look.Line)
+        // 1.0.4 (owner, 2026-11-20: "I still have this constant message that pops up all the time in my notifications bar. I know the
+        // program is running so I don't think I need this to continue to pop up"): Android puts the notice up again each time watching
+        // starts (an update, a restart) and an app may not take its own down - a swipe only hides it until then. The phone's own switch
+        // for it is the one thing that keeps it away: this row opens that page, and says when it is done.
+        val noticeOff = try { Notifier.noticeOff(this@MainActivity) } catch (e: Exception) { false }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text("\"Restalker is watching\" notice", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Text(if (noticeOff) "✓ Switched off for good - Restalker keeps watching without it."
+                    else "Android shows it again each time watching starts (after an update or a restart). To switch it off for good: tap Hide it, then turn off the switch on the page that opens. Watching goes on.",
+                    fontSize = 12.sp, color = if (noticeOff) Look.Good else Look.Muted, lineHeight = 16.sp, modifier = Modifier.testTag("notice-state"))
+            }
+            if (Build.VERSION.SDK_INT >= 26) OutlinedButton(onClick = {
+                try { startActivity(Notifier.noticeSettings(this@MainActivity)) } catch (e: Exception) { openNotifSettings() }
+            }, contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.heightIn(min = 44.dp).testTag("notice-off")) { Text(if (noticeOff) "Show it" else "Hide it", fontSize = 13.sp, maxLines = 1) }
+        }
         FlowRow(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (Build.VERSION.SDK_INT >= 26) TextButton(onClick = {
-                try { startActivity(Intent(AndroidSettings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, packageName)
-                    .putExtra(AndroidSettings.EXTRA_CHANNEL_ID, Notifier.noticeChannel())) } catch (e: Exception) { openNotifSettings() }
-            }, modifier = Modifier.testTag("notice-off")) { Text("Hide the watching line completely") }
             TextButton(onClick = { Notifier.test(this@MainActivity); store.log("Test message sent.") }, modifier = Modifier.testTag("testmsg")) { Text("Test message") }
         }
-        if (Build.VERSION.SDK_INT >= 26) Text("\"Hide the watching line completely\" opens the phone's own switch for it: switch it off there - watching goes on.",
-            fontSize = 11.sp, color = Look.Muted, lineHeight = 15.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp))
     }
 
     /** 2.9: Settings - the person's ntfy alerts channel: set it up once; the code, a QR for other devices, open in the ntfy app, a test. */
@@ -1981,10 +2138,8 @@ class MainActivity : ComponentActivity() {
     } catch (e: Exception) { null }
 
     private fun hm(t: Long) = SimpleDateFormat("h:mm a", Locale.US).format(Date(t))
-    private fun ago(t: Long): String {
-        val s = (System.currentTimeMillis() - t) / 1000
-        return when { s < 60 -> "${s}s ago"; s < 3600 -> "${s / 60} min ago"; else -> SimpleDateFormat("MMM d h:mm a", Locale.US).format(Date(t)) }
-    }
+    /** 1.0.4: "54s ago", "12 min ago", "6 h ago", "3 days ago" (was a date and time after an hour - an age reads at a glance). */
+    private fun ago(t: Long): String = com.restalker.mobile.core.Ago.words(System.currentTimeMillis() - t)
 
     companion object {
         @Volatile var lookedAtStart = false          // 2.15: the start-up look - once per start of the app
@@ -1995,6 +2150,8 @@ class MainActivity : ComponentActivity() {
         const val SHARE_URL = "https://github.com/stevenmanuel01-cloud/Restalker/releases/latest"
         const val UPDATE_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/latest.json"
         const val RELEASES = "https://github.com/stevenmanuel01-cloud/Restalker/releases"
+        /** 1.0.4: where the PC program is downloaded (the README's part for it) - "Send me the link" sends this. */
+        const val PC_URL = "https://github.com/stevenmanuel01-cloud/Restalker#get-the-pc-program-windows"
     }
 }
 

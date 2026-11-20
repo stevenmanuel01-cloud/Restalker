@@ -5,7 +5,7 @@ package com.restalker.mobile.core
  *  counting up, and updates go by the code alone (UpdatePlan), so every device still sees 1.0.0 as the newer one.
  *  THREE parts on purpose (1.0.0, 1.0.1, ...): the first versions of 2026-11-16/17 were 1.0 - 1.8 and their releases (mobile-v1.0 ...
  *  mobile-v1.8) are still on GitHub; a two-part 1.x name would meet its old release and never be published. */
-const val APP_VERSION = "1.0.3"
+const val APP_VERSION = "1.0.4"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -58,6 +58,7 @@ data class Product(
     val cImg: String = "",                // 2.8: the central list's picture (TCGplayer's catalogue photo of exactly this product)
     val dropRef: Double? = null,          // 2.12: the price a price drop is measured from (PriceDrop) and when it was set
     val dropAt: Long = 0,
+    val dropSt: String = "",              // 1.0.4: how it was for sale when that mark was set - "in" (at or under the cap) / "over" / ""
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -78,7 +79,7 @@ data class Product(
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
         "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
         "msrp" to msrp, "tcg" to tcg, "tcgUrl" to tcgUrl, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg, "cImg" to cImg,
-        "dropRef" to dropRef, "dropAt" to dropAt,
+        "dropRef" to dropRef, "dropAt" to dropAt, "dropSt" to dropSt,
     )
 
     /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
@@ -88,8 +89,15 @@ data class Product(
     }
     val inStock: Boolean get() = stock().first.let { it == "in" || it == "over" }
 
+    /** 1.0.4 (owner, 2026-11-20: "it shows items in stock though they aren't watched ... there should be an indicator of how old the data
+     *  is"): for sale NOW - seen for sale (at any price) within the last [HOT_FRESH_MS]. A product that is not watched is looked at only
+     *  once when the app starts (Engine.BASELINE_FRESH: the same 6 hours) or by the linked PC - what was seen longer ago than that is
+     *  still shown on its card, with its age, but no longer counted as "in stock now". */
+    fun hot(now: Long): Boolean = inStock && now - stock().third <= HOT_FRESH_MS
+
     companion object {
         val SHAPES = setOf("box", "bundle", "pack")
+        const val HOT_FRESH_MS = 6 * 3_600_000L
         fun fromMap(m: Map<String, Any?>): Product? {
             val id = m["id"].asStr() ?: return null
             val asin = m["asin"].asStr() ?: return null
@@ -113,6 +121,7 @@ data class Product(
                 dImg = Pics.desk(m["dImg"].asStr()) ?: "",
                 cImg = m["cImg"].asStr()?.takeIf { Pics.validAny(it) } ?: "",
                 dropRef = m["dropRef"].asDouble()?.takeIf { it > 0 && it < 100_000 }, dropAt = m["dropAt"].asLong() ?: 0,
+                dropSt = (m["dropSt"].asStr() ?: "").takeIf { it == "in" || it == "over" } ?: "",
             )
         }
     }
@@ -136,7 +145,7 @@ data class Settings(
     val snoozeUntil: Long = 0,            // restock messages silenced until then
     val wifiOnly: Boolean = false,        // look only while on Wi-Fi (saves mobile data)
     val signinNeededAt: Long = 0,         // Amazon asked to sign in: no checkout until you opened the sign-in (or 1 hour passed)
-    val reportTopic: String = "",         // this phone's private report channel (made once): problem reports go to Claude through it
+    val reportTopic: String = "",         // this phone's private report channel (made once): the owner's devices send their problem reports through it
     val autoReport: Boolean = true,       // send a problem report by itself when something goes wrong (at most one every 30 minutes)
     val reportAt: Long = 0,
     val cooldownUntil: Long = 0,          // Amazon showed a robot check / slowed us down: no page until then
@@ -168,13 +177,20 @@ data class Settings(
     // away. Icons should refresh for anything left outstanding ... each day unless the user manually disables the option")
     val attnDaily: Boolean = true,
     val attnSeen: Map<String, String> = emptyMap(),      // what was tapped -> on which day (yyyy-MM-dd)
+    // 1.0.4 (owner, 2026-11-20: "allow the user to select times of the day to start and stop the watcher automatically ... look hard
+    // overnight when it's not otherwise in use"): watch only between two times of day (minutes after midnight, this device's own clock);
+    // off = all day. From later than To = over midnight (10:00 PM - 7:00 AM).
+    val hoursOn: Boolean = false,
+    val hoursFrom: Int = 22 * 60,
+    val hoursTo: Int = 7 * 60,
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
         "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
         "ordersReadAt" to ordersReadAt, "ordersKnown" to ordersKnown, "runIcon" to runIcon, "autoUpdate" to autoUpdate,
         "buyMode" to buyMode, "buyModeAt" to buyModeAt, "failover" to failover, "deviceName" to deviceName, "crowd" to crowd, "masterCode" to masterCode,
         "alertTopic" to alertTopic, "alertsOn" to alertsOn, "nRestock" to nRestock, "nDrop" to nDrop, "nBuy" to nBuy, "nNeed" to nNeed,
-        "noticeHidden" to noticeHidden, "noticeV" to 1, "modeV" to modeV, "attnDaily" to attnDaily, "attnSeen" to attnSeen)
+        "noticeHidden" to noticeHidden, "noticeV" to 1, "modeV" to modeV, "attnDaily" to attnDaily, "attnSeen" to attnSeen,
+        "hoursOn" to hoursOn, "hoursFrom" to hoursFrom, "hoursTo" to hoursTo)
     companion object {
         const val MIN_INTERVAL = 60
         val BUY_MODES = listOf("pc", "phone", "both")
@@ -189,7 +205,9 @@ data class Settings(
                 (m["alertTopic"].asStr() ?: "").takeIf { NtfyAlerts.ok(it) } ?: "", m["alertsOn"] == true,
                 nRestock = m["nRestock"] != false, nDrop = m["nDrop"] == true, nBuy = m["nBuy"] != false, nNeed = m["nNeed"] != false,
                 noticeHidden = m["noticeHidden"] == true, modeV = (m["modeV"].asLong() ?: 0).toInt(), attnDaily = m["attnDaily"] != false,
-                attnSeen = (m["attnSeen"].asMap() ?: emptyMap()).entries.take(50).mapNotNull { (k, v) -> v.asStr()?.let { k.take(60) to it.take(10) } }.toMap())
+                attnSeen = (m["attnSeen"].asMap() ?: emptyMap()).entries.take(50).mapNotNull { (k, v) -> v.asStr()?.let { k.take(60) to it.take(10) } }.toMap(),
+                hoursOn = m["hoursOn"] == true, hoursFrom = ((m["hoursFrom"].asLong() ?: (22 * 60L)).toInt()).coerceIn(0, 1439),
+                hoursTo = ((m["hoursTo"].asLong() ?: (7 * 60L)).toInt()).coerceIn(0, 1439))
         }
     }
 }

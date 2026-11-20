@@ -63,6 +63,21 @@ jobs:
           # (1.0.1: its page starts with the download link - also for a version published before that)
           python3 android/ci/release_body.py "$V" > /tmp/release_body.md && gh release edit "mobile-v$V" --notes-file /tmp/release_body.md || echo "PAGE TEXT NOT CHANGED (mobile-v$V)"
           gh release edit "mobile-v$V" --prerelease=false --latest && echo "DOWNLOAD PAGE: mobile-v$V is the latest release" || echo "DOWNLOAD PAGE NOT CHANGED (mobile-v$V)"
+      # v145: the PC program as one download for a new user (someone who starts with the phone app) - made from the version that just
+      # went to everyone, with the program's own "copy for a new user". Its address never changes (README, the app's "Send me the
+      # link"). It is not the page's "latest" release: that stays the phone app. Never fails the job.
+      - name: The PC download for new users
+        if: steps.copy.outputs.pc == 'True'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(python3 -c "import json;print(json.load(open('latest.json'))['version'])")
+          if python3 tools/pc_starter.py "releases/restalker_${V}_update.zip" /tmp/Restalker-PC.zip; then
+            gh release view pc >/dev/null 2>&1 || gh release create pc --title "Restalker for Windows" --latest=false --notes "Download Restalker-PC.zip, unzip it, and read START HERE.txt in the Restalker folder. After that Restalker updates itself."
+            gh release upload pc /tmp/Restalker-PC.zip --clobber && gh release edit pc --title "Restalker for Windows ($V)" --latest=false && echo "PC DOWNLOAD: $V" || echo "PC DOWNLOAD NOT CHANGED"
+          else
+            echo "PC DOWNLOAD NOT MADE ($V)"
+          fi
       - name: Tell every PC at once (the release channel)
         if: steps.copy.outputs.pc == 'True'
         env:

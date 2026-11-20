@@ -6,7 +6,13 @@
 3. Open Restalker. After that it updates itself.
 
 ## Get the PC program (Windows)
-Ask someone who has it: in Restalker, **Copy** &rarr; *Download the copy for a new user*. Unzip it and start Restalker.
+1. On your Windows PC, download **[Restalker for Windows](https://github.com/stevenmanuel01-cloud/Restalker/releases/download/pc/Restalker-PC.zip)** and unzip it (for example into Documents).
+2. Open the `Restalker` folder and read **START HERE.txt** - three steps, about 10 minutes, once. After that Restalker updates itself.
+3. Have the phone app already? In Restalker on the PC press **Phone** (top right); in the app open **Settings** &rarr; **Linked devices** &rarr; **Scan the desktop's QR code**. Your products go to the PC by themselves.
+
+(The download does not open? Ask someone who has Restalker: **Copy** &rarr; *Download the copy for a new user*.)
+
+How everything works: **[the guide](GUIDE.md)**.
 
 ---
 # Restalker

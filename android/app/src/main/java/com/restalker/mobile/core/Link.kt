@@ -109,6 +109,8 @@ data class LinkRec(val a: String, val n: String, val c: Double, val b: Boolean, 
 class Link(private val store: Store, private val net: LinkNet,
            /** 2.0: what this phone tells the others: amz = it may buy (buying + watching on), av = app version code, au = it updates itself */
            private val me: () -> Map<String, Any?> = { emptyMap() },
+           /** 1.0.4: few of the day's free messages are left (NtfyQuota) - the hourly "still here" post waits; a change still goes out. */
+           private val saveMessages: () -> Boolean = { false },
            private val clockMs: () -> Long = System::currentTimeMillis) {
     companion object {
         const val SERVER = "https://ntfy.sh"
@@ -119,6 +121,7 @@ class Link(private val store: Store, private val net: LinkNet,
         const val TOMB_KEEP = 60 * 86400.0
         const val PEND_RETRY = 5 * 60.0
         const val PHONE_ALIVE = BEAT + 15 * 60.0  // 2.0: another phone / tablet counts as there while heard within this (it posts every hour)
+        const val PRES_FRESH = 35 * 60.0          // 1.0.4: a device's beat on the relay (every 15 minutes) counts as "running now" this long
         private val ASIN = Regex("[A-Z0-9]{10}")
     }
 
@@ -127,7 +130,65 @@ class Link(private val store: Store, private val net: LinkNet,
     /** What the buy decision needs, kept outside the lock (a round can wait on the network; a checkout must never wait for it). */
     @Volatile private var snap: Triple<Boolean, Map<String, Any?>, Long>? = null     // (linked, peer, when read)
     @Volatile private var snapPhones: Pair<String, Map<String, Map<String, Any?>>> = "" to emptyMap()    // 2.0: (my device id, the other phones)
-    private fun remember(s: St) { snap = Triple(LinkCrypto.parse(s.code) != null, s.peer, clockMs()); snapPhones = s.dev to s.phones.toMap() }
+    /** 1.0.4: this link's code and this device's id, kept outside the lock (the presence beat must never wait for a round). */
+    @Volatile private var ident: Pair<String, String>? = null
+    private fun remember(s: St) {
+        snap = Triple(LinkCrypto.parse(s.code) != null, s.peer, clockMs()); snapPhones = s.dev to s.phones.toMap()
+        ident = if (LinkCrypto.parse(s.code) != null) s.code to s.dev else null
+    }
+
+    // ---- 1.0.4: presence (owner, 2026-11-20: "it's showing old data for my pc and tablet. Both of these devices are currently active
+    // ... Confirm the devices can see and report active links"). "Heard" was only the time of a device's last post on the link channel -
+    // and the free message service refuses posts once its day's 250 are used, so a PC that was running looked silent for hours. Now
+    // every linked device also says "I am here" to the Restalker relay every 15 minutes (with the "active now" beat it already sends -
+    // no message is used): its link group (made from the link secret; no one else can guess it) and a few words about itself (its name,
+    // version and kind), SEALED with the link secret - the relay sees only noise. Each device gets the others' beats back and shows the
+    // newest sign of life. Buying decisions still go by the link channel only, as before.
+    data class Pres(val d: String, val r: String, val nm: String, val vn: String, val at: Double) {
+        fun toMap(): Map<String, Any?> = linkedMapOf("d" to d, "r" to r, "nm" to nm, "vn" to vn, "at" to at)
+    }
+    private val PRES_FILE = "presence.json"
+    @Volatile private var pres: Map<String, Pres> = try {
+        (MiniJson.obj(store.readFile(PRES_FILE)) ?: emptyMap()).values.mapNotNull { v ->
+            val m = v.asMap() ?: return@mapNotNull null
+            Pres(m["d"].asStr() ?: return@mapNotNull null, m["r"].asStr() ?: "", m["nm"].asStr() ?: "", m["vn"].asStr() ?: "", m["at"].asDouble() ?: 0.0)
+        }.associateBy { it.d }
+    } catch (e: Exception) { emptyMap() }
+
+    /** What this device says about itself on the relay: sealed with the link secret (null when not linked). */
+    fun who(): String? {
+        val (code, dev) = ident ?: return null
+        val (_, sec) = LinkCrypto.parse(code) ?: return null
+        val mine = try { me() } catch (e: Exception) { emptyMap() }
+        return LinkCrypto.seal(sec, MiniJson.write(linkedMapOf("d" to dev, "r" to "phone", "nm" to (mine["nm"] as? String ?: "").take(40),
+            "vn" to (mine["vn"] as? String ?: "").take(12))))
+    }
+
+    /** The other devices' beats from the relay: (what each said - sealed, when the relay heard it in seconds). Anything not sealed with
+     *  THIS link's secret is ignored. -> how many were taken. */
+    fun takePresence(beats: List<Pair<String, Double>>): Int {
+        val (code, dev) = ident ?: return 0
+        val (_, sec) = LinkCrypto.parse(code) ?: return 0
+        val now = nowS()
+        val out = HashMap(pres)
+        var n = 0
+        for ((w, at) in beats.take(40)) {
+            val m = MiniJson.obj(LinkCrypto.unseal(sec, w) ?: continue) ?: continue
+            val d = (m["d"].asStr() ?: continue).take(20)
+            if (d.isEmpty() || d == dev || at <= 0 || at > now + 600) continue
+            val old = out[d]
+            if (old == null || at >= old.at) out[d] = Pres(d, (m["r"].asStr() ?: "").take(10), (m["nm"].asStr() ?: "").take(40), (m["vn"].asStr() ?: "").take(12), at)
+            n++
+        }
+        out.keys.filter { now - (out[it]?.at ?: 0.0) > 30 * 86400 }.forEach { out.remove(it) }
+        if (out != pres) { pres = out; try { store.writeFile(PRES_FILE, MiniJson.write(out.mapValues { it.value.toMap() })) } catch (e: Exception) { } }
+        return n
+    }
+    private fun forgetPresence() { pres = emptyMap(); try { store.writeFile(PRES_FILE, "{}") } catch (e: Exception) { } }
+
+    /** The PC's newest sign of life in seconds: its last post on the link channel or its beat on the relay (0 = never). */
+    private fun pcSeen(peer: Map<String, Any?>): Double =
+        maxOf(peer["at"].asDouble() ?: 0.0, pres.values.filter { it.r == "desktop" }.maxOfOrNull { it.at } ?: 0.0)
 
     // ---- the saved state (link.json)
     private class St(var code: String = "", var dev: String = "", var since: String = "", val recs: LinkedHashMap<String, LinkRec> = LinkedHashMap(),
@@ -171,7 +232,7 @@ class Link(private val store: Store, private val net: LinkNet,
         val s = St(code = code.trim(), dev = "p-" + java.lang.Long.toHexString(SecureRandom().nextLong()).take(12), linkedAt = nowS(), dirty = true)
         // our products as the FIRST records (t=1): where the desktop has the same product, the desktop's values win
         for ((a, it) in localItems()) s.recs[a] = it.copy(t = 1.0, here = true)
-        save(s); remember(s)
+        save(s); remember(s); forgetPresence()
         store.log("Linked with the desktop. Products are shared from now on; the desktop buys while it runs.")
         null
     }
@@ -179,7 +240,7 @@ class Link(private val store: Store, private val net: LinkNet,
     fun unlink() = synchronized(lock) {
         val s = load()
         if (LinkCrypto.parse(s.code) != null) { try { postNow(s, bye = true) } catch (e: Exception) {} }
-        store.writeFile(FILE, "{}"); snap = Triple(false, emptyMap(), clockMs())
+        store.writeFile(FILE, "{}"); snap = Triple(false, emptyMap(), clockMs()); ident = null; forgetPresence()
         store.log("Unlinked from the desktop - this phone buys on its own again.")
     }
 
@@ -260,6 +321,9 @@ class Link(private val store: Store, private val net: LinkNet,
                 "nt" to (msg["nt"].asStr()?.takeIf { NtfyAlerts.ok(it) } ?: ""),     // 2.9: the PC's alerts channel ("Phone: set up")
                 // 2.7: the TCG price history the PC recorded - sent only when it changed: kept until then
                 "th" to (if (msg.containsKey("th")) cleanHistory(msg["th"]) else s.peer["th"].asMap() ?: emptyMap<String, Any?>()))
+            // 1.0.4 (owner: "the pc version does not appear to have an option to see linked devices"): the PC lists the linked devices
+            // too and can change a device's buying choice from there - taken the same way as a change made on another phone
+            msg["set"].asMap()?.let { st -> if (st["d"].asStr() == s.dev) takeSet(st, "the PC") }
         }
         if (msg["hi"].asBool()) s.dirty = true
         for (x in msg["items"].asList().take(500)) {
@@ -395,7 +459,8 @@ class Link(private val store: Store, private val net: LinkNet,
         }
         scan(s, localItems(), now)
         var r = "ok"
-        if (s.dirty || first || now - s.pubAt >= BEAT) {
+        // (1.0.4: the hourly "still here" waits while few of the day's free messages are left - the relay beat says it meanwhile)
+        if (s.dirty || first || (now - s.pubAt >= BEAT && !(try { saveMessages() } catch (e: Exception) { false }))) {
             try { postNow(s, hi = first, now = now) } catch (e: Exception) { r = "post failed: ${e.message?.take(80)}" }
         }
         save(s); remember(s)
@@ -436,7 +501,9 @@ class Link(private val store: Store, private val net: LinkNet,
     }
 
     /** 2.15: this link's group code for the shared checkout lock (null when not linked). */
-    fun lockGroup(): String? = synchronized(lock) { LinkCrypto.parse(load().code)?.second?.let { LinkCrypto.lockGroup(it) } }
+    /** (1.0.4: read from what is kept outside the lock - 2.15 - 1.0.3 took the link's lock here, so a claim right before Place your order
+     *  could wait for a link round that was talking to the network) */
+    fun lockGroup(): String? = ident?.first?.let { LinkCrypto.parse(it) }?.second?.let { LinkCrypto.lockGroup(it) }
 
     /** 2.0: someone else buys (the desktop, or another phone first in line) - this phone stands by. */
     fun othersBuy(): Boolean = desktopBuys() || otherPhoneBuys()
@@ -466,7 +533,21 @@ class Link(private val store: Store, private val net: LinkNet,
     /** 2.3: every linked device for Settings - the PC, this device and the other phones / tablets: (id, kind, name, choice, takes over,
      *  app version, heard seconds ago or -1). */
     data class Device(val id: String, val pc: Boolean, val me: Boolean, val name: String, val mode: String, val failover: Boolean, val av: Long, val agoS: Long,
-                      val vn: String = "")
+                      val vn: String = "",
+                      /** 1.0.4: seconds since its last post on the link channel (products, caps, choices) - -1 = none yet. [agoS] is the
+                       *  newest sign of life (that post or its beat on the relay). */
+                      val syncAgoS: Long = 0)
+
+    /** 1.0.4: the PC is running (its beat on the relay is fresh) but its posts on the link channel are not arriving - seconds since the
+     *  last one, or -1 when all is well / not linked / never heard. The screen then says so (and why, when known) instead of "silent". */
+    fun pcSyncBehindS(): Long {
+        val sn = snap ?: return -1
+        if (!sn.first) return -1
+        val post = sn.second["at"].asDouble() ?: return -1
+        val beat = pres.values.filter { it.r == "desktop" }.maxOfOrNull { it.at } ?: return -1
+        val t = nowS()
+        return if (t - post >= DESK_SILENT && t - beat < PRES_FRESH && beat > post) (t - post).toLong() else -1
+    }
 
     /** 2.9: the alerts channels the linked devices use: (the PC's or null, the other phones' / tablets'). */
     fun alertChannels(): Pair<String?, List<String>> {
@@ -515,12 +596,26 @@ class Link(private val store: Store, private val net: LinkNet,
         val (dev, ph) = snapPhones
         val t = nowS()
         val out = ArrayList<Device>()
-        sn.second["at"].asDouble()?.let { at -> out += Device(sn.second["d"].asStr() ?: "pc", true, false, "PC (Restalker)", "", false, 0, (t - at).toLong()) }
+        // 1.0.4: "heard" = the newest sign of life - a post on the link channel or the beat on the relay; [syncAgoS] = the link post alone
+        val pr = pres
+        val pcAt = pcSeen(sn.second)
+        val pcPost = sn.second["at"].asDouble() ?: 0.0
+        if (pcAt > 0) out += Device(sn.second["d"].asStr() ?: "pc", true, false, "PC (Restalker)", "", false, 0, (t - pcAt).toLong(),
+            pr.values.filter { it.r == "desktop" }.maxByOrNull { it.at }?.vn ?: "", syncAgoS = if (pcPost > 0) (t - pcPost).toLong() else -1)
         val st = store.settings()
         out += Device(dev, false, true, myName, st.buyMode, st.failover, 0, 0)
-        ph.filter { (d, v) -> d != dev && t - (v["at"].asDouble() ?: 0.0) < 30 * 86400 }.forEach { (d, v) ->
-            out += Device(d, false, false, (v["nm"].asStr() ?: "").ifBlank { "Phone / tablet ${d.takeLast(4)}" }, (v["bm"].asStr() ?: "").ifBlank { "pc" },
-                v["fo"] != false, v["av"].asLong() ?: 0, (t - (v["at"].asDouble() ?: 0.0)).toLong(), (v["vn"].asStr() ?: ""))
+        ph.filter { (d, v) -> d != dev && t - maxOf(v["at"].asDouble() ?: 0.0, pr[d]?.at ?: 0.0) < 30 * 86400 }.forEach { (d, v) ->
+            val post = v["at"].asDouble() ?: 0.0
+            val p2 = pr[d]
+            val newest = maxOf(post, p2?.at ?: 0.0)
+            // (the version: whichever sign of life is newer says it - a tablet that updated since its last post shows its new version)
+            val vn = if (p2 != null && p2.at >= post && p2.vn.isNotBlank()) p2.vn else (v["vn"].asStr() ?: "")
+            out += Device(d, false, false, (v["nm"].asStr() ?: "").ifBlank { p2?.nm ?: "" }.ifBlank { "Phone / tablet ${d.takeLast(4)}" }, (v["bm"].asStr() ?: "").ifBlank { "pc" },
+                v["fo"] != false, v["av"].asLong() ?: 0, (t - newest).toLong(), vn, syncAgoS = (t - post).toLong())
+        }
+        // a phone / tablet known only by its beat (linked, but its first post has not arrived here yet): shown, without a choice to change
+        pr.values.filter { it.r != "desktop" && it.d != dev && !ph.containsKey(it.d) && t - it.at < 30 * 86400 }.sortedBy { it.d }.forEach { p2 ->
+            out += Device(p2.d, false, false, p2.nm.ifBlank { "Phone / tablet ${p2.d.takeLast(4)}" }, "", true, 0, (t - p2.at).toLong(), p2.vn, syncAgoS = -1)
         }
         return out
     }
@@ -558,7 +653,10 @@ class Link(private val store: Store, private val net: LinkNet,
         val others = otherPhones()
         val also = if (others > 0) " ($others other phone${if (others == 1) "" else "s"} / tablet linked)" else ""
         val mine = if (otherPhoneBuys()) "Another phone / tablet buys; this one stands by." else "This phone buys."
+        val behind = pcSyncBehindS()
         return true to when {
+            // 1.0.4: the PC IS running (the relay heard it) - only its product updates are not arriving on the link channel
+            behind >= 0 -> "Linked - the PC is running, but its product updates are not arriving (last ${Ago.words(behind * 1000)}). $mine$also"
             peer["bye"].asBool() -> "Linked - desktop stopped ($heard). $mine$also"
             nowS() - at >= DESK_SILENT -> "Linked - desktop silent since $heard. $mine$also"
             store.settings().buyMode == "phone" -> "Linked - the PC watches and signals this device within seconds (heard $heard). $mine$also"

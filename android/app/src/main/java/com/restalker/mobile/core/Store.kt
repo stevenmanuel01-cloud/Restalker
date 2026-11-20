@@ -69,7 +69,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
         synchronized(lock) { purchases = (listOf(p) + purchases).take(500); write("purchases.json", MiniJson.write(purchases.map { it.toMap() })) }
         onChange?.invoke()
     }
-    /** [quiet] (2.13): a detail for Claude's reports only - kept in the log (and sent with a report) but not shown in Activity. */
+    /** [quiet] (2.13): a detail for the problem reports only - kept in the log (and sent with a report) but not shown in Activity. */
     fun log(line: String, quiet: Boolean = false) {
         val t = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(clock()))
         synchronized(lock) {

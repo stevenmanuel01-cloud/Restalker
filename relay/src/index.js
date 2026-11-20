@@ -48,6 +48,9 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS suggest(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, c TEXT, a TEXT, name TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS dlink(code TEXT PRIMARY KEY, c TEXT, until INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS devlink(c TEXT PRIMARY KEY, user TEXT, uname TEXT, at INTEGER)`);
+    // presence of one person's linked devices (logic.js): a device's group and its sealed words, kept with its heartbeat row
+    for (const col of ["g TEXT", "w TEXT"]) { try { this.sql.exec("ALTER TABLE seen ADD COLUMN " + col); } catch (e) { /* already there */ } }
+    this.sql.exec(`CREATE INDEX IF NOT EXISTS seen_g ON seen(g)`);
   }
 
   kvGet(k) { const r = this.sql.exec("SELECT v FROM kv WHERE k = ?", k).toArray(); return r.length ? r[0].v : null; }
@@ -110,8 +113,13 @@ export class Hub {
         if (!c) return json({ ok: false, error: "device code" }, 400);
         const now = Date.now();
         if (u.pathname === "/v1/h") {          // a device's heartbeat (every 15 min): the live "active now" count
-          this.sql.exec(`INSERT INTO seen(c, at, first, sightings) VALUES(?, ?, ?, 0) ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at)`, c, now, now);
-          return json({ ok: true, active: this.active(now) });
+          // + presence: a linked device gives its group and its sealed words, and gets the other devices of its group back
+          const { g, w } = L.presenceIn(b);
+          this.sql.exec(`INSERT INTO seen(c, at, first, sightings, g, w) VALUES(?, ?, ?, 0, ?, ?)
+            ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, w = excluded.w`, c, now, now, g, w);
+          const out = { ok: true, active: this.active(now) };
+          if (g) out.peers = L.presenceOut(this.sql.exec("SELECT c, at, w FROM seen WHERE g = ? ORDER BY at DESC LIMIT 40", g).toArray(), c, now);
+          return json(out);
         }
         if (u.pathname === "/v1/lock" || u.pathname === "/v1/release") {
           const g = String(b.g || ""), a = String(b.a || "");
