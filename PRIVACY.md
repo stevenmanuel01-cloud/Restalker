@@ -62,7 +62,7 @@ address when your device contacts them, as with any website.
 
 **10. Connecting your Discord (only if you do it).** If you join the Restalker Discord and connect it to the app with the one-time
 code, the relay keeps your Discord user number and display name next to your device code, so the server can show which members
-take part. Disconnecting is done by asking on the Discord server or through the contact below.
+take part. To have that connection removed, ask on the Discord server or write to the contact below.
 
 ## Who receives data
 
@@ -105,8 +105,8 @@ If this policy changes, the new version is posted on this page with a new date.
 
 ## Contact
 
-Restalker is made by an independent developer. Questions and deletion requests:
-https://github.com/stevenmanuel01-cloud/Restalker/issues
+Restalker is made by an independent developer. Questions about this policy or your data:
+restalker101@gmail.com
 
 Restalker is not affiliated with, endorsed by or sponsored by Amazon, Wizards of the Coast, TCGplayer, Google, Discord or ntfy. Magic:
 The Gathering is a trademark of Wizards of the Coast LLC.

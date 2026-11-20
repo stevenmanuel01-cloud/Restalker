@@ -547,9 +547,17 @@ class MainActivity : ComponentActivity() {
                     }
                     if (st.signinNeededAt > 0 && now - st.signinNeededAt < 3_600_000L) Banner("Amazon wants you to sign in again. Nothing is bought until you do.", "Sign in", "signin-banner") { openBrowser(BrowserActivity.SIGNIN_URL) }
                     else if (products.any { it.buy } && st.buying && !signed) Banner("Products are set to Buy, but Amazon is not signed in.", "Sign in", "signin-banner") { openBrowser(BrowserActivity.SIGNIN_URL) }
-                    // 1.0.7, the Google Play edition (the store's rule: say what is sent and ask first): the one question about problem
+                    if (!notes) Banner("Notifications are off - you won't hear about restocks or purchases.", "Fix", "notes-banner") { openNotifSettings() }
+                    if (svc != null && !svc.web.available) Banner("This phone's \"Android System WebView\" is too old - update it in the Play Store.", "Update", "webview-banner") {
+                        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))) } catch (e: Exception) { } }
+                    if (st.cooldownUntil > now) Banner("Resting: Amazon showed a robot check. Open the browser and finish it yourself; it looks again at ${hm(st.cooldownUntil)}.", "Browser", "rest-banner") { openBrowser(null) }
+                    if (st.snoozeUntil > now) Banner("Restock messages snoozed until ${hm(st.snoozeUntil)}.", "Unsnooze", "snooze-banner") { store.setSettings { it.copy(snoozeUntil = 0) }; store.log("Snooze ended by you.") }
+                    if (st.practice && products.any { it.buy } && st.buying) Text("Practice is on: checkouts stop before \"Place your order\" (Settings → Real purchases).",
+                        color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                    SetupCard(products, r, onAdd, onSettings)
+                    // 1.0.7 (under "Getting started", so a new install sees its first steps first), the Google Play edition (the store's rule: say what is sent and ask first): the one question about problem
                     // reports. Until it is answered none is sent by itself; the answer can be changed in Settings, Help and about.
-                    if (BuildConfig.PLAY && !st.reportAsked) Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).background(Color.White, Look.card).padding(14.dp).testTag("report-ask")) {
+                    if (BuildConfig.PLAY && !st.reportAsked) Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(Color.White, Look.card).padding(14.dp).testTag("report-ask")) {
                         Text("Send problem reports automatically?", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Text("When something goes wrong, Restalker can send a report to its makers so it gets fixed. It holds $REPORT_WHAT. " +
                             "You can change this any time in Settings, Help and about.", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp))
@@ -560,14 +568,6 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.testTag("report-no")) { Text("No") }
                         }
                     }
-                    if (!notes) Banner("Notifications are off - you won't hear about restocks or purchases.", "Fix", "notes-banner") { openNotifSettings() }
-                    if (svc != null && !svc.web.available) Banner("This phone's \"Android System WebView\" is too old - update it in the Play Store.", "Update", "webview-banner") {
-                        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))) } catch (e: Exception) { } }
-                    if (st.cooldownUntil > now) Banner("Resting: Amazon showed a robot check. Open the browser and finish it yourself; it looks again at ${hm(st.cooldownUntil)}.", "Browser", "rest-banner") { openBrowser(null) }
-                    if (st.snoozeUntil > now) Banner("Restock messages snoozed until ${hm(st.snoozeUntil)}.", "Unsnooze", "snooze-banner") { store.setSettings { it.copy(snoozeUntil = 0) }; store.log("Snooze ended by you.") }
-                    if (st.practice && products.any { it.buy } && st.buying) Text("Practice is on: checkouts stop before \"Place your order\" (Settings → Real purchases).",
-                        color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
-                    SetupCard(products, r, onAdd, onSettings)
                 }
             }
             item {

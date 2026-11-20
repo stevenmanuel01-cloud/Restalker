@@ -5,10 +5,12 @@
   what to pick there.
 - Both editions are now made for Android 16 (Google Play takes nothing older for a new app). Android 16 changed how the Back
   button reaches an app; the built-in Amazon browser was adapted, so Back there still goes one page back first.
+- Fixed on Android 15 and 16: in the built-in Amazon browser the note and the Done button sat under the clock and the battery
+  mark at the top of the screen (white on white), and the bottom of the page under the navigation bar. Both are clear now.
 - Settings, Help and about has a new row: Privacy policy (what stays on your device, what is sent, and to whom).
 - Problem reports from devices that are not the owner's no longer carry Amazon order numbers (they read "(hidden)").
 - Google Play edition only: automatic problem reports are off until you answer one question on the Watch page (Yes, send them /
-  No thanks). The switch in Settings says exactly what a report holds.
+  No). It sits under "Getting started". The switch in Settings says exactly what a report holds.
 - Google Play edition only: "Share the app" sends the Google Play link.
 - Tested on Android 16 too now (5 virtual phones: Android 11, 13, 14, 15, 16), and the Google Play edition has its own full run.
 

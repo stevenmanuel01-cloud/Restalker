@@ -92,6 +92,14 @@ jobs:
           if unzip -p $PLAY 'classes*.dex' | grep -aq 'Landroid/content/pm/PackageInstaller\$Session;'; then echo "THE GOOGLE PLAY EDITION CARRIES INSTALLER CODE"; bad=1; else echo "Google Play edition: no installer code"; fi
           unzip -p $GH 'classes*.dex' | grep -aq 'Landroid/content/pm/PackageInstaller\$Session;' || { echo "THE GITHUB EDITION LOST ITS UPDATER"; bad=1; }
           unzip -l $AAB | grep -q "base/manifest/AndroidManifest.xml" || { echo "THE BUNDLE IS NOT A BUNDLE"; bad=1; }
+          # (Google Play, for apps made for Android 15 and later: every built-in library must work with 16 KB memory pages)
+          rm -rf /tmp/so && mkdir -p /tmp/so && unzip -o -q $PLAY 'lib/*' -d /tmp/so || true
+          for so in $(find /tmp/so -name '*.so'); do
+            al=$(readelf -lW "$so" | awk '$1=="LOAD"{print $NF}' | sort -u | tr '\n' ' '); echo "${so#/tmp/so/} $al"
+            for x in $al; do [ $((x)) -ge 16384 ] || { echo "NOT READY FOR 16 KB PAGES: $so"; bad=1; }; done
+          done
+          Z=$(ls $ANDROID_HOME/build-tools/*/zipalign | sort -V | tail -1)
+          $Z -c -P 16 4 $PLAY && echo "16 KB pages: OK" || { echo "THE GOOGLE PLAY EDITION IS NOT ALIGNED FOR 16 KB PAGES"; bad=1; }
           [ $bad -eq 0 ] && echo "EDITIONS: OK" || exit 1
       - name: Central list pictures load (2.8)
         if: always()
