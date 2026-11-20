@@ -1610,6 +1610,13 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
                                 .putExtra(Intent.EXTRA_TEXT, "Restalker for Android: $SHARE_URL"), "Share Restalker"))
                         }, modifier = Modifier.testTag("share-link")) { Text("Share the link") }
+                        // 1.0.1 (owner, 2026-11-19: "The qr code failed to install on a newer phone. A Samsung ... it said blocked though the
+                        // user manually allowed it some other automated feature denied it"): that is Samsung's Auto Blocker (on by default
+                        // on new Galaxy phones; it refuses every app from outside the store, also after "allow"). No app can switch it
+                        // off - so the way round it stands here, where the code is shown, and at the top of the download page.
+                        Text("The other phone says the install is blocked? Newer Samsung phones do that. On that phone: Settings > Security and privacy > Auto Blocker > off. " +
+                            "Install Restalker, then switch Auto Blocker back on.", fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp,
+                            modifier = Modifier.padding(top = 4.dp).testTag("share-blocked"))
                     }
                 }
                 // ---- 2.6 (owner: 'a section at the bottom of settings for "about"')

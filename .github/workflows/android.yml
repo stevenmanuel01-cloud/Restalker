@@ -157,4 +157,7 @@ jobs:
           # 1.0 (owner: "all other versions should be standard"): a new version is the owner's beta first - a PRE-release here, so the
           # download page for everyone (.../releases/latest: the README and the app's share QR) keeps giving the version everyone has.
           # "Release to everyone" (promote.yml) makes it the latest one.
-          gh release create "mobile-v$VER" "restalker-mobile-$VER.apk" --title "Restalker Mobile $VER" --notes-file android/RELEASE_NOTES.md --prerelease
+          # 1.0.1 (owner: "way too many release notes so it's nearly impossible to find the actual download"): the page starts with
+          # the download link and the install steps, then only this version's notes (android/ci/release_body.py)
+          python3 android/ci/release_body.py "$VER" > release_body.md || cp android/RELEASE_NOTES.md release_body.md
+          gh release create "mobile-v$VER" "restalker-mobile-$VER.apk" --title "Restalker Mobile $VER" --notes-file release_body.md --prerelease

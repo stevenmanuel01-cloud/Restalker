@@ -60,6 +60,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           V=$(python3 -c "import json;print(json.load(open('mobile/latest.json'))['version'])")
+          # (1.0.1: its page starts with the download link - also for a version published before that)
+          python3 android/ci/release_body.py "$V" > /tmp/release_body.md && gh release edit "mobile-v$V" --notes-file /tmp/release_body.md || echo "PAGE TEXT NOT CHANGED (mobile-v$V)"
           gh release edit "mobile-v$V" --prerelease=false --latest && echo "DOWNLOAD PAGE: mobile-v$V is the latest release" || echo "DOWNLOAD PAGE NOT CHANGED (mobile-v$V)"
       - name: Tell every PC at once (the release channel)
         if: steps.copy.outputs.pc == 'True'

@@ -364,6 +364,9 @@ class ScreenTests {
         }
         sec("share")
         compose.onNodeWithTag("share-qr").performScrollTo().assertIsDisplayed()
+        // 1.0.1: what to do when the other phone (a newer Samsung) blocks the install stands under the code
+        compose.onNodeWithTag("share-blocked").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("share-blocked").assert(androidx.compose.ui.test.hasText("Auto Blocker", substring = true))
         shot("t15_settings_share")
     }
 

@@ -1,3 +1,9 @@
+# Restalker Mobile 1.0.1 (2026-11-19; your notes of 9:39 PM)
+- Share Restalker: under the QR code it now says what to do when the other phone blocks the install. Newer Samsung phones do that
+  (Auto Blocker) even after you allow it: Settings > Security and privacy > Auto Blocker > off, install, then switch it back on.
+- The download page starts with the download link and the install steps, then only that version's notes - no long list to scroll.
+- From your next "Release to everyone" on, the download page (the QR code) always gives the version you released, never a beta.
+
 # Restalker Mobile 1.0.0 (2026-11-19; your notes of 7:32 PM)
 - New numbering: this is 1.0.0 - it comes right after 2.15; the next ones are 1.0.1, 1.0.2 and so on. (Only the name starts again; every device still sees it as the newer version
   and updates to it as usual.)
