@@ -1,9 +1,11 @@
 package com.restalker.mobile.core
 
-/** 1.0 (owner, 2026-11-19: "We are close enough now to where we can reset the version number on the next release"): the numbering starts
- *  again at 1.0 - it comes right after 2.15. Only the NAME starts again: the app's version code (build.gradle.kts) keeps counting up,
- *  and updates go by the code alone (UpdatePlan), so every device still sees 1.0 as the newer one. */
-const val APP_VERSION = "1.0"
+/** 1.0.0 (owner, 2026-11-19: "We are close enough now to where we can reset the version number on the next release"): the numbering
+ *  starts again at 1.0.0 - it comes right after 2.15. Only the NAME starts again: the app's version code (build.gradle.kts) keeps
+ *  counting up, and updates go by the code alone (UpdatePlan), so every device still sees 1.0.0 as the newer one.
+ *  THREE parts on purpose (1.0.0, 1.0.1, ...): the first versions of 2026-11-16/17 were 1.0 - 1.8 and their releases (mobile-v1.0 ...
+ *  mobile-v1.8) are still on GitHub; a two-part 1.x name would meet its old release and never be published. */
+const val APP_VERSION = "1.0.0"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed

@@ -449,7 +449,7 @@ class MainActivity : ComponentActivity() {
                             Text(androidx.compose.ui.text.buildAnnotatedString {
                                     append("Restalker Mobile v$APP_VERSION")
                                     if (beta) { append(" "); appendInlineContent("beta", "BETA") }
-                                }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp, maxLines = if (beta) 3 else 2,
+                                }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp, maxLines = 3,
                                 inlineContent = if (!beta) emptyMap() else mapOf("beta" to InlineTextContent(
                                     androidx.compose.ui.text.Placeholder(2.7.em, 1.05.em, androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter)) {
                                     Box(Modifier.fillMaxSize().background(Look.Accent, RoundedCornerShape(6.dp)).testTag("beta"), contentAlignment = Alignment.Center) {
@@ -591,7 +591,7 @@ class MainActivity : ComponentActivity() {
                 .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp).heightIn(min = 30.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 20.sp, color = if (accent) Look.OnNavyAccent else Color.White,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))   // (3: a product's name, also with big text)
                     Text("  $count", color = Look.OnNavyDim, fontSize = 13.sp, maxLines = 1)
                     if (hot != null && hot > 0) Chip("$hot in stock", Look.GoodSoft, Look.GoodText, Modifier.padding(start = 8.dp))
                 }

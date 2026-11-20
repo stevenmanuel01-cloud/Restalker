@@ -1333,8 +1333,9 @@ object CoreTests {
                 !UpdatePlan.isBeta(27, 27, true) && !UpdatePlan.isBeta(27, 27, false) &&          // released to everyone: standard, the owner's too
                 !UpdatePlan.isBeta(25, 27, false) && !UpdatePlan.isBeta(25, 27, true) &&          // an older copy: standard
                 UpdatePlan.isBeta(27, null, true) && !UpdatePlan.isBeta(27, null, false) &&       // not known yet: only the owner's devices
-                // the name starts again at 1.0, the code keeps counting: 1.0 (code 27) is offered to a 2.15 (code 26), never the other way
-                UpdatePlan.parse("{\"version\": \"1.0\", \"code\": 27, \"apk\": \"${UpdatePlan.APK_PREFIX}1.0/restalker-mobile-1.0.apk\", \"sha256\": \"${"a".repeat(64)}\"}", 26)?.version == "1.0" &&
+                // the name starts again at 1.0.0, the code keeps counting: 1.0.0 (code 27) is offered to a 2.15 (code 26), never the other way
+                UpdatePlan.parse("{\"version\": \"1.0.0\", \"code\": 27, \"apk\": \"${UpdatePlan.APK_PREFIX}1.0.0/restalker-mobile-1.0.0.apk\", \"sha256\": \"${"a".repeat(64)}\"}", 26)?.version == "1.0.0" &&
+                APP_VERSION.count { it == '.' } == 2 &&                                           // (three parts: a two-part 1.x would meet its old release)
                 UpdatePlan.parse("{\"version\": \"2.15\", \"code\": 26, \"apk\": \"${UpdatePlan.APK_PREFIX}2.15/restalker-mobile-2.15.apk\", \"sha256\": \"${"a".repeat(64)}\"}", 27) == null
         }
         return results

@@ -1,5 +1,5 @@
-# Restalker Mobile 1.0 (2026-11-19; your notes of 7:32 PM)
-- New numbering: this is 1.0 - it comes right after 2.15. (Only the name starts again; every device still sees it as the newer version
+# Restalker Mobile 1.0.0 (2026-11-19; your notes of 7:32 PM)
+- New numbering: this is 1.0.0 - it comes right after 2.15; the next ones are 1.0.1, 1.0.2 and so on. (Only the name starts again; every device still sees it as the newer version
   and updates to it as usual.)
 - BETA: a copy that is newer than the version everyone has shows an amber BETA right after its version (the header and About). That is
   your devices, which get every version first. Once you release a version to everyone it is the standard one - no mark, on any device.
