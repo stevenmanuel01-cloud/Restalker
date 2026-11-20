@@ -1435,7 +1435,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // =================================================================== Bought / Activity
-    @Composable
     /** 1.0.4 (owner, 2026-11-20: "Make the restalker icon slightly bigger, maybe 30%-50%, depending on what fits nicely on the screen size
      *  without causing wrapping text ... easily recognizable and defined. It should also occur on all tabs"): Bought, Activity and
      *  Settings start with the same navy bar as Watch - the logo, the tab's name and the version. */
