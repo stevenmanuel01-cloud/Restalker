@@ -1,3 +1,11 @@
+# Restalker Mobile 1.0.3 (2026-11-20; why your PC went "silent" every afternoon)
+- ntfy.sh, the free message service the devices talk through, allows each home internet address 250 messages a day for ALL its
+  Restalker devices together. Since your phones were set to "Both buy" (2.15) each sent "I'm listening" to the PC every 5 minutes -
+  288 a day each - so the home's 250 were gone by morning; after that the PC's link, its reports and your phone messages were refused
+  for the rest of the day. Now only a phone that buys INSTEAD of the PC sends it (the PC v144 counts the others by their hourly update).
+- Fewer requests too: the link with the PC is read every 2 minutes (was every minute) and the crowd every 3 minutes (was 2). The PC's
+  "in stock, look now" signal still arrives at once, and opening the app still reads the link at once.
+
 # Restalker Mobile 1.0.2 (2026-11-19; your notes of 11:40 PM)
 - Watch: every year's bar says what is in it - "11 products · 4 watched · 2 set to buy".
 - Watch: Watch and Buy buttons right on each product (amber = on). Buy on a product without a cap opens it so you can set the cap.

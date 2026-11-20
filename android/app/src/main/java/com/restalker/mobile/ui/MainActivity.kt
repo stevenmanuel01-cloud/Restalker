@@ -1077,10 +1077,10 @@ class MainActivity : ComponentActivity() {
                             decorationBox = { inner -> Row(Modifier.fillMaxSize().border(if (bad) 2.dp else 1.dp, if (bad) Look.Red else Color(0xFFB8C3D1), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) { Text("\$", fontSize = 15.sp, color = Look.Muted); Spacer(Modifier.width(2.dp)); inner() } })
                         Spacer(Modifier.width(8.dp))
-                        OutlinedButton(onClick = { CapLater.change(p, CapStep.down(capNow)) }, enabled = capNow > CapStep.STEP, contentPadding = PaddingValues(0.dp),
+                        OutlinedButton(onClick = { CapLater.step(p, up = false) }, enabled = capNow > CapStep.STEP, contentPadding = PaddingValues(0.dp),
                             modifier = Modifier.size(32.dp).testTag("capdown-${p.asin}")) { Text("−", fontSize = 20.sp) }
                         Spacer(Modifier.width(8.dp))
-                        OutlinedButton(onClick = { CapLater.change(p, CapStep.up(capNow)) }, contentPadding = PaddingValues(0.dp),
+                        OutlinedButton(onClick = { CapLater.step(p, up = true) }, contentPadding = PaddingValues(0.dp),
                             modifier = Modifier.size(32.dp).testTag("capup-${p.asin}")) { Text("+", fontSize = 20.sp) }
                     }
                     if (held != null) {
@@ -2024,6 +2024,11 @@ object CapLater {
             pending[p.id] = Held(p.cap, v, System.currentTimeMillis(), p.label)
             main.postDelayed({ if (left(p.id) <= 0) commit(p.id) }, WAIT + 50)
         } else pending[p.id] = cur.copy(value = v)
+    }
+    /** - / + : $5 from the cap being held (read at the tap - quick taps in a row each count, also before the screen is redrawn). */
+    fun step(p: Product, up: Boolean) {
+        val base = pending[p.id]?.value ?: RkApp.store().product(p.id)?.cap ?: p.cap
+        change(p, if (up) CapStep.up(base) else CapStep.down(base))
     }
     fun left(id: String): Long = pending[id]?.let { maxOf(0L, it.at + WAIT - System.currentTimeMillis()) } ?: 0L
     fun now(p: Product, v: Double) { val from = pending.remove(p.id)?.from ?: p.cap; save(p.id, p.label, from, v) }
