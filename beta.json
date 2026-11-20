@@ -1,8 +1,8 @@
 {
- "version": "v143",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v143_update.zip",
- "sha256": "8b7dbd40c50fbb59c8528f107a26ba97a0afde3632475f6151ea3438c4e8a736",
- "size": 761320,
- "notes": "Fewer requests to ntfy (the crowd over one open connection) - the PC no longer goes silent from '429 Too Many Requests'; beta versions show a b",
+ "version": "v144",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v144_update.zip",
+ "sha256": "b18e58a00d7e93ccf8bb52be6eb5c90ea26f3df559c30d388f4934165136a1c8",
+ "size": 761537,
+ "notes": "Stays within ntfy's 250 messages a day per home: phones that buy WITH the PC no longer need a heartbeat every 5 minutes",
  "files": 84
 }
