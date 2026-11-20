@@ -1,8 +1,8 @@
 {
- "version": "v141",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v141_update.zip",
- "sha256": "a146816dd8808df73ed1e8313aa87fa9291c6003dfde3a89886b8128a17c14f8",
- "size": 759928,
- "notes": "Race to checkout with your linked phones; live 'devices active now'; Discord link; Discord restock cards with a small picture",
+ "version": "v142",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v142_update.zip",
+ "sha256": "cc506e5633952a1d424418d449566a3178a74ce61e50b66c4f8ff3e3231c5345",
+ "size": 760388,
+ "notes": "Beta versions show a b after the number (v142b) until released to everyone",
  "files": 84
 }
