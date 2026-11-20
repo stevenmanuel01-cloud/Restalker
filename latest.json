@@ -1,8 +1,8 @@
 {
- "version": "v140",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v140_update.zip",
- "sha256": "09d1b48e3649000337ea6b604ca2391f8e9cc8fe484840f8379e502824a51dc7",
- "size": 753947,
- "notes": "One ntfy alert code on the PC and every linked phone; how each phone's updates go in",
- "files": 83
+ "version": "v146",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v146_update.zip",
+ "sha256": "b865eb7764ea40137dce3847fd79f720be2245bfc38eec8bc97d82161f0b09c0",
+ "size": 768619,
+ "notes": "Under the title: \"3 stalkers active now\" (was \"3 Restalker devices active now\") - everyone running Restalker and sharing is a stalker, hunting restocks together. The number is counted in one place and is the same on every device, whatever version it runs; older versions are now counted too, without updating.",
+ "files": 84
 }
