@@ -389,11 +389,11 @@ class ScreenTests {
         compose.onNodeWithTag("product-B0TEST0601").performClick(); compose.waitForIdle(); Thread.sleep(600)
         // (1.0.2: - / + and the bar are held 30 s from the first change - "Save now" saves at once)
         compose.onNodeWithTag("capup-B0TEST0601").performScrollTo().performClick(); compose.waitForIdle()
-        compose.onNodeWithTag("capsave-B0TEST0601").performClick()
+        compose.onNodeWithTag("capsave-B0TEST0601").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 405.0 }
         compose.onNodeWithTag("capdown-B0TEST0601").performClick(); compose.waitForIdle()
         compose.onNodeWithTag("capdown-B0TEST0601").performClick(); compose.waitForIdle()
-        compose.onNodeWithTag("capsave-B0TEST0601").performClick()
+        compose.onNodeWithTag("capsave-B0TEST0601").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 395.0 }
         compose.onNodeWithTag("cap-B0TEST0601").assertIsDisplayed()
         shot("t16_cap_buttons")
@@ -481,11 +481,11 @@ class ScreenTests {
         compose.onNodeWithTag("capheld-B0TEST0201", useUnmergedTree = true).assertExists()
         assertEquals("not saved yet", 399.5, p("B0TEST0201").cap, 0.001)
         Thread.sleep(300); shot("t11_cap_held")
-        compose.onNodeWithTag("capsave-B0TEST0201").performClick(); compose.waitForIdle()
-        compose.waitUntil(3_000) { p("B0TEST0201").cap == 415.0 }
+        compose.onNodeWithTag("capsave-B0TEST0201").performScrollTo().performClick(); compose.waitForIdle()
+        compose.waitUntil(3_000) { p("B0TEST0201").cap == 410.0 }                    // (399.50 -> 400 -> 405 -> 410)
         val capLines = RkApp.store().log().filter { it.contains("The Hobbit Collector Booster Box: cap") }
-        assertTrue("one line for the change: ${capLines.takeLast(3)}", capLines.last().contains("\$399.50 → \$415.00") &&
-            capLines.count { it.contains("\$405.00") || it.contains("\$410.00") } == 0)
+        assertTrue("one line for the change: ${capLines.takeLast(3)}", capLines.last().contains("\$399.50 → \$410.00") &&
+            capLines.count { it.contains("\$400.00") || it.contains("\$405.00") } == 0)
         compose.onNodeWithTag("remove-B0TEST0201").performScrollTo().performClick()
         assertEquals("asks once before removing", true, RkApp.store().products().any { it.asin == "B0TEST0201" })
         compose.onNodeWithTag("remove-B0TEST0201").performClick()
@@ -643,7 +643,7 @@ class ScreenTests {
         compose.onNodeWithTag("pricebar-gradient", useUnmergedTree = true).assertExists()             // 2.5: the gradient bar
         android.util.Log.i("RkTest", "t19 step 16")
         compose.onNodeWithTag("pricebar-end-B0TEST0701").assertExists()                             // 2.8
-        compose.onNodeWithText("Bar: \$200 to \$950 (half to twice the MSRP)", substring = true).assertExists()    // 2.10
+        compose.onNodeWithText("(a bit under the lowest to a quarter over the highest price)", substring = true).assertExists()    // 1.0.2
         compose.onNodeWithTag("tcgchart-B0TEST0701").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("TCGplayer, last 3 months", substring = true).assertExists()
         compose.onNodeWithTag("tcgchange-B0TEST0701", useUnmergedTree = true).assertExists()
@@ -862,6 +862,7 @@ class ScreenTests {
         s.add(prod("B0TEST0901", "Foundations Collector Booster Box", "2024", "Foundations").copy(watch = false, buy = false))
         s.add(prod("B0TEST0902", "Duskmourn Collector Booster Box", "2024", "Duskmourn").copy(cap = 0.0, watch = false, buy = false))
         compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2024"))
         compose.onNodeWithTag("grp-2024-sub", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("2 products · none watched", useUnmergedTree = true).assertExists()
         toList(hasTestTag("product-B0TEST0901"))
