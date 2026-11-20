@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -478,7 +479,8 @@ class ScreenTests {
         // ... and - / + are held 30 s from the first tap, then saved and noted once (not one line per \$5)
         RkApp.store().log("t11 cap marker")
         repeat(3) { compose.onNodeWithTag("capup-B0TEST0201").performClick(); compose.waitForIdle() }
-        compose.onNodeWithTag("capheld-B0TEST0201", useUnmergedTree = true).assertExists()
+        // (1.0.4: the "held" line is drawn a moment after the third tap - within 2 seconds; it needed a second try on slow virtual phones)
+        compose.waitUntil(2_000) { compose.onAllNodesWithTag("capheld-B0TEST0201", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
         assertEquals("not saved yet", 399.5, p("B0TEST0201").cap, 0.001)
         Thread.sleep(300); shot("t11_cap_held")
         compose.onNodeWithTag("capsave-B0TEST0201").performScrollTo().performClick(); compose.waitForIdle()
@@ -871,8 +873,21 @@ class ScreenTests {
         toList(hasTestTag("product-B0TEST0901"))
         compose.onNodeWithTag("qwatch-B0TEST0901").performClick(); compose.waitUntil(3_000) { p("B0TEST0901").watch }
         compose.onNodeWithTag("qbuy-B0TEST0901").performClick(); compose.waitUntil(3_000) { p("B0TEST0901").buy }
-        compose.onNodeWithText("2 products · 1 watched · 1 set to buy", useUnmergedTree = true).assertExists()
+        // (1.0.4: within 2 seconds, and if not: what the bar says instead - on a slow small phone the bar is redrawn a moment after the tap)
+        val want = "2 products · 1 watched · 1 set to buy"
+        // (the first Watch and Buy put "Check all now" and the sign-in note above the list, which pushes the year's bar down - off a
+        // small screen with big text since 1.0.4's taller top card)
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2024"))
+        try { compose.waitUntil(2_000) { compose.onAllNodesWithText(want, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() } }
+        catch (e: Throwable) {
+            shot("fail_t26_bar")
+            val says = try { compose.onAllNodesWithTag("grp-2024-sub", useUnmergedTree = true).fetchSemanticsNodes().map { n ->
+                n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString { it.text } } } catch (x: Throwable) { listOf("(not readable: $x)") }
+            val rows = try { compose.onNodeWithTag("list").printToString(maxDepth = 2).lines().filter { "Tag:" in it || "Text =" in it }.joinToString("\n").take(3000) } catch (x: Throwable) { "(list not readable: $x)" }
+            throw AssertionError("the 2024 bar does not say '$want' within 2 s - it says $says | in the app: ${s.products().joinToString { it.asin + "/w=" + it.watch + "/b=" + it.buy }} | the list:\n$rows")
+        }
         Thread.sleep(300); shot("t26_card_buttons")
+        toList(hasTestTag("product-B0TEST0901"))
         compose.onNodeWithTag("qwatch-B0TEST0901").performClick()                         // Watch off: Buy goes off with it
         compose.waitUntil(3_000) { !p("B0TEST0901").watch && !p("B0TEST0901").buy }
         // Buy on a product without a cap: its page opens (the cap is set there first)
@@ -922,6 +937,12 @@ class ScreenTests {
         val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
         compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
         assertEquals("no line of the title is cut", false, (0 until lay.first().lineCount).any { lay.first().isLineEllipsized(it) })
+        // ... no word is broken in two, and on an ordinary phone with ordinary text it is at most the name and the version under it
+        val tl = lay.first(); val words = tl.layoutInput.text.text
+        assertTrue("no word of the title is split over two lines: '$words' in ${tl.lineCount} lines",
+            (0 until tl.lineCount - 1).all { val e = tl.getLineEnd(it); e >= words.length || words[e - 1].isWhitespace() || words[e].isWhitespace() })
+        val cfg = ctx.resources.configuration
+        if (cfg.screenWidthDp >= 400 && cfg.fontScale <= 1.01f) assertTrue("the title takes at most 2 lines beside the logo: ${tl.lineCount}", tl.lineCount <= 2)
         // Stop / Start says what it does, and what happens when the app is closed
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("watching"))
         compose.waitUntil(5_000) { compose.onAllNodesWithText("Start").fetchSemanticsNodes().isNotEmpty() }

@@ -1,8 +1,8 @@
 {
- "version": "v144",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v144_update.zip",
- "sha256": "b18e58a00d7e93ccf8bb52be6eb5c90ea26f3df559c30d388f4934165136a1c8",
- "size": 761537,
- "notes": "Stays within ntfy's 250 messages a day per home: phones that buy WITH the PC no longer need a heartbeat every 5 minutes",
+ "version": "v145",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v145_update.zip",
+ "sha256": "96e87e9a06c2e3b28d69fe3061aeb53ed0e62118a5ad3cdeca3b95b7af089616",
+ "size": 768565,
+ "notes": "Phone (top right) now lists every linked device - its version, when it was last heard, and its buying choice, which you can change there. Devices now show as running even when ntfy's 250 free messages a day are used up, and Restalker sends fewer messages so that happens less. Help has the guide link, Words used and About. Bigger Restalker logo. Problem reports: plain wording.",
  "files": 84
 }
