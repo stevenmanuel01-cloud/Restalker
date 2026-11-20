@@ -48,10 +48,13 @@ class WatchService : Service() {
         if (!web.available) store.log("! This phone's browser part (Android System WebView) is too old - update it in the Play Store.")
         wake = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "restalker:watch").also { it.acquire() }
         thread = Thread({ engine.run() }, "restalker-engine").also { it.isDaemon = true; it.start() }
-        tick.postDelayed(object : Runnable {        // 1.4: the desktop link - a round every minute (when linked)
+        // 1.4: the desktop link - a round every minute (when linked). 1.0.3: every 2 minutes - fewer requests to ntfy, which allows each
+        // home internet address about one every 10 seconds for ALL its Restalker devices together (the PC's "go" signals still arrive at
+        // once over the fast channel; opening the app still does a round at once)
+        tick.postDelayed(object : Runnable {
             override fun run() {
                 if (DeskLink.get().linked()) DeskLink.cycleAsync()
-                tick.postDelayed(this, 60_000)
+                tick.postDelayed(this, 120_000)
             }
         }, 5_000)
         tick.postDelayed(object : Runnable {        // 1.7: the self-check (it sends a report by itself when something is wrong)
