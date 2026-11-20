@@ -686,7 +686,7 @@ object CoreTests {
         t("112_pc_mode_linked_pc_buys_the_phone_stands_by_and_status_says_why") {
             val w = World(desk = true); w.add("B0TEST0306", 120.0, true)
             w.check("B0TEST0306"); w.engine.step()
-            w.amz.begins == 0 && w.said.last.contains("stands by") && w.said.last.contains("Who buys") }
+            w.amz.begins == 0 && w.said.last.contains("stands by") && w.said.last.contains("Linked devices") }
         t("113_both_another_phone_first_in_line_this_one_does_not_buy") {
             val w = World(desk = true); w.mode = "both"; w.other = true; w.add("B0TEST0307", 120.0, true)
             w.check("B0TEST0307")
@@ -889,15 +889,17 @@ object CoreTests {
             val b = BestPrice.of(p, t0)!!
             val noneFresh = BestPrice.of(p.copy(lastCheck = t0 - 5 * 3_600_000L, others = p.others.take(1)), t0)
             b.store == "Target" && b.price == 389.99 && noneFresh == null }
-        t("148_bar_half_to_twice_the_msrp_rounded") {
-            val (a, b) = CapStep.range(399.99, 380.0, 455.88, 388.40)
+        t("148_bar_75pct_of_lowest_to_125pct_of_highest_listing") {
+            val (a, b) = CapStep.range(399.99, 380.0, 455.88, 388.40)                 // (the Star Trek box: was $200 - $950)
+            val (a2, b2) = CapStep.range(399.99, 380.0, 455.88, 388.40, listOf(639.20))   // (+ Walmart's listing)
             val (c, d) = CapStep.range(null, 0.0, 39.99, null)
-            val (e, f) = CapStep.range(399.99, 380.0, null, 388.40)                 // (no MSRP: around the TCG price)
             val (g, h) = CapStep.range(null, 0.0, null, null)
             val pm = PriceMarks.of(399.99, 380.0, 455.88, 388.40, b, emptyMap(), a)
-            a == 200.0 && b == 950.0 && c == 15.0 && d == 80.0 && e == 150.0 && f == 800.0 && g == 0.0 && h == 50.0 &&
-                Math.abs(pm.frac(455.88) - ((455.88 - 200) / 750).toFloat()) < 1e-6 && pm.frac(100.0) == 0f && pm.frac(2000.0) == 1f &&
-                pm.items.first { it.kind == PriceMarks.ZERO }.label == "\$200" && clear(pm) }
+            println("    bar $a - $b; with Walmart $a2 - $b2; $c - $d")
+            a == 275.0 && b == 575.0 && a2 == 250.0 && b2 == 800.0 && c == 25.0 && d == 50.0 && g == 0.0 && h == 50.0 &&
+                Math.abs(pm.frac(455.88) - ((455.88 - 275) / 300).toFloat()) < 1e-6 && pm.frac(100.0) == 0f && pm.frac(2000.0) == 1f &&
+                pm.items.first { it.kind == PriceMarks.ZERO }.label == "\$275" && clear(pm) &&
+                (pm.frac(455.88) - pm.frac(380.0)) > 0.2f }                            // (the marks spread over a fifth of the bar - was a tenth)
         t("149_chart_time_axis_in_quarters") {
             val d0 = java.time.LocalDate.of(2026, 8, 21).toEpochDay(); val d1 = java.time.LocalDate.of(2026, 11, 18).toEpochDay()
             val q = Quarters.of(d0, d1)
@@ -1230,9 +1232,11 @@ object CoreTests {
                 "11-19 04:39:59  Nauctis Secret Lair Bundle: CHECKOUT started (\$89.99, cap \$90.00)",
                 "11-19 04:40:04  Nauctis Secret Lair Bundle: not bought - Amazon checkout: sold out under us",
                 "11-19 05:00:00  X: BOUGHT at \$89.99 - order 111-2", "11-19 05:01:00  X: PRACTICE checkout started",
-                "11-19 05:02:00  X: price drop to \$300.00 (was \$330.00).", "11-19 05:03:00  ! Report could not be sent (no internet?) - try again.",
+                "11-19 05:02:00  X: price drop to \$300.00 (was \$330.00).",
                 "11-18 14:44:48  Updated to v2.11.", "11-19 05:04:00  X: ANOTHER: another of your devices got to Place your order first - not ordered here.")
             val drop = listOf("11-18 15:28:09  · The watching notice was swiped away - watching goes on.",
+                "11-19 05:03:00  ! Report could not be sent (no internet?) - try again.",        // (1.0.2: reports are not events)
+                "11-19 04:40:05  Report sent to Claude (code rkr-abc): automatic: X: not bought - sold out",
                 "11-17 17:50:25  Phone / tablet 51c1: set to Both buy (from this device).", "11-17 17:38:33  The Hobbit Collector Booster Box: cap \$485.00.",
                 "11-17 17:38:33  X: Buy ON.", "11-16 11:01:39  Watching switched ON.", "11-16 15:11:52  From the desktop: Reality Fracture Collector Booster Box added (cap \$330.00).",
                 "11-19 04:40:04    checkout step: FLOW_BLOCKED - sold out", "11-16 15:10:49  Linked with the desktop. Products are shared from now on.",
@@ -1337,6 +1341,45 @@ object CoreTests {
                 UpdatePlan.parse("{\"version\": \"1.0.0\", \"code\": 27, \"apk\": \"${UpdatePlan.APK_PREFIX}1.0.0/restalker-mobile-1.0.0.apk\", \"sha256\": \"${"a".repeat(64)}\"}", 26)?.version == "1.0.0" &&
                 APP_VERSION.count { it == '.' } == 2 &&                                           // (three parts: a two-part 1.x would meet its old release)
                 UpdatePlan.parse("{\"version\": \"2.15\", \"code\": 26, \"apk\": \"${UpdatePlan.APK_PREFIX}2.15/restalker-mobile-2.15.apk\", \"sha256\": \"${"a".repeat(64)}\"}", 27) == null
+        }
+        // 1.0.2 (owner: "each notification should have a basic one line of what happened ... only once for each event ... a restock happened,
+        // what action was taken, and the ultimate result in the same notification")
+        t("172_activity_one_entry_per_event") {
+            val raw = listOf(
+                "11-19 04:39:10  Nauctis Secret Lair Bundle: in stock at \$89.99 - buying it now.",
+                "11-19 04:39:11  Nauctis Secret Lair Bundle: CHECKOUT started (\$89.99, cap \$90.00)",
+                "11-19 04:40:02  Nauctis Secret Lair Bundle: not bought - Amazon checkout: Amazon took the product out of the checkout - sold out under us (Amazon says: \"Sorry, the quantity you requested is no longer available.\")",
+                "11-19 04:40:05  Report sent to Claude (code rkr-abc): automatic: Nauctis Secret Lair Bundle: not bought - Amazon checkout",
+                "11-19 04:41:00  Nauctis Secret Lair Bundle: CHECKOUT started (\$89.99, cap \$90.00)",
+                "11-19 04:41:40  Nauctis Secret Lair Bundle: not bought - Amazon checkout: Amazon took the product out of the checkout - sold out under us",
+                "11-19 13:47:00  Nauctis Collector Booster Box: in stock at \$323.88 (another Restalker spotted it first) - another phone / tablet buys it (this one stands by).",
+                "11-19 14:05:00  Magic: The Gathering | The Hobbit Collector Booster Box: in stock at \$99.99 - buying it now.",
+                "11-19 14:05:01  Magic: The Gathering | The Hobbit Collector Booster Box: CHECKOUT started (\$99.99, cap \$120.00)",
+                "11-19 14:05:03  Magic: The Gathering | The Hobbit Collector Booster Box: Place your order allowed (item \$99.99) - waiting for Amazon's confirmation",
+                "11-19 14:05:05  Magic: The Gathering | The Hobbit Collector Booster Box: BOUGHT at \$99.99 - order 111-1000000-2000001. Looking it up in your Amazon orders before telling you.",
+                "11-19 16:36:00  ! The report could not be sent (no internet?) - try again.",
+                "11-19 23:04:00  Updated to v1.0.1.",
+                "11-19 23:10:00  Star Trek Collector Booster Box: cap \$555.00.",
+                "11-19 23:11:00  Star Trek Collector Booster Box: price drop to \$399.99 (was \$455.00).")
+            val ev = ActivityLog.events(raw.filter { ActivityLog.important(it) })
+            val txt = ev.map { "${it.time} ${it.product} | ${it.text} | ${it.tone}" }
+            txt.forEach { println("    $it") }
+            ev.size == 5 &&
+                txt[0] == "23:11 Star Trek Collector Booster Box | Price drop to \$399.99 (was \$455.00) | 0" &&
+                txt[1] == "23:04  | Updated to v1.0.1 | 0" &&
+                txt[2] == "14:05 Magic: The Gathering | The Hobbit Collector Booster Box | In stock \$99.99 → checkout → bought at \$99.99 · order 111-1000000-2000001 | 1" &&
+                txt[3] == "13:47 Nauctis Collector Booster Box | In stock \$323.88 (another Restalker spotted it) → another of your devices buys it | 0" &&
+                txt[4] == "04:39 Nauctis Secret Lair Bundle | In stock \$89.99 → checkout (2 tries) → missed (sold out) | -1" &&
+                ev.none { it.text.contains("rkr-") } && ActivityLog.eventsByDay(ev).size == 1
+        }
+        t("173_activity_a_new_restock_later_is_a_new_event") {
+            val raw = listOf(
+                "11-19 04:39:10  X Box: in stock at \$80.00 - you were sent a message.",
+                "11-19 06:00:00  X Box: in stock at \$85.00 - you were sent a message.",
+                "11-19 06:01:00  X Box: CHECKOUT started (\$85.00, cap \$90.00)",
+                "11-19 06:02:00  X Box: another of your devices got to Place your order first - not ordered here.")
+            val ev = ActivityLog.events(raw.filter { ActivityLog.important(it) })
+            ev.map { it.text } == listOf("In stock \$85.00 → checkout → another of your devices ordered it", "In stock \$80.00 → you were sent a message")
         }
         return results
     }

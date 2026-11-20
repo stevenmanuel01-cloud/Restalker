@@ -111,9 +111,17 @@ class ScreenTests {
         compose.waitForIdle()
     }
 
-    private fun sec(key: String) {
+    /** Opens a part of Settings (left open when it already is). 1.0.2: 13 parts became 6 - an old part's name opens the part it is in now. */
+    private fun sec(key0: String) {
+        val key = mapOf("devices" to "desk", "phone" to "amazon", "practice" to "amazon", "ntfy" to "notes", "discord" to "community",
+            "crowd" to "community", "share" to "community", "problems" to "about")[key0] ?: key0
         compose.waitForIdle()
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("sech-$key").fetchSemanticsNodes().isNotEmpty() }
+        if (compose.onAllNodesWithTag("secb-$key").fetchSemanticsNodes().isNotEmpty()) return
+        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-$key"))
+        compose.onNodeWithTag("sech-$key").performClick(); compose.waitForIdle()
+    }
+    private fun secClose(key: String) {
         compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-$key"))
         compose.onNodeWithTag("sech-$key").performClick(); compose.waitForIdle()
     }
@@ -379,10 +387,13 @@ class ScreenTests {
         compose.waitForIdle()
         toList(hasTestTag("product-B0TEST0601"))
         compose.onNodeWithTag("product-B0TEST0601").performClick(); compose.waitForIdle(); Thread.sleep(600)
-        compose.onNodeWithTag("capup-B0TEST0601").performScrollTo().performClick()
+        // (1.0.2: - / + and the bar are held 30 s from the first change - "Save now" saves at once)
+        compose.onNodeWithTag("capup-B0TEST0601").performScrollTo().performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("capsave-B0TEST0601").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 405.0 }
         compose.onNodeWithTag("capdown-B0TEST0601").performClick(); compose.waitForIdle()
-        compose.onNodeWithTag("capdown-B0TEST0601").performClick()
+        compose.onNodeWithTag("capdown-B0TEST0601").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("capsave-B0TEST0601").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0601").cap == 395.0 }
         compose.onNodeWithTag("cap-B0TEST0601").assertIsDisplayed()
         shot("t16_cap_buttons")
@@ -398,8 +409,11 @@ class ScreenTests {
         compose.onNodeWithTag("capdrag-B0TEST0601", useUnmergedTree = true).performTouchInput { swipe(Offset(width * 0.02f, height * 0.4f), Offset(width * 0.1f, height * 0.4f), 300) }
         compose.waitForIdle(); Thread.sleep(300)
         assertEquals(395.0, p("B0TEST0601").cap, 0.001)
+        assertTrue("nothing held", compose.onAllNodesWithTag("capheld-B0TEST0601", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         // dragging the cap mark to the right raises it (on a $5 mark)
         compose.onNodeWithTag("capknob-B0TEST0601", useUnmergedTree = true).performTouchInput { swipe(center, Offset(center.x + 120f, center.y), 500) }
+        compose.waitUntil(3_000) { compose.onAllNodesWithTag("capsave-B0TEST0601").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("capsave-B0TEST0601").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0601").cap > 395.0 }
         val c = p("B0TEST0601").cap
         assertTrue("on a \$5 mark: $c", Math.abs(c / 5.0 - Math.round(c / 5.0)) < 1e-9)
@@ -455,10 +469,23 @@ class ScreenTests {
         shot("t11_product")
         compose.onNodeWithTag("buy-B0TEST0201").performScrollTo().performClick()
         compose.waitUntil(3_000) { p("B0TEST0201").buy }
-        compose.onNodeWithTag("edit-B0TEST0201").performScrollTo().performClick()
-        compose.onNodeWithTag("e-cap").performTextClearance(); compose.onNodeWithTag("e-cap").performTextInput("399.5")
-        compose.onNodeWithTag("e-save").performClick()
+        // 1.0.2: no Change cap / Practice checkout buttons; the cap is typed in its box (saved at once with Done) ...
+        assertTrue("no Change cap / Practice buttons", compose.onAllNodesWithTag("edit-B0TEST0201").fetchSemanticsNodes().isEmpty() &&
+            compose.onAllNodesWithTag("practice-B0TEST0201").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("capfield-B0TEST0201").performScrollTo().performTextReplacement("399.5")
+        compose.onNodeWithTag("capfield-B0TEST0201").performImeAction()
         compose.waitUntil(3_000) { p("B0TEST0201").cap == 399.5 }
+        // ... and - / + are held 30 s from the first tap, then saved and noted once (not one line per \$5)
+        val n0 = RkApp.store().log().count { it.contains("B0TEST0201") || it.contains("The Hobbit Collector Booster Box: cap") }
+        repeat(3) { compose.onNodeWithTag("capup-B0TEST0201").performClick(); compose.waitForIdle() }
+        compose.onNodeWithTag("capheld-B0TEST0201", useUnmergedTree = true).assertExists()
+        assertEquals("not saved yet", 399.5, p("B0TEST0201").cap, 0.001)
+        Thread.sleep(300); shot("t11_cap_held")
+        compose.onNodeWithTag("capsave-B0TEST0201").performScrollTo().performClick(); compose.waitForIdle()
+        compose.waitUntil(3_000) { p("B0TEST0201").cap == 410.0 }                    // (399.50 -> 400 -> 405 -> 410)
+        val capLines = RkApp.store().log().filter { it.contains("The Hobbit Collector Booster Box: cap") }
+        assertTrue("one line for the change: ${capLines.takeLast(3)}", capLines.last().contains("\$399.50 → \$410.00") &&
+            capLines.none { it.endsWith("\$400.00.") || it.endsWith("\$405.00.") })      // (no line for the steps in between)
         compose.onNodeWithTag("remove-B0TEST0201").performScrollTo().performClick()
         assertEquals("asks once before removing", true, RkApp.store().products().any { it.asin == "B0TEST0201" })
         compose.onNodeWithTag("remove-B0TEST0201").performClick()
@@ -616,7 +643,7 @@ class ScreenTests {
         compose.onNodeWithTag("pricebar-gradient", useUnmergedTree = true).assertExists()             // 2.5: the gradient bar
         android.util.Log.i("RkTest", "t19 step 16")
         compose.onNodeWithTag("pricebar-end-B0TEST0701").assertExists()                             // 2.8
-        compose.onNodeWithText("Bar: \$200 to \$950 (half to twice the MSRP)", substring = true).assertExists()    // 2.10
+        compose.onNodeWithText("(a bit under the lowest to a quarter over the highest price)", substring = true).assertExists()    // 1.0.2
         compose.onNodeWithTag("tcgchart-B0TEST0701").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("TCGplayer, last 3 months", substring = true).assertExists()
         compose.onNodeWithTag("tcgchange-B0TEST0701", useUnmergedTree = true).assertExists()
@@ -694,7 +721,7 @@ class ScreenTests {
             compose.onNodeWithTag("np-usual").assertExists()                 // (all but price drops: the Recommended choice)
             compose.onNodeWithTag("notice-off").assertExists()
             compose.onNodeWithTag("n-restock").performScrollTo(); Thread.sleep(500); shot("t22_notifications")
-            sec("notes")                                                   // closes again
+            secClose("notes")                                              // closes again
             compose.waitUntil(3_000) { compose.onAllNodesWithTag("n-drop").fetchSemanticsNodes().isEmpty() }
         } finally { RkApp.store().setSettings { it.copy(nRestock = true, nDrop = false, nBuy = true, nNeed = true) }; compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }
     }
@@ -739,20 +766,23 @@ class ScreenTests {
         Thread.sleep(400); shot("t23_discord")
         // Activity: a navy bar per day; restocks and checkouts shown, settings changes not
         compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
-        assertTrue("checkout and restock shown", compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isNotEmpty() &&
-            compose.onAllNodesWithText("in stock at \$350.00", substring = true).fetchSemanticsNodes().isNotEmpty())
+        // 1.0.2: one entry for the restock - what was seen, what was done (and how it ended, once it has)
+        // (the big-text pass runs after the normal one on the same day: its entry is there too - so: the joined entry, no separate lines)
+        assertTrue("one entry: restock + checkout", compose.onAllNodesWithText("In stock \$350.00 → checkout", substring = true).fetchSemanticsNodes().isNotEmpty() &&
+            compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isEmpty() &&
+            compose.onAllNodesWithText("buying it now", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue("settings changes are not in Activity", compose.onAllNodesWithText("Watching switched ON", substring = true).fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("cap \$485.00.", substring = true).fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Today").assertExists()
         Thread.sleep(400); shot("t23_activity_days")
         // 1.0 (owner: "Activities ... should also be collapsible"): a day folds with a tap on its bar (remembered) and opens again
         compose.onNodeWithText("Today").performClick(); compose.waitForIdle()
-        assertTrue("today is folded", compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isEmpty())
+        assertTrue("today is folded", compose.onAllNodesWithText("→ checkout", substring = true).fetchSemanticsNodes().isEmpty())
         assertEquals(true, s.readFile("folded.json")!!.contains("\"day:"))
         compose.onNodeWithText("Today").assertExists()                                             // (the bar stays)
         Thread.sleep(300); shot("t23_activity_folded")
         compose.onNodeWithText("Today").performClick(); compose.waitForIdle()
-        assertTrue("today is open again", compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue("today is open again", compose.onAllNodesWithText("→ checkout", substring = true).fetchSemanticsNodes().isNotEmpty())
         assertEquals(false, s.readFile("folded.json")!!.contains("\"day:"))
         compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
     }
@@ -800,32 +830,79 @@ class ScreenTests {
         Thread.sleep(300); shot("t24_added_no_cap")
     }
 
-    /** 1.0 (owner: "My version of the app should clearly distinguish itself as "beta" whereas all other versions should be standard"):
-     *  a copy newer than the one everyone has shows an amber BETA right after its version (title and About); a standard copy does not. */
+    /** 1.0.2 (owner: "For beta versions, let's use a "b" at the end of the version number"): a copy newer than the one everyone has
+     *  shows "v1.0.2b" (title and Help and about); the standard copy shows "v1.0.2". */
     @Test fun t25_beta_mark_only_on_a_beta() {
+        val v = com.restalker.mobile.core.APP_VERSION
         try {
             MainActivity.betaForTests = true; RkApp.store().log("t25 marker a", quiet = true)
-            compose.waitUntil(10_000) { compose.onAllNodesWithTag("beta", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Restalker Mobile v${v}b").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
             val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
             compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
             val l0 = lay.first(); val full = l0.layoutInput.text.text
-            assertEquals("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION} BETA", full)
-            assertEquals("the whole title, BETA included, is visible: $full", full.length, l0.getLineEnd(l0.lineCount - 1, visibleEnd = true))
-            assertEquals("no line is cut with ...", false, (0 until l0.lineCount).any { l0.isLineEllipsized(it) })
-            compose.onNodeWithTag("beta", useUnmergedTree = true).assertIsDisplayed()
+            assertEquals("Restalker Mobile v${v}b", full)
+            assertEquals("the whole title is visible: $full", full.length, l0.getLineEnd(l0.lineCount - 1, visibleEnd = true))
             Thread.sleep(300); shot("t25_beta")
             compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
             compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-about"))
-            compose.onAllNodesWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION} beta", substring = true, useUnmergedTree = true).onFirst().assertExists()
+            compose.onAllNodesWithText("Restalker Mobile v${v}b", substring = true, useUnmergedTree = true).onFirst().assertExists()
             Thread.sleep(300); shot("t25_beta_about")
             compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
-            // a standard copy (the one everyone has): no mark, only the version
+            // the standard copy (the one everyone has): only the version, no b
             MainActivity.betaForTests = false; RkApp.store().log("t25 marker b", quiet = true)
-            compose.waitUntil(10_000) { compose.onAllNodesWithTag("beta", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
-            compose.onNodeWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}").assertIsDisplayed()
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Restalker Mobile v$v").fetchSemanticsNodes().isNotEmpty() }
+            assertTrue(compose.onAllNodesWithText("Restalker Mobile v${v}b").fetchSemanticsNodes().isEmpty())
             Thread.sleep(300); shot("t25_standard")
         } finally { MainActivity.betaForTests = null }
+    }
+
+    /** 1.0.2 (owner, 2026-11-19 11:40 PM): Watch / Buy right on the card; what each year holds in words; Settings in 6 parts (with the
+     *  words used); Activity without the report button. */
+    @Test fun t26_card_buttons_year_words_six_settings() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0901", "Foundations Collector Booster Box", "2024", "Foundations").copy(watch = false, buy = false))
+        s.add(prod("B0TEST0902", "Duskmourn Collector Booster Box", "2024", "Duskmourn").copy(cap = 0.0, watch = false, buy = false))
+        compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("grp-2024"))
+        compose.onNodeWithTag("grp-2024-sub", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("2 products · none watched", useUnmergedTree = true).assertExists()
+        toList(hasTestTag("product-B0TEST0901"))
+        compose.onNodeWithTag("qwatch-B0TEST0901").performClick(); compose.waitUntil(3_000) { p("B0TEST0901").watch }
+        compose.onNodeWithTag("qbuy-B0TEST0901").performClick(); compose.waitUntil(3_000) { p("B0TEST0901").buy }
+        compose.onNodeWithText("2 products · 1 watched · 1 set to buy", useUnmergedTree = true).assertExists()
+        Thread.sleep(300); shot("t26_card_buttons")
+        compose.onNodeWithTag("qwatch-B0TEST0901").performClick()                         // Watch off: Buy goes off with it
+        compose.waitUntil(3_000) { !p("B0TEST0901").watch && !p("B0TEST0901").buy }
+        // Buy on a product without a cap: its page opens (the cap is set there first)
+        toList(hasTestTag("product-B0TEST0902"))
+        compose.onNodeWithTag("qbuy-B0TEST0902").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("product-screen").assertExists()
+        assertTrue("not set to buy without a cap", !p("B0TEST0902").buy)
+        compose.onNodeWithTag("back").performScrollTo().performClick(); compose.waitForIdle()
+        // Settings: 6 parts
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        val parts = listOf("desk", "amazon", "notes", "catalog", "community", "about")
+        for (k in parts) { compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-$k")) }
+        val old = listOf("devices", "phone", "practice", "ntfy", "discord", "crowd", "share", "problems")
+        assertTrue("6 parts, the old ones joined in", old.all { compose.onAllNodesWithTag("sech-$it").fetchSemanticsNodes().isEmpty() })
+        compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-desk")); Thread.sleep(300); shot("t26_settings")
+        sec("about")
+        compose.onNodeWithTag("glossary").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("report").performScrollTo().assertIsDisplayed()
+        Thread.sleep(300); shot("t26_help")
+        sec("community")
+        compose.onNodeWithTag("discord-join").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("crowd-on").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("share-qr").performScrollTo().assertIsDisplayed()
+        sec("amazon")
+        compose.onNodeWithTag("practice-any").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("autoupdate").performScrollTo().assertIsDisplayed()
+        // Activity: no report button there any more
+        compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
+        assertTrue(compose.onAllNodesWithTag("report-log").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
     }
 
     @Test fun t8_turnPhoneSideways_noCrash() {
