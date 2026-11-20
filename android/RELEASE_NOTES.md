@@ -1,3 +1,35 @@
+# Restalker Mobile 1.0.4 (2026-11-20; your 10 notes of 9:05 AM)
+- Watch (note 1): a product that is NOT watched is never looked at all day - only once when you open the app (if its last look is
+  over 6 hours old), or by your linked PC. Every such card now says how old its data is ("Off (not watched) · checked 7 h ago",
+  "desktop saw it 20 min ago", "not looked at yet"). "In stock now" holds only what was seen for sale in the last 6 hours; an older
+  sighting stays on its card in grey as "Was over cap · $72.10".
+- Linked devices (note 2): "heard" was only the time of a device's last message on the free message service - and that service
+  refuses a home's messages once its 250 a day are used, so a PC that was running looked silent for hours. Now every linked device
+  also says "I am here" to the Restalker relay every 15 minutes (no message used; what it says is sealed with your link code), and
+  Linked devices shows the newest sign of life: "running · heard 3 min ago". When product updates from the PC are not arriving, or
+  the day's messages are used up, it says exactly that - with the time they start again.
+- Fewer messages: automatic problem reports at most every 2 hours (was 30 minutes); when few of the day's messages are left the
+  hourly "still here" and the automatic reports wait, so a product you change, a purchase and an alert still get through.
+- A buying choice made on the PC (its new Linked devices list, PC v145) is taken here too.
+- Watch hours (note 3): Settings, Amazon, buying and this phone - "All day" or "Set hours" (start and stop, in half-hour steps; over
+  midnight works). Outside them the phone does not look or buy by itself and may sleep; Check now and Buy now still work, and a
+  linked PC keeps going. For a hard look overnight: set the night's hours and choose Look every 60 s.
+  "Watching all day allowed (battery)" now says what it is: "Android lets Restalker keep running in the background (battery setting)".
+- Price drops (note 4): also at or under your cap when the product is watched but not set to Buy - with a Buy now button. (Set to
+  Buy it is bought by itself; and the moment it comes under your cap is still the restock message, not a second alert.)
+- The "Restalker is watching" notice (note 5): Android puts it up again each time watching starts (every update, every restart) and
+  an app may not remove its own - a swipe only hides it until then. The notice now has a Hide button, and Settings, Notifications a
+  row for it: both open the phone's own switch for exactly this notice. Switch it off there once and it never comes back; watching
+  goes on. The row then shows a green check.
+- Reports (note 6): plain words for everyone - "Send problem reports automatically", "Send a report now", "Report sent".
+- The logo (note 7): half again as big on Watch (a bit less on a narrow screen or with big text, so the title keeps its lines), and
+  the same navy bar - logo, the tab's name, the version - on Bought, Activity and Settings.
+- Watch (note 8): the little switch is now a Stop / Start button, and the line under it says it: "Runs in the background - also
+  after you close the app or swipe it away. Stop ends it."
+- No PC yet (note 10): Settings, Linked devices shows the steps and "Send me the link" (e-mail it to yourself, open it on the PC).
+  The PC then shows the code and the phone scans it - no camera needed on the PC - and the phone's products go to the PC.
+- Fixed: claiming a product right before Place your order no longer waits for a link round that is talking to the network.
+
 # Restalker Mobile 1.0.3 (2026-11-20; why your PC went "silent" every afternoon)
 - ntfy.sh, the free message service the devices talk through, allows each home internet address 250 messages a day for ALL its
   Restalker devices together. Since your phones were set to "Both buy" (2.15) each sent "I'm listening" to the PC every 5 minutes -
@@ -15,7 +47,7 @@
   every store's current listing), so the marks spread out instead of bunching up.
 - Product page: no Change cap or Practice checkout buttons (the cap is right at the bar; Practice checkout is in Settings).
 - Settings: 6 parts instead of 13 - Linked devices; Amazon, buying and this phone; Notifications (with ntfy); Products; Community
-  (Discord, the crowd, sharing the app); Help and about (problems, "Send a report to Claude", the words used, About).
+  (Discord, the crowd, sharing the app); Help and about (problems, "Send a report", the words used, About).
 - Activity: one entry per event - the product, then one line: what was seen, what was done and how it ended
   ("In stock $89.99 → checkout (2 tries) → missed (sold out)"). Reports are no longer listed there.
 - A beta now shows a "b" after its version (v1.0.2b). Once you release it to everyone, the same copy shows v1.0.2 - nothing is renumbered.
@@ -41,7 +73,7 @@
 - The race to checkout: your phones and tablets buy at the same time as the PC (Who buys: both, set once on every device). The first
   of your devices to reach Place your order claims the product on the Restalker server and orders; the others stop - never two orders.
   This starts as soon as the PC knows the shared lock too (PC v141); until then "both" waits for the PC's own try, as before.
-- Only your own devices (the master code, or linked to your PC) send reports to Claude. Everyone else's go to the Restalker team on
+- Only your own devices (the master code, or linked to your PC) send their reports directly. Everyone else's go to the Restalker team on
   Discord, compiled once a day. "Send diagnostics" still only opens the share menu.
 - Red marks on anything that needs you (not signed in, notifications or battery not allowed, an update waiting, a product whose checkout
   did not finish). They go away when you tap them and come back each day until done ("Remind me daily", Settings, Notifications).
@@ -71,7 +103,7 @@
 # Restalker Mobile 2.13 (2026-11-18; your notes of 5:41 PM)
 - Activity shows only what matters. No more lines for the app starting, updates being installed (they showed up to 3 times), the
   watching notice being swiped away, or a device change waiting for the next link round. "Updated to v..." stays. (The hidden lines
-  still go into the reports Claude reads.)
+  still go into the problem reports.)
 - A restock is ONE line: what was seen, who spotted it, and what happens now - e.g. "Nauctis Secret Lair Bundle: in stock at $89.99
   (another Restalker spotted it first) - the linked desktop buys it (this phone stands by)." Before, that took three lines. A tip from
   the crowd that turned out to be sold out by the time this phone looked no longer adds a line.
@@ -214,13 +246,13 @@
   to allow it (Allow) - after that, no more downloading. (Android 11 and older: also a tap on Install for each update.)
 - Pictures fixed: 1.5/1.6 kept Amazon's grey placeholder dot from the phone page instead of the product picture. The real picture is
   taken now, downloaded by the app itself; the desktop's picture is shown when the phone has none.
-- Self-check: the app sends a report to Claude by itself when something is wrong (pictures, watching stopped, desktop link, data use,
+- Self-check: the app sends a report by itself when something is wrong (pictures, watching stopped, desktop link, data use,
   a product marked bought without an order, a crash, a failed update).
 
 # Restalker Mobile 1.6 (2026-11-16; from your report)
 - FIX: a product the desktop had bought BEFORE the link (weeks ago) was marked "Bought" here, and the phone told the desktop "Buy off".
   Now only a purchase since the link counts; such products are corrected once by themselves.
-- Report a problem asks "What went wrong?" (optional) - your words go to Claude first.
+- Report a problem asks "What went wrong?" (optional) - your words go first in the report.
 - Pictures also for products that are not watched (one look each, on Wi-Fi).
 - Less data: while the linked desktop buys, the phone looks every 30 minutes (was 10; about 80 MB an hour) - the desktop's view shows meanwhile.
 
@@ -242,7 +274,7 @@
 
 Restalker Mobile 1.3 (Android).
 
-- NEW: Report problem (top of the Products tab, and in the Log tab): the app's log goes straight to Claude. Automatic reports (on): when a
+- NEW: Report problem (top of the Products tab, and in the Log tab): the app's log is sent as a report. Automatic reports (on): when a
   checkout does not buy or something needs you, a report is sent by itself (at most every 30 minutes).
 - The log now keeps Amazon's own words at every checkout step.
 

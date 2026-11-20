@@ -2,7 +2,10 @@ package com.restalker.mobile
 
 import com.restalker.mobile.core.MiniJson
 import com.restalker.mobile.core.asBool
+import com.restalker.mobile.core.asDouble
+import com.restalker.mobile.core.asList
 import com.restalker.mobile.core.asLong
+import com.restalker.mobile.core.asMap
 import com.restalker.mobile.core.asStr
 
 /** 2.15: the Restalker relay (Cloudflare - relay/ in the repository): the live "active now" count, the shared checkout lock (the race to
@@ -40,17 +43,37 @@ object Relay {
         } catch (e: Exception) { lastError = "${e.javaClass.simpleName}: ${e.message?.take(60)}"; null }
     }
 
-    /** Every 15 minutes (WatchService) and when the app opens: "this device is working" -> the live count of active devices. */
+    /** Every 15 minutes (WatchService) and when the app opens: "this device is working" -> the live count of active devices.
+     *  1.0.4 (owner, 2026-11-20: "Both of these devices are currently active ... Confirm the devices can see and report active links"):
+     *  a linked device also gives its link group and a few sealed words about itself (Link.who) and gets the other devices of its group
+     *  back - "heard" in Linked devices no longer depends on the free message service alone. Linked: sent also while crowd sharing is
+     *  off (nothing about restocks is in it). [force]: now (the app was opened) - at most once a minute. */
     fun heartbeat(force: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (!force && now - beatAt < 15 * 60_000L) return
-        if (!RkApp.store().settings().crowd) return
+        if (now - beatAt < (if (force) 60_000L else 15 * 60_000L)) return
+        val linked = try { DeskLink.get().linked() } catch (e: Exception) { false }
+        if (!RkApp.store().settings().crowd && !linked) return
         beatAt = now
         Thread({
-            val r = call("POST", "/v1/h", mapOf("c" to device()))
+            val body = linkedMapOf<String, Any?>("c" to device())
+            if (linked) try {
+                val l = DeskLink.get(); val g = l.lockGroup(); val w = l.who()
+                if (g != null && w != null) { body["g"] = g; body["w"] = w }
+            } catch (e: Exception) { }
+            val r = call("POST", "/v1/h", body)
             r?.get("active").asLong()?.let { active = it.toInt(); activeAt = System.currentTimeMillis() }
+            try {
+                val peers = r?.get("peers").asList().mapNotNull { x ->
+                    val m = x.asMap() ?: return@mapNotNull null
+                    val w = m["w"].asStr() ?: return@mapNotNull null
+                    val at = m["at"].asDouble() ?: return@mapNotNull null
+                    w to at / 1000.0 }
+                if (r?.containsKey("peers") == true) { peersAt = System.currentTimeMillis(); peersN = DeskLink.get().takePresence(peers); RkApp.changed() }
+            } catch (e: Exception) { }
         }, "relay-beat").start()
     }
+    @Volatile var peersAt = 0L; private set          // 1.0.4: when the relay last told us about the other linked devices (0 = not yet)
+    @Volatile var peersN = 0; private set
 
     /** The race (engine thread): true = this device may place the order, false = another of your devices has it, null = not asked. */
     fun lock(asin: String): Boolean? {
@@ -65,7 +88,7 @@ object Relay {
         Thread({ call("POST", "/v1/release", mapOf("c" to device(), "g" to g, "a" to asin, "result" to result)) }, "relay-release").start()
     }
 
-    /** (owner, 2026-11-19: reports from everyone go to Discord, compiled once a day - only the owner's devices send to Claude) */
+    /** (owner, 2026-11-19: reports from everyone go to Discord, compiled once a day - only the owner's devices send theirs directly) */
     fun report(title: String, note: String, text: String): Boolean =
         call("POST", "/v1/report", mapOf("c" to device(), "app" to "phone", "ver" to BuildConfig.VERSION_NAME, "title" to title.take(200),
             "note" to note.take(1000), "text" to text.take(250_000)), timeoutMs = 15_000)?.get("ok") == true
@@ -94,5 +117,6 @@ object Relay {
     }
 
     fun status(): String = if (!enabled) "relay: off (test build)" else
-        "relay: active now ${if (active >= 0) active.toString() else "?"}" + (if (lastError.isNotEmpty()) " - last error $lastError" else "")
+        "relay: active now ${if (active >= 0) active.toString() else "?"}" + (if (lastError.isNotEmpty()) " - last error $lastError" else "") +
+            " · linked devices heard there: " + (if (peersAt > 0) "$peersN (asked ${(System.currentTimeMillis() - peersAt) / 60_000} min ago)" else "not asked yet")
 }

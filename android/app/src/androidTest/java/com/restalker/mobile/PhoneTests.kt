@@ -91,7 +91,7 @@ class PhoneTests {
     private fun p(asin: String) = RkApp.store().products().first { it.asin == asin }
     private var autoReports = false          // (tests send no reports, except t14 which checks them)
 
-    /** Reads this phone's report channel back the way Claude does: the newest report file's text. */
+    /** Reads this phone's report channel back from outside, with its report code: the newest report file's text. */
     private fun get(url: String): String {
         val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         c.setRequestProperty("User-Agent", "Mozilla/5.0 (Restalker test)"); c.connectTimeout = 20_000; c.readTimeout = 30_000
@@ -294,7 +294,7 @@ class PhoneTests {
         assertTrue("watching restarted", waitFor(15_000) { WatchService.instance != null })
     }
 
-    @Test fun t14_reports_reachClaude_byButtonAndByThemselves() {
+    @Test fun t14_reports_arrive_byButtonAndByThemselves() {
         // 1) the button (Reporter.send = what Report problem does)
         val done = java.util.concurrent.CountDownLatch(1); var ok = false
         RkApp.store().log("t14 marker 1")
@@ -306,15 +306,17 @@ class PhoneTests {
         // 2) by itself: a checkout that does not buy (Amazon asks to sign in) sends one
         autoReports = true; site.signinAtCheckout = true
         start(false, true, Product(id = "rp", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))
-        waitFor(200_000) { RkApp.store().log().any { it.contains("Report sent to Claude") && it.contains("automatic") } }
+        waitFor(200_000) { RkApp.store().log().any { it.contains("Report sent (code") && it.contains("automatic") } }
         Thread.sleep(3_000)
         val second = readBack(code)
         File(File(ctx.filesDir, "shots").also { it.mkdirs() }, "t14_report.txt").writeText("code $code\n--- first ---\n" + first.take(3000) + "\n--- second ---\n" + second.take(3000) + "\n--- app log ---\n" + RkApp.store().log().takeLast(40).joinToString("\n"))
         assertTrue("the button's report was sent", ok)
-        assertTrue("Claude can read it: app version, log", first.isEmpty() || (first.contains("Restalker Mobile v") && first.contains("t14 marker 1")))
+        assertTrue("it can be read: app version, log", first.isEmpty() || (first.contains("Restalker Mobile v") && first.contains("t14 marker 1")))
         // (the report server answered "received" = the app's log line; reading it back from inside the test phone does not always work
-        //  on the test machines - each run's reports are read back from outside too, the way Claude reads them)
-        val autoLogged = RkApp.store().log().any { it.contains("Report sent to Claude") && it.contains("automatic: Sign in to Amazon") }
+        //  on the test machines - each run's reports are read back from outside too, with the report code)
+        // 1.0.4 (owner: "a generic message to allow automatic reporting, and sending a manual report"): the log names no one
+        val autoLogged = RkApp.store().log().any { it.contains("Report sent (code") && it.contains("automatic: Sign in to Amazon") } &&
+            RkApp.store().log().none { it.contains("Report sent to") && !it.contains("the Restalker team") }
         assertTrue("an automatic report was sent after the failed checkout", autoLogged && (second.isEmpty() || second.contains("Amazon asked to sign in")))
     }
 
@@ -431,6 +433,12 @@ class PhoneTests {
         WatchService.instance?.notifier?.status("check " + System.currentTimeMillis()); Thread.sleep(2_000)
         val after = nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.extras?.getCharSequence("android.text")?.toString()
         assertEquals("the notice's words do not change with the status", before, after)
+        // 1.0.4 (owner: "I still have this constant message that pops up all the time"): the notice carries a Hide button that opens the
+        // phone's own switch for exactly this notice (the one way to keep it away for good), and the app can tell whether it is off
+        val acts = nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.actions?.map { it.title.toString() } ?: emptyList()
+        assertTrue("Hide and Stop watching on the notice: $acts", acts.contains("Hide") && acts.contains("Stop watching"))
+        assertEquals("not switched off in the phone's settings here", false, Notifier.noticeOff(ctx))
+        assertEquals(Notifier.CH_QUIET, Notifier.noticeSettings(ctx).getStringExtra(android.provider.Settings.EXTRA_CHANNEL_ID))
         RkApp.store().setSettings { it.copy(runIcon = true, noticeHidden = false) }
         assertTrue("icon back", waitFor(45_000) { WatchService.instance?.notifier?.refreshNotice(); nm.activeNotifications.firstOrNull { it.id == Notifier.ONGOING_ID }?.notification?.channelId == Notifier.CH_WATCH })
         RkApp.store().setSettings { it.copy(runIcon = false) }

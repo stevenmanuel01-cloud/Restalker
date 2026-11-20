@@ -41,8 +41,8 @@ else cat instrument_a.txt instrument_b.txt > instrument.txt; grep -q "^OK (" ins
 echo "--- failures (name + reason) ---"
 awk '/INSTRUMENTATION_STATUS: stack=/{s=$0; getline n; s=s" | "n} /INSTRUMENTATION_STATUS: test=/{t=$0} /INSTRUMENTATION_STATUS_CODE: -2/{print t" || "s}' instrument.txt | cut -c1-600
 sed -n '/^There w/,/^FAILURES/p' instrument.txt | head -60
-# 2.1: a test that failed is run once more on its own; it passes only if it passes then (shown as SECOND TRY - Claude reads these and
-# fixes the test's timing). A real fault fails both times. usage: judge <instrument output> [extra instrument args]
+# 2.1: a test that failed is run once more on its own; it passes only if it passes then (shown as SECOND TRY - these are read, and the
+# test's timing is fixed). A real fault fails both times. usage: judge <instrument output> [extra instrument args]
 judge() {
   local out=$1; shift
   if grep -q "^OK (" "$out" && ! grep -q "FAILURES!!!\|INSTRUMENTATION_FAILED\|Process crashed" "$out"; then return 0; fi
@@ -66,7 +66,7 @@ if ! alive && ! up; then echo "THE VIRTUAL PHONE DROPPED OFF RIGHT AFTER THE APP
   tail -40 live_logcat.txt | cut -c1-220
   finish; fi
 
-echo "=== the phone's reports, read back from outside (the way Claude reads them)"
+echo "=== the phone's reports, read back from outside (with the report code)"
 if [ "$SCOPE" != "full" ]; then echo "(not needed for this change: $SCOPE)"; code=skip; else code=$(adb exec-out run-as $P cat files/shots/t14_report.txt 2>/dev/null | sed -n 's/^code \(rkr-[a-z0-9]\{20\}\).*/\1/p' | head -1)
 fi
 if [ "$code" = "skip" ]; then :; elif [ -z "$code" ]; then echo "no report code from the test"; fail=1; else

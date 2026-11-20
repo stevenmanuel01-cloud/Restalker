@@ -50,7 +50,10 @@ object Diag {
         sb.append("\nSelf-check: ${if (hp.isEmpty()) "nothing wrong found" else hp.joinToString("\n  ", "\n  ") { "${it.first}: ${it.second}" }}\n")
         sb.append(try { NtfyOut.status() } catch (e: Exception) { "ntfy alerts: ?" }).append("\n")
         sb.append(try { Relay.status() + " · race to checkout: " + (if (DeskLink.get().raceReady()) "on (every linked device knows the shared lock)" else "off (a linked device does not know the shared lock yet)") +
-            " · reports go to: " + (if (Reporter.toClaude()) "Claude" else "the Restalker team") } catch (e: Exception) { "relay: ?" }).append("\n")
+            " · reports go: " + (if (Reporter.direct()) "directly (the owner's device)" else "to the Restalker team") } catch (e: Exception) { "relay: ?" }).append("\n")
+        sb.append(try { Quota.status() } catch (e: Exception) { "message service: ?" }).append("\n")
+        sb.append("Watch hours (1.0.4): ${com.restalker.mobile.core.WatchHours.words(st)}" + (if (!com.restalker.mobile.core.WatchHours.inside(st, System.currentTimeMillis())) " - outside them now" else "") +
+            " · watching notice switched off in the phone's settings: ${try { Notifier.noticeOff(ctx) } catch (e: Exception) { "?" }}\n")
         sb.append("Messages (2.12): ${com.restalker.mobile.core.NotifyPrefs.summary(st)} · watching icon=${st.runIcon} notice swiped away=${st.noticeHidden}\n")
         sb.append("Desktop link rounds failed in a row: ${DeskLink.failsInRow}\n")
         sb.append("Updates: mode=${Updater.mode(ctx)} by itself=${st.autoUpdate} allowed=${Updater.allowed(ctx)} state=${Updater.state.ifBlank { "-" }} failed=${Updater.failed ?: "-"}" +
@@ -66,7 +69,7 @@ object Diag {
     }
 }
 
-/** Sends reports to Claude (see core/Report.kt) from the phone: by the Report problem button, or by itself after a problem. */
+/** Sends problem reports (see core/Report.kt) from the phone: by the report button, or by itself after a problem. */
 object Reporter {
     fun put(url: String, headers: Map<String, String>, body: ByteArray): Int {
         val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
@@ -79,17 +82,19 @@ object Reporter {
         return code
     }
 
-    /** 2.15 (owner, 2026-11-19: "the option to send to claude should be removed from all devices except for my master account (and my
+    /** 2.15 (owner, 2026-11-19: the option to send reports directly "should be removed from all devices except for my master account (and my
      *  linked devices) ... Instead, all issues should be reported to discord, which can be sorted, compiled, and sent to me/you for
-     *  review"): only the owner's devices (the master code, or linked to the owner's PC) send straight to Claude; everyone else's
-     *  reports go to the relay, which compiles them once a day into the private staff channel on Discord. (Test builds: ours.) */
-    fun toClaude(): Boolean = BuildConfig.DEBUG || DeskLink.master()
+     *  review"): only the owner's devices (the master code, or linked to the owner's PC) send their reports directly (their own private
+     *  report channel); everyone else's go to the relay, which compiles them once a day into the private staff channel on Discord.
+     *  (Test builds: direct.) 1.0.4 (owner: "a generic message to allow automatic reporting, and sending a manual report"): the app's words
+     *  are the same for everyone - "Send problem reports automatically", "Send a report now", "Report sent". */
+    fun direct(): Boolean = BuildConfig.DEBUG || DeskLink.master()
 
     /** In the background; [done] gets true/false on the main thread. [note]: what you wrote (if anything). */
     fun send(ctx: android.content.Context, why: String, note: String = "", done: ((Boolean) -> Unit)? = null) {
         val store = RkApp.store()
         Thread {
-            val ok = if (toClaude())
+            val ok = if (direct())
                 // 1.6: what you wrote comes first in the report (owner 2026-11-16: "App issues sent" - the report had the log but not the issues)
                 com.restalker.mobile.core.Report.send(store, "Restalker Mobile report", "REPORT: $why\n\n" + Diag.text(ctx), why, put = ::put)
             else Relay.report(why, note, Diag.text(ctx)).also { ok -> store.log(if (ok) "Report sent to the Restalker team (looked at once a day)." else "! The report could not be sent (no internet?) - try again.", quiet = ok) }
@@ -97,10 +102,13 @@ object Reporter {
         }.start()
     }
 
-    /** -> true when a report is being sent (automatic reports: switched on, at most one every 30 minutes). */
+    /** -> true when a report is being sent (automatic reports: switched on, at most one every 2 hours).
+     *  1.0.4: a direct report is one of the day's 250 free messages - it waits while no more than 100 of them are left (the link, the
+     *  alerts and what you send yourself come first). */
     fun auto(ctx: android.content.Context, why: String): Boolean {
         val s = RkApp.store().settings()
         if (!com.restalker.mobile.core.Report.autoDue(s, System.currentTimeMillis())) return false
+        if (direct() && !com.restalker.mobile.core.NtfyQuota.may(Quota.q, System.currentTimeMillis(), com.restalker.mobile.core.NtfyQuota.KEEP_FOR_NORMAL)) return false
         RkApp.store().setSettings { it.copy(reportAt = System.currentTimeMillis()) }     // (one at a time)
         send(ctx, "automatic: $why")
         return true

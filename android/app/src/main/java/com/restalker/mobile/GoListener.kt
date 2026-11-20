@@ -33,7 +33,8 @@ object GoListener {
 
     private fun wanted(): Boolean {
         val st = RkApp.store().settings()
-        return st.watching && st.buying && st.buyMode != "pc" && DeskLink.get().linked()
+        // (1.0.4: outside this device's watch hours it does not listen - the PC buys again by itself)
+        return st.watching && st.buying && st.buyMode != "pc" && DeskLink.get().linked() && com.restalker.mobile.core.WatchHours.inside(st, System.currentTimeMillis())
     }
 
     /** WatchService: called every minute - starts / stops the connection as the settings say. */

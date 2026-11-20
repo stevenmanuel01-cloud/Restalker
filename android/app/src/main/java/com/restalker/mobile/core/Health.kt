@@ -24,6 +24,7 @@ data class HealthIn(
     val busy: Boolean = false,
     val crash: String? = null,
     val updateFail: String? = null,       // 1.7: the last self-update failed
+    val outsideHours: Boolean = false,    // 1.0.4: outside the watch hours you set (nothing is looked at then, on purpose)
 )
 
 object Health {
@@ -52,7 +53,7 @@ object Health {
             if (!i.serviceRunning) out += "service" to "watching is switched on but its service is not running (Android stopped it?)"
             else {
                 val limit = if (i.deskBuys) 50 * 60_000L else maxOf(15 * 60_000L, 3L * st.intervalSec * 1000)
-                val canLook = i.net != null && !(st.wifiOnly && i.net != "wifi") && st.cooldownUntil < i.now && !i.busy
+                val canLook = i.net != null && !(st.wifiOnly && i.net != "wifi") && st.cooldownUntil < i.now && !i.busy && !i.outsideHours
                 val newest = watched.maxOf { it.lastCheck }
                 if (canLook && i.serviceSince > 0 && i.now - i.serviceSince > limit && i.now - newest > limit)
                     out += "stalled" to "watching runs but no product was looked at for ${(i.now - newest) / 60_000} min" +

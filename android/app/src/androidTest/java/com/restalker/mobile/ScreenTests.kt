@@ -87,7 +87,7 @@ class ScreenTests {
         assertEquals("the whole title is visible: $full", full.length, l0.getLineEnd(l0.lineCount - 1, visibleEnd = true))
         assertEquals("no line is cut with ...", false, (0 until l0.lineCount).any { l0.isLineEllipsized(it) })
         assertTrue("the title starts with the name and the version: $full", full.startsWith("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}"))
-        compose.onNodeWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}", substring = true).assertIsDisplayed()
+        compose.onAllNodesWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}", substring = true).onFirst().assertIsDisplayed()
         compose.onNodeWithTag("add").performClick()
         compose.onNodeWithTag("f-link").performTextInput("https://www.amazon.com/Magic-Hobbit/dp/B0TEST0001/ref=sr_1_1")
         compose.onNodeWithTag("f-cap").performTextInput("120")
@@ -902,6 +902,160 @@ class ScreenTests {
         // Activity: no report button there any more
         compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
         assertTrue(compose.onAllNodesWithTag("report-log").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+    }
+
+    /** 1.0.4 (owner, 2026-11-20, notes 7 and 8: "Make the restalker icon slightly bigger, maybe 30%-50% ... It should also occur on all
+     *  tabs" / "an option to start/stop the app from running on the watch page. Right now it's unclear if I swipe the app away if it
+     *  continues to watch in the background"): the bigger logo and the version on every tab; a Stop / Start button with its words. */
+    @Test fun t40_logo_on_every_tab_and_a_stop_start_button() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }                        // (nothing to look at: watching may be switched on for a moment)
+        s.setSettings { it.copy(watching = false) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
+        compose.onNodeWithTag("logo").assertIsDisplayed()
+        val sz = compose.onNodeWithTag("logo").fetchSemanticsNode().size
+        val dp = sz.width / compose.density.density
+        assertTrue("the logo is bigger than 1.0.3's 48 dp and square: $dp dp", dp >= 55.5f && sz.width == sz.height)
+        // the whole title beside the bigger logo is still shown, nothing cut
+        val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
+        assertEquals("no line of the title is cut", false, (0 until lay.first().lineCount).any { lay.first().isLineEllipsized(it) })
+        // Stop / Start says what it does, and what happens when the app is closed
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("watching"))
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Start").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Stopped: nothing is watched or bought until you press Start.").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("watching").performClick()
+        compose.waitUntil(5_000) { s.settings().watching }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Stop").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Runs in the background", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        Thread.sleep(400); shot("t40_watch")
+        compose.onNodeWithTag("watching").performClick()
+        compose.waitUntil(5_000) { !s.settings().watching }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Start").fetchSemanticsNodes().isNotEmpty() }
+        // the same bar - logo, the tab's name, the version - on Bought, Activity and Settings
+        for ((i, name) in listOf(1 to "Bought", 2 to "Activity", 3 to "Settings")) {
+            compose.onNodeWithTag("tab$i").performClick(); compose.waitForIdle()
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("logo-$name").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("logo-$name").assertIsDisplayed()
+            compose.onNodeWithTag("brand-$name").assertIsDisplayed()
+            assertTrue("the version on $name", compose.onAllNodesWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+            Thread.sleep(300); shot("t40_brand_$name")
+        }
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+    }
+
+    /** 1.0.4 (owner, note 1: "it shows items in stock though they aren't watched ... there should be an indicator of how old the data
+     *  is. "6 hours ago" or something might be fine"): "In stock now" holds only what was seen for sale in the last 6 hours; every card
+     *  of a product that is not watched says how old its data is. */
+    @Test fun t41_in_stock_now_is_fresh_and_cards_say_how_old() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        val h = 3_600_000L; val now = System.currentTimeMillis()
+        // watched, seen over the cap half a minute ago: in stock now
+        s.add(prod("B0TEST0801", "Fresh Collector Booster Box", "2026", "Fresh", price = 499.0).copy(overCap = true, status = "for sale over your cap"))
+        // NOT watched, seen over the cap 7 hours ago (the one look when the app was opened): not "now" - its age is on the card
+        s.add(prod("B0TEST0802", "Old Collector Booster", "2026", "Old", price = 72.10).copy(watch = false, overCap = true, cap = 45.0, lastCheck = now - 7 * h,
+            status = "for sale over your cap"))
+        // NOT watched, the linked PC saw it 20 minutes ago: in stock now
+        s.add(prod("B0TEST0803", "Pc Collector Booster Box", "2026", "Pc").copy(watch = false, dSt = "over", dPr = 399.99, dAt = now - 20 * 60_000L))
+        // NOT watched, never looked at
+        s.add(prod("B0TEST0804", "New Collector Booster Box", "2026", "New").copy(watch = false))
+        compose.waitForIdle()
+        toList(hasTestTag("grp-hot"))
+        toList(hasTestTag("top-B0TEST0801")); toList(hasTestTag("top-B0TEST0803"))
+        Thread.sleep(300); shot("t41_in_stock_now")
+        toList(hasTestTag("product-B0TEST0802"))
+        assertTrue("seen 7 hours ago is not in stock NOW", compose.onAllNodesWithTag("top-B0TEST0802").fetchSemanticsNodes().isEmpty())
+        assertTrue("said as the past", compose.onAllNodesWithText("Was over cap · \$72.10", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue("its age", compose.onAllNodesWithText("Off (not watched) · checked 7 h ago", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        Thread.sleep(300); shot("t41_old_card")
+        toList(hasTestTag("product-B0TEST0803"))
+        assertTrue("the PC's look and its age", compose.onAllNodesWithText("Off (not watched) · desktop saw it 2", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        toList(hasTestTag("product-B0TEST0804"))
+        assertTrue("never looked at", compose.onAllNodesWithText("Off (not watched) · not looked at yet", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        // the In stock filter goes by the same rule
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter1"))
+        compose.onNodeWithTag("filter1").performClick(); compose.waitForIdle()
+        toList(hasTestTag("product-B0TEST0803"))
+        assertTrue(compose.onAllNodesWithTag("product-B0TEST0802").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("filter0"))
+        compose.onNodeWithTag("filter0").performClick(); compose.waitForIdle()
+        s.products().forEach { s.remove(it.id) }
+    }
+
+    /** 1.0.4 (owner, note 3: "Is it possible to allow the user to select times of the day to start and stop the watcher
+     *  automatically?"): Settings, Amazon, buying and this phone - Watch hours: All day / Set hours, each time half an hour earlier / later. */
+    @Test fun t42_watch_hours() {
+        val s = RkApp.store()
+        s.setSettings { it.copy(hoursOn = false, hoursFrom = 22 * 60, hoursTo = 7 * 60) }
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("amazon")
+        compose.onNodeWithTag("hours-set").performScrollTo().performClick()
+        compose.waitUntil(5_000) { s.settings().hoursOn }
+        compose.onNodeWithTag("hours-from-plus").performScrollTo().performClick()
+        compose.waitUntil(5_000) { s.settings().hoursFrom == 22 * 60 + 30 }
+        compose.onNodeWithTag("hours-to-minus").performScrollTo().performClick()
+        compose.waitUntil(5_000) { s.settings().hoursTo == 6 * 60 + 30 }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("10:30 PM - 6:30 AM", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("hours").performScrollTo()
+        Thread.sleep(300); shot("t42_watch_hours")
+        // the battery line says what it is, in plain words
+        assertTrue(compose.onAllNodesWithText("keep running", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithTag("hours-all").performScrollTo().performClick()
+        compose.waitUntil(5_000) { !s.settings().hoursOn }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("hours-from-plus").fetchSemanticsNodes().isEmpty() }
+        s.setSettings { it.copy(hoursOn = false, hoursFrom = 22 * 60, hoursTo = 7 * 60) }
+    }
+
+    /** 1.0.4 (owner, notes 2, 5, 6 and 10): not linked - how to get the PC program, with a link to send yourself; linked - a PC and a
+     *  tablet the relay heard show as running although nothing came over the link channel, and a used-up message limit is said in words;
+     *  the watching notice has its own row with the way to switch it off for good; the report words name no one. */
+    @Test fun t43_devices_heard_pc_steps_notice_row_and_plain_report_words() {
+        val s = RkApp.store()
+        if (DeskLink.get().linked()) DeskLink.get().unlink()
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("devices")
+        compose.onNodeWithTag("getpc-send").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("getpc-url", useUnmergedTree = true).assertExists()
+        Thread.sleep(300); shot("t43_get_the_pc")
+        val code = com.restalker.mobile.core.LinkCrypto.make(); val sec0 = com.restalker.mobile.core.LinkCrypto.parse(code)!!.second
+        assertEquals(null, DeskLink.get().connect(code))
+        val t = System.currentTimeMillis() / 1000.0
+        fun w(d: String, r: String, nm: String, vn: String) = com.restalker.mobile.core.LinkCrypto.seal(sec0,
+            com.restalker.mobile.core.MiniJson.write(mapOf("d" to d, "r" to r, "nm" to nm, "vn" to vn)))
+        assertEquals(2, DeskLink.get().takePresence(listOf(w("d-pc1", "desktop", "PC", "v145") to t - 180, w("p-tab1", "phone", "My tablet", "1.0.4") to t - 50 * 60)))
+        RkApp.changed(); compose.waitForIdle()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("dev-pc").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("dev-pc").performScrollTo()
+        assertTrue("the PC runs: heard by the relay 3 minutes ago", compose.onAllNodesWithText("Version v145 · running · heard 3 min ago", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithTag("dev-p-tab1").performScrollTo()
+        assertTrue("the tablet: its name, version and age", compose.onAllNodesWithText("My tablet", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() &&
+            compose.onAllNodesWithText("Version 1.0.4 · heard 50 min ago", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        // the day's free messages used up: said in words, with the time they start again
+        val now = System.currentTimeMillis()
+        Quota.set(com.restalker.mobile.core.NtfyQuota.Q(250, 0, now + 3 * 3_600_000L, now)); RkApp.changed(); compose.waitForIdle()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("link-health").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("link-health").performScrollTo()
+        assertTrue(compose.onAllNodesWithText("used up (250 of 250)", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        Thread.sleep(300); shot("t43_devices")
+        Quota.set(null); RkApp.changed(); compose.waitForIdle()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("link-health").fetchSemanticsNodes().isEmpty() }
+        DeskLink.get().unlink()
+        // the watching notice: its own row, with the way to switch it off for good
+        sec("notes")
+        compose.onNodeWithTag("notice-off").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("notice-state", useUnmergedTree = true).assertExists()
+        Thread.sleep(300); shot("t43_notice_row")
+        // reports: plain words, no names
+        sec("problems")
+        compose.onNodeWithTag("autoreport").performScrollTo()
+        assertTrue(compose.onAllNodesWithText("Send problem reports automatically", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithTag("report").performScrollTo()
+        assertTrue(compose.onAllNodesWithText("Send a report now", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue("no name of a helper in the report words", listOf("Send problems to", "Send a report to", "Send to ").all { compose.onAllNodesWithText(it, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty() })
+        Thread.sleep(300); shot("t43_help")
         compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
     }
 

@@ -206,6 +206,30 @@ export function releaseDecide(row, c, result, now) {
   return null;
 }
 
+// ------------------------------------------------------------------------------------------------ presence of linked devices
+// (owner, 2026-11-20: "it's showing old data for my pc and tablet. Both of these devices are currently active ... Confirm the devices can
+// see and report active links"). A device's "heard" time was only its last post on the ntfy link channel - and ntfy refuses a home's
+// posts once its 250 a day are used, so a running PC looked silent for hours. With its heartbeat (every 15 minutes, as before) a linked
+// device now also gives its group code (the same one as for the checkout lock: made from the link secret, no one else can guess it) and a
+// few words about itself - its name, version and kind - SEALED with the link secret (the relay sees only noise). It gets back when the
+// relay last heard each OTHER device of its group, with that device's sealed words. No message is used; one row per device as before.
+export const WHO = /^rk1:[A-Za-z0-9_-]{24,800}$/;
+export const PRESENCE_KEEP_MS = 30 * 86400_000;
+export const PRESENCE_MAX = 12;
+
+/** A heartbeat's group and sealed words -> { g, w } (null when absent or odd: the device is then in no group). */
+export function presenceIn(b) {
+  const g = b && typeof b.g === "string" && GROUP.test(b.g) ? b.g : null;
+  const w = g && typeof b.w === "string" && WHO.test(b.w) ? b.w : null;
+  return { g, w };
+}
+
+/** The other devices of a group for the device [me]: [{ c, at, w }] newest first - heard in the last 30 days, at most PRESENCE_MAX. */
+export function presenceOut(rows, me, now) {
+  return (rows || []).filter(r => r && r.c !== me && Number(r.at) > now - PRESENCE_KEEP_MS && Number(r.at) <= now + 60_000)
+    .sort((a, b) => b.at - a.at).slice(0, PRESENCE_MAX).map(r => ({ c: r.c, at: Number(r.at), w: typeof r.w === "string" ? r.w : null }));
+}
+
 // ------------------------------------------------------------------------------------------------ reports and suggestions
 // (owner, 2026-11-19: "all issues should be reported to discord, which can be sorted, compiled, and sent to me/you for review ...
 // addressed no more than once per day") - the daily digest of everyone's reports.

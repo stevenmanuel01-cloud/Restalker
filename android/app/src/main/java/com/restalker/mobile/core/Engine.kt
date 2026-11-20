@@ -64,7 +64,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
               *  null = the lock could not be asked (then the 2.2 rules decide - never two orders). */
              private val raceLock: (String) -> Boolean? = { null },
              /** 2.15: how this device's claimed checkout ended ("bought" keeps the others out for a day; "failed" frees it). */
-             private val raceRelease: (String, String) -> Unit = { _, _ -> }) {
+             private val raceRelease: (String, String) -> Unit = { _, _ -> },
+             /** 1.0.4: this device's time zone (the watch hours are times of day on its own clock; the tests give their own). */
+             private val zone: () -> java.util.TimeZone = { java.util.TimeZone.getDefault() }) {
     val meter = DataMeter(rxBytes)
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
@@ -90,7 +92,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
     fun idle(): Boolean = q.isEmpty() && busyWith == "idle"
 
     private fun log(s: String) = store.log(s)
-    /** 2.13: a detail for Claude's reports only (not shown in Activity). */
+    /** 2.13: a detail for the problem reports only (not shown in Activity). */
     private fun detail(s: String) = store.log(s, quiet = true)
     // 2.13 (owner: the crowd's "saw it - looking now", "BUYABLE at" and "the linked desktop buys it" lines "seem redundant and could
     // maybe be consolidated"): who tipped this phone off (the crowd / the PC) and whether the look found it newly in stock - so ONE line
@@ -99,6 +101,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
     @Volatile private var freshId: String? = null
     private fun s() = store.settings()
     private fun now() = clock.now()
+    /** 1.0.4: inside the watch hours now (always, when none are set). */
+    fun inHours(): Boolean = WatchHours.inside(s(), now(), zone())
 
     /** The engine's own thread runs this until Quit. */
     fun run() {
@@ -117,6 +121,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (c != null) { handle(c); return }
         val st = s()
         if (!st.watching) { status("Not watching. Switch Watching on to start."); waitFor(30_000); return }
+        // 1.0.4 (owner: "select times of the day to start and stop the watcher automatically"): outside your watch hours nothing is looked
+        // at (the page is closed - battery and data); what you start yourself above (Check now, Buy now, a practice) still runs
+        if (!inHours()) { page.rest(); status("Outside your watch hours - watching starts again at ${WatchHours.label(st.hoursFrom)}"); waitFor(30_000); return }
         pausedFor?.let { status("Paused - $it"); waitFor(2_000); return }
         if (now() < st.cooldownUntil) { status("Amazon asked us to slow down - next look ${secs(st.cooldownUntil - now())}"); waitFor(minOf(st.cooldownUntil - now(), 30_000)); return }
         val net = network()
@@ -161,7 +168,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 // signal - this phone looks at the product at once and buys it if IT sees it in stock under the cap (the PC's word alone
                 // never buys anything)
                 val p = store.products().firstOrNull { it.asin == c.asin && it.buy && it.watch } ?: return
-                if (!s().watching || !s().buying || buyerMode() == "pc" || otherPhoneBuys() || now() < s().cooldownUntil) return
+                if (!s().watching || !inHours() || !s().buying || buyerMode() == "pc" || otherPhoneBuys() || now() < s().cooldownUntil) return
                 detail("${p.label}: the PC saw it in stock - looking now (Who buys: ${buyerMode()}).")
                 tipFor = p.id to "your PC spotted it first"
                 check(p, manual = false)
@@ -170,7 +177,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 // 2.6: another Restalker saw it in stock on Amazon - this phone looks itself at once (it buys only what IT sees in stock
                 // under your cap; the crowd's word alone never buys anything)
                 val p = store.products().firstOrNull { it.asin == c.asin && it.watch } ?: return
-                if (!s().watching || now() < s().cooldownUntil) return
+                if (!s().watching || !inHours() || now() < s().cooldownUntil) return
                 detail("${p.label}: another Restalker saw it in stock - looking now.")
                 tipFor = p.id to "another Restalker spotted it first"
                 check(p, manual = false)

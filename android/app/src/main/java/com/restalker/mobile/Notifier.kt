@@ -59,12 +59,23 @@ class Notifier(private val ctx: Context) : Alerts {
 
     override fun practice(p: Product, text: String) { if (wants("practice")) post(idFor("p", p.id), base(CH_BUY, "PRACTICE: ${p.label}", text).build()) }
 
-    /** 2.12: a price drop - for sale over your cap, but clearly cheaper than before (PriceDrop). */
+    /** 2.12: a price drop - clearly cheaper than before (PriceDrop). 1.0.4: also at or under your cap while the product is not set to
+     *  Buy (owner: "watched but not armed and the user might want to know there is a price drop so they can manually go in and
+     *  purchase") - then with a Buy now button. */
     fun priceDrop(p: Product, was: Double, now: Double) {
+        val under = p.stock().first == "in"
         val title = "PRICE DROP: ${p.label}"
-        val text = "\$${Engine.money(now)} (was \$${Engine.money(was)}) - still over your cap of \$${Engine.money(p.cap)}."
+        val text = "\$${Engine.money(now)} (was \$${Engine.money(was)}) - " + when {
+            !under -> "still over your cap of \$${Engine.money(p.cap)}."
+            p.cap > 0 -> "under your cap of \$${Engine.money(p.cap)}. It is not set to Buy: tap Buy now to buy it."
+            else -> "watching only - no cap set."
+        }
         RkApp.store().log("${p.label}: price drop to \$${Engine.money(now)} (was \$${Engine.money(was)}).")
-        if (wants("drop")) post(idFor("d", p.id), base(CH_DROP, title, text).addAction(0, "Open", openBrowser(p.url, p.id.hashCode() + 3)).build())
+        if (wants("drop")) {
+            val b = base(CH_DROP, title, text)
+            if (under && p.cap > 0 && !p.purchased && !p.attempted) b.addAction(0, "Buy now", ActionReceiver.pending(ctx, ActionReceiver.BUY_NOW, p.id))
+            post(idFor("d", p.id), b.addAction(0, "Open", openBrowser(p.url, p.id.hashCode() + 3)).build())
+        }
         NtfyOut.send("drop", title, "$text (${DeskLink.name()})", p.url)
     }
 
@@ -137,6 +148,24 @@ class Notifier(private val ctx: Context) : Alerts {
             get() = try { RkApp.store().settings().noticeHidden } catch (e: Exception) { false }
             set(v) { try { if (RkApp.store().settings().noticeHidden != v) RkApp.store().setSettings { it.copy(noticeHidden = v) } } catch (e: Exception) { } }
         @Volatile var standby = false
+        /** 1.0.4: outside the watch hours you set (the notice says so). */
+        @Volatile var outside = false
+
+        /** 1.0.4 (owner, 2026-11-20: "I still have this constant message that pops up all the time in my notifications bar. I know the
+         *  program is running so I don't think I need this to continue to pop up"): Android itself puts this notice up every time watching
+         *  starts - after each update, each restart of the phone, each time Android restarted the app - and an app may not take its own
+         *  watching notice down (a swipe hides it only until the next start; 2.12's "stays away" could not hold for that reason). The
+         *  one way to make it stay away is the phone's own switch for this kind of notice: [noticeSettings] opens exactly that page (the
+         *  notice's Hide button and Settings, Notifications lead there), and this says whether it is switched off. Watching goes on. */
+        fun noticeOff(ctx: Context): Boolean {
+            if (Build.VERSION.SDK_INT < 26) return false
+            val nm = ctx.getSystemService(NotificationManager::class.java)
+            if (!nm.areNotificationsEnabled()) return false           // (everything off is not "this notice hidden" - restocks would be lost too)
+            return nm.getNotificationChannel(noticeChannel())?.importance == NotificationManager.IMPORTANCE_NONE
+        }
+        fun noticeSettings(ctx: Context): Intent = Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, noticeChannel()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         /** The channel the watching notice uses now (Settings, "Turn it off completely" opens this one in the phone's settings). */
         fun noticeChannel(): String = if (RkApp.store().settings().runIcon && !standby) CH_WATCH else CH_QUIET
@@ -144,11 +173,13 @@ class Notifier(private val ctx: Context) : Alerts {
         fun ongoing(ctx: Context): Notification {
             val icon = RkApp.store().settings().runIcon && !standby
             return NotificationCompat.Builder(ctx, if (icon) CH_WATCH else CH_QUIET).setSmallIcon(R.drawable.ic_note)
-                .setContentTitle(if (standby) "Restalker - standby (the PC buys)" else "Restalker is watching")
+                .setContentTitle(if (outside) "Restalker - waiting for your watch hours" else if (standby) "Restalker - standby (the PC buys)" else "Restalker is watching")
                 .setPriority(if (icon) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_MIN)
                 .setVisibility(NotificationCompat.VISIBILITY_SECRET).setShowWhen(false)
-                .setContentText("Swipe to hide - watching goes on").setOngoing(false).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
+                .setContentText("Hide = switch this notice off for good (watching goes on)").setOngoing(false).setOnlyAlertOnce(true).setSilent(true).setContentIntent(openMain(ctx))
                 .setDeleteIntent(ActionReceiver.pending(ctx, ActionReceiver.HIDDEN, ""))
+                // 1.0.4: "Hide" opens the phone's own switch for this notice - switched off there it never comes back (see noticeOff)
+                .addAction(0, "Hide", PendingIntent.getActivity(ctx, 77, noticeSettings(ctx), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
                 .addAction(0, "Stop watching", ActionReceiver.pending(ctx, ActionReceiver.STOP, ""))
                 .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE).build()
         }

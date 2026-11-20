@@ -2,17 +2,21 @@ package com.restalker.mobile.core
 
 import java.security.SecureRandom
 
-/** Problem reports to Claude: the app's diagnostics, sent as a file to this phone's own private ntfy channel ("rkr-" + 20 random
- *  letters, made once). Claude reads it with the report code. No password, card number or address is ever in it (the app never has them). */
+/** Problem reports of the owner's devices: the app's diagnostics, sent as a file to this phone's own private ntfy channel ("rkr-" + 20
+ *  random letters, made once) - read with the report code. No password, card number or address is ever in it (the app never has them).
+ *  1.0.4 (owner, 2026-11-20: "it should be a generic message to allow automatic reporting, and sending a manual report"): the
+ *  app's own words name no one - "Report sent". */
 object Report {
     const val SERVER = "https://ntfy.sh"
-    const val AUTO_GAP = 30 * 60_000L
+    // 1.0.4: 2 hours (was 30 minutes). Every report is one of the 250 messages a day the free message service gives a home for ALL its
+    // devices; four devices reporting a lasting problem every 30 minutes used most of them - and then the link itself was refused.
+    const val AUTO_GAP = 2 * 3_600_000L
     private const val ABC = "abcdefghijkmnpqrstuvwxyz23456789"
 
     fun newTopic(rnd: SecureRandom = SecureRandom()): String = "rkr-" + (1..20).map { ABC[rnd.nextInt(ABC.length)] }.joinToString("")
     fun valid(topic: String) = Regex("^rkr-[a-z0-9]{20}$").matches(topic)
 
-    /** The report code you send Claude (the channel's name). Made the first time it is needed. */
+    /** The report code (the channel's name). Made the first time it is needed. */
     fun code(store: Store): String {
         val t = store.settings().reportTopic
         if (valid(t)) return t
@@ -37,10 +41,10 @@ object Report {
             ok = st in 200..299
             if (ok) break
         }
-        store.log(if (ok) "Report sent to Claude (code $topic): $why" else "! Report could not be sent (no internet?) - try again.")
+        store.log(if (ok) "Report sent (code $topic): $why" else "! Report could not be sent (no internet?) - try again.")
         return ok
     }
 
-    /** A report by itself after a problem - only when switched on, and at most one every 30 minutes. */
+    /** A report by itself after a problem - only when switched on, and at most one every 2 hours. */
     fun autoDue(s: Settings, now: Long): Boolean = s.autoReport && now - s.reportAt > AUTO_GAP
 }

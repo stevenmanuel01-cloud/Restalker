@@ -111,6 +111,24 @@ test("shared checkout lock: first device wins, runs out by itself, bought holds 
   assert.ok(L.ANY_ASIN.test("B0HNTNV94J") && L.ANY_ASIN.test("bb:walmart_hobbit") && !L.ANY_ASIN.test("bb:Walmart Hobbit"));
 });
 
+test("presence: a linked device's group and sealed words; the others of its group come back, newest first", () => {
+  const g = "0123456789abcdef0123456789abcdef", w = "rk1:" + "A".repeat(60);
+  assert.deepEqual(L.presenceIn({ c: "aaaaaaaaaaaa", g, w }), { g, w });
+  assert.deepEqual(L.presenceIn({ c: "aaaaaaaaaaaa" }), { g: null, w: null });                  // not linked (or an older version): no group
+  assert.deepEqual(L.presenceIn({ g: "nope", w }), { g: null, w: null });                       // words without a real group are not kept
+  assert.deepEqual(L.presenceIn({ g, w: "<script>" }), { g, w: null });                         // only sealed words
+  assert.deepEqual(L.presenceIn({ g, w: "rk1:" + "A".repeat(2000) }), { g, w: null });          // not a place to store things
+  assert.deepEqual(L.presenceIn(null), { g: null, w: null });
+  const rows = [{ c: "aaaaaaaaaaaa", at: now - 1000, w }, { c: "bbbbbbbbbbbb", at: now - 5 * 60_000, w: "rk1:" + "B".repeat(60) },
+    { c: "cccccccccccc", at: now - 60_000, w: null }, { c: "dddddddddddd", at: now - 31 * 86400_000, w }, { c: "eeeeeeeeeeee", at: now + 3600_000, w }];
+  const out = L.presenceOut(rows, "aaaaaaaaaaaa", now);
+  assert.deepEqual(out.map(r => r.c), ["cccccccccccc", "bbbbbbbbbbbb"]);                         // not itself, not 31 days old, not from the future
+  assert.equal(out[0].w, null); assert.equal(out[1].at, now - 5 * 60_000);
+  const many = Array.from({ length: 30 }, (_, i) => ({ c: String(i).padStart(12, "0"), at: now - i * 1000, w }));
+  assert.equal(L.presenceOut(many, "x", now).length, L.PRESENCE_MAX);
+  assert.deepEqual(L.presenceOut(null, "x", now), []);
+});
+
 test("report and suggestion digests, link codes", () => {
   assert.equal(L.reportDigest([], now), null);
   const d = L.reportDigest([{ c: "a", title: "not bought - sold out $89.99" }, { c: "b", title: "not bought - sold out $323.88", note: "it said sold out" },
