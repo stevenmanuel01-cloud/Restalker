@@ -478,6 +478,10 @@ class ScreenTests {
         compose.waitUntil(3_000) { p("B0TEST0201").cap == 399.5 }
         // ... and - / + are held 30 s from the first tap, then saved and noted once (not one line per \$5)
         RkApp.store().log("t11 cap marker")
+        // (1.0.4: Done closes the keyboard, and while it slides away the page is laid out again and again - taps sent in that
+        // moment were lost on slow virtual phones, which needed a second try; a person taps after it has gone)
+        compose.waitForIdle(); Thread.sleep(1_200); compose.waitForIdle()
+        compose.onNodeWithTag("capup-B0TEST0201").performScrollTo()
         repeat(3) { compose.onNodeWithTag("capup-B0TEST0201").performClick(); compose.waitForIdle() }
         // (1.0.4: the "held" line is drawn a moment after the third tap - within 2 seconds; it needed a second try on slow virtual phones)
         compose.waitUntil(2_000) { compose.onAllNodesWithTag("capheld-B0TEST0201", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
