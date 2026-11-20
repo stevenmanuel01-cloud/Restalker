@@ -235,3 +235,12 @@ export function linkCode(rand) {
   let s = ""; for (let i = 0; i < 6; i++) s += A[Math.floor(rand() * A.length) % A.length];
   return s;
 }
+
+/** (owner, 2026-11-19: "Master phone gets it, tests all updates, then approves for all others to get it"): a release note only for a
+ *  version NEWER than the last one announced - taking a public version back (latest.json set to an older one) is never announced. */
+export function verNewer(a, b) {
+  const n = v => String(v || "").replace(/^v/, "").split(".").map(x => parseInt(x, 10) || 0);
+  const x = n(a), y = n(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; }
+  return false;
+}

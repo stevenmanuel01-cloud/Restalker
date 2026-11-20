@@ -305,20 +305,20 @@ export class Hub {
     const out = {};
     if (pc && pc.version) {
       const prev = this.kvGet("rel_pc");
-      if (prev && prev !== pc.version && ch) {
+      if (prev && L.verNewer(pc.version, prev) && ch) {
         await this.say(ch, `**Restalker PC ${pc.version} is out.** It installs itself.\n${pc.notes || ""}`);
         out.pc = pc.version;
       }
-      if (prev !== pc.version) this.kvSet("rel_pc", pc.version);
+      if (!prev || L.verNewer(pc.version, prev)) this.kvSet("rel_pc", pc.version);
     }
     if (ph && ph.version) {
       const prev = this.kvGet("rel_phone");
-      if (prev && prev !== ph.version && ch) {
+      if (prev && L.verNewer(ph.version, prev) && ch) {
         const notes = L.newestSection(await this.cached("phnotes", "android/RELEASE_NOTES.md", 60_000, true));
         await this.say(ch, `**Restalker Mobile ${ph.version} is out.** Phones and tablets update by themselves.\n${notes}`);
         out.phone = ph.version;
       }
-      if (prev !== ph.version) this.kvSet("rel_phone", ph.version);
+      if (!prev || L.verNewer(ph.version, prev)) this.kvSet("rel_phone", ph.version);
     }
     return out;
   }

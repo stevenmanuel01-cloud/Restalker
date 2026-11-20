@@ -122,3 +122,12 @@ test("report and suggestion digests, link codes", () => {
   let i = 0; const code = L.linkCode(() => (i++ % 7) / 7);
   assert.match(code, /^[A-HJ-NP-Z2-9]{6}$/);
 });
+
+test("release notes only for a newer version (a version taken back is not announced)", () => {
+  assert.equal(L.verNewer("v141", "v140"), true);
+  assert.equal(L.verNewer("v140", "v141"), false);
+  assert.equal(L.verNewer("2.15", "2.14"), true);
+  assert.equal(L.verNewer("2.14", "2.15"), false);
+  assert.equal(L.verNewer("2.15", "2.15"), false);
+  assert.equal(L.verNewer("2.10", "2.9"), true);
+});

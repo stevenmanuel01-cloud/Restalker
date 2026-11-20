@@ -1,8 +1,8 @@
 {
- "version": "v141",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v141_update.zip",
- "sha256": "a146816dd8808df73ed1e8313aa87fa9291c6003dfde3a89886b8128a17c14f8",
- "size": 759928,
- "notes": "Race to checkout with your linked phones; live 'devices active now'; Discord link; Discord restock cards with a small picture",
- "files": 84
+ "version": "v140",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v140_update.zip",
+ "sha256": "09d1b48e3649000337ea6b604ca2391f8e9cc8fe484840f8379e502824a51dc7",
+ "size": 753947,
+ "notes": "One ntfy alert code on the PC and every linked phone; how each phone's updates go in",
+ "files": 83
 }

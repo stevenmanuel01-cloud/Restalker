@@ -1,0 +1,66 @@
+# Release to everyone (owner, 2026-11-19: "Master phone gets it, tests all updates, then approves for all others to get it").
+# New versions go to the owner's devices first: beta.json (PC) and mobile/beta.json (phone app). Everyone else reads latest.json and
+# mobile/latest.json. Running this (GitHub > Actions > "Release to everyone" > Run workflow) copies the tested beta to everyone.
+# Nothing secret is used or printed.
+name: Release to everyone
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        description: "Which program goes to everyone"
+        type: choice
+        options: ["both", "phone app", "PC"]
+        default: "both"
+permissions:
+  contents: write
+concurrency:
+  group: promote
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy the tested beta to everyone
+        id: copy
+        env:
+          WHAT: ${{ inputs.what }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, re
+          what = os.environ["WHAT"]
+          def num(v): return [int(x) for x in re.findall(r"\d+", str(v))]
+          changed, out = [], []
+          for name, beta, pub, key in (("PC", "beta.json", "latest.json", "version"), ("phone app", "mobile/beta.json", "mobile/latest.json", "code")):
+              if what not in ("both", name):
+                  continue
+              if not os.path.exists(beta):
+                  out.append(f"{name}: no beta waiting"); continue
+              b, p = json.load(open(beta)), json.load(open(pub))
+              if num(b[key]) <= num(p[key]):
+                  out.append(f"{name}: everyone already has {p['version']} (beta {b['version']})"); continue
+              json.dump(b, open(pub, "w"), indent=1); open(pub, "a").write("\n")
+              changed.append(pub); out.append(f"{name}: {p['version']} -> {b['version']} for everyone")
+          print("\n".join(out))
+          open(os.environ["GITHUB_OUTPUT"], "a").write(f"changed={' '.join(changed)}\npc={'latest.json' in changed}\n")
+          EOF
+      - name: Save
+        if: steps.copy.outputs.changed != ''
+        run: |
+          git config user.name "Restalker release"; git config user.email "release@restalker.invalid"
+          git add ${{ steps.copy.outputs.changed }}
+          git commit -m "Release to everyone: ${{ steps.copy.outputs.changed }} [skip ci]"
+          git push
+      - name: Tell every PC at once (the release channel)
+        if: steps.copy.outputs.pc == 'True'
+        env:
+          TOPIC: restalker-releases-93590d22731021d1
+        run: |
+          V=$(python3 -c "import json;print(json.load(open('latest.json'))['version'])")
+          for i in $(seq 1 8); do
+            curl -sS -m 20 -o /dev/null -w "try $i: %{http_code}\n" -H "Title: Restalker $V" -d "$V" "https://ntfy.sh/$TOPIC" || true
+            sleep 3
+            if curl -sS -m 20 "https://ntfy.sh/$TOPIC/json?poll=1&since=15m" | grep -q "\"message\":\"$V\""; then echo "PING ON THE CHANNEL: $V"; break; fi
+            sleep $((10 + i * 5))
+          done
