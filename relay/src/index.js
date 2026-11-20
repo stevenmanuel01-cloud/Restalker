@@ -49,7 +49,7 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS dlink(code TEXT PRIMARY KEY, c TEXT, until INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS devlink(c TEXT PRIMARY KEY, user TEXT, uname TEXT, at INTEGER)`);
     // presence of one person's linked devices (logic.js): a device's group and its sealed words, kept with its heartbeat row
-    for (const col of ["g TEXT", "w TEXT"]) { try { this.sql.exec("ALTER TABLE seen ADD COLUMN " + col); } catch (e) { /* already there */ } }
+    for (const col of ["g TEXT", "w TEXT", "hb INTEGER"]) { try { this.sql.exec("ALTER TABLE seen ADD COLUMN " + col); } catch (e) { /* already there */ } }
     this.sql.exec(`CREATE INDEX IF NOT EXISTS seen_g ON seen(g)`);
   }
 
@@ -115,8 +115,9 @@ export class Hub {
         if (u.pathname === "/v1/h") {          // a device's heartbeat (every 15 min): the live "active now" count
           // + presence: a linked device gives its group and its sealed words, and gets the other devices of its group back
           const { g, w } = L.presenceIn(b);
-          this.sql.exec(`INSERT INTO seen(c, at, first, sightings, g, w) VALUES(?, ?, ?, 0, ?, ?)
-            ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, w = excluded.w`, c, now, now, g, w);
+          // (hb: when it last checked in - a device that has never checked in is a version from before check-ins: logic.js ACTIVE_SQL)
+          this.sql.exec(`INSERT INTO seen(c, at, first, sightings, g, w, hb) VALUES(?, ?, ?, 0, ?, ?, ?)
+            ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, w = excluded.w, hb = excluded.hb`, c, now, now, g, w, now);
           const out = { ok: true, active: this.active(now) };
           if (g) out.peers = L.presenceOut(this.sql.exec("SELECT c, at, w FROM seen WHERE g = ? ORDER BY at DESC LIMIT 40", g).toArray(), c, now);
           return json(out);
@@ -335,7 +336,7 @@ export class Hub {
     return out;
   }
 
-  active(now) { return this.sql.exec("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 30 * 60_000).one().n; }
+  active(now) { return this.sql.exec(L.ACTIVE_SQL, ...L.activeArgs(now)).one().n; }
 
   async daily() {
     const ch = CFG.channels || {};

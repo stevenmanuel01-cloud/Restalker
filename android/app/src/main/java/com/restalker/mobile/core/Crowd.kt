@@ -13,6 +13,9 @@ object Crowd {
     const val TOPIC = "restalker-crowd-5e1f0c7a92b4"
     val STORES = setOf("Amazon", "Target", "Walmart", "Best Buy", "GameStop", "TCGplayer", "Barnes & Noble", "Costco", "Sam's Club", "Pokemon Center")
     const val HELLO_EVERY_MS = 6 * 3_600_000L
+    /** 1.0.5 (owner, 2026-11-20: "3 stalkers active ... wordplay on the program's name, calling all participants stalkers (since they
+     *  are hunting for information on products)"): the live count's words - the same on the Watch page and in Settings. */
+    fun activeWords(n: Int): String = "$n stalker${if (n == 1) "" else "s"} active now"
     // 1.0.3: every 3 minutes (was 2) - ntfy.sh allows each home internet address about one request every 10 seconds for all its
     // Restalker devices together; the PC now listens over one open connection and signals the phones at once (the fast channel)
     const val POLL_EVERY_MS = 3 * 60_000L

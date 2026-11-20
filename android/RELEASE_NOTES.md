@@ -1,3 +1,10 @@
+# Restalker Mobile 1.0.5 (2026-11-20; your 2 notes of 11:42 AM)
+- Under the title: "3 stalkers active now" (was "3 Restalker devices active now") - everyone running Restalker and sharing is a
+  stalker, hunting restocks together. The same words in Settings and in Words used.
+- The number is counted in one place (the Restalker relay) and is the same on every device, whatever version it runs. Versions from
+  before that count existed (the app up to 2.14, the PC up to v140) are now counted too, without updating - they are heard when they
+  say hello to the crowd, every 6 hours. Only what those old versions SHOW is still their own older number, until they are updated once.
+
 # Restalker Mobile 1.0.4 (2026-11-20; your 10 notes of 9:05 AM)
 - Watch (note 1): a product that is NOT watched is never looked at all day - only once when you open the app (if its last look is
   over 6 hours old), or by your linked PC. Every such card now says how old its data is ("Off (not watched) · checked 7 h ago",

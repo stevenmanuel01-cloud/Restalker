@@ -1572,6 +1572,9 @@ object CoreTests {
             val changeWent = posts.size == n0 + 1
             low = false; w.clock.t += 61 * 60_000L; l.cycle()
             notMine && took && olderLost && waited && changeWent && posts.size == n0 + 2 }
+        t("183_the_live_count_says_stalkers") {
+            Crowd.activeWords(3) == "3 stalkers active now" && Crowd.activeWords(1) == "1 stalker active now" && Crowd.activeWords(12) == "12 stalkers active now" &&
+                !Crowd.activeWords(2).contains("device") }
         return results
     }
 

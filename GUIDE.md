@@ -155,8 +155,9 @@ Started with the phone first? In the app, **Settings** > **Linked devices** > **
 | MSRP / TCG | The published price / the TCGplayer market price, for comparing |
 | Trackers | Restock trackers only make Restalker look sooner; it buys only what it reads at the store itself |
 | The Restalker crowd | Every Restalker that shares tells the others when it sees a listed product in stock (product, store, price, time - nothing personal) |
+| Stalkers active now | Every PC, phone and tablet running Restalker and sharing right now - all hunting restocks together. The same number on every device |
 | Missed (sold out) | It sold out before the order went through. Nothing was bought |
-| b (as in v145b or 1.0.4b) | A beta: a version only the owner's devices have until it is released to everyone |
+| b (as in v146b or 1.0.5b) | A beta: a version only the owner's devices have until it is released to everyone |
 
 Fair play: Restalker buys each product at most 3 times, counting every linked device, so restocks go to players rather than resellers.
 
