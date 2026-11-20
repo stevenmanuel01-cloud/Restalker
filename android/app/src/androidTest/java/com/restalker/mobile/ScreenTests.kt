@@ -86,7 +86,8 @@ class ScreenTests {
         val l0 = lay.first(); val full = l0.layoutInput.text.text
         assertEquals("the whole title is visible: $full", full.length, l0.getLineEnd(l0.lineCount - 1, visibleEnd = true))
         assertEquals("no line is cut with ...", false, (0 until l0.lineCount).any { l0.isLineEllipsized(it) })
-        compose.onNodeWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}").assertIsDisplayed()
+        assertTrue("the title starts with the name and the version: $full", full.startsWith("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}"))
+        compose.onNodeWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}", substring = true).assertIsDisplayed()
         compose.onNodeWithTag("add").performClick()
         compose.onNodeWithTag("f-link").performTextInput("https://www.amazon.com/Magic-Hobbit/dp/B0TEST0001/ref=sr_1_1")
         compose.onNodeWithTag("f-cap").performTextInput("120")
@@ -198,6 +199,17 @@ class ScreenTests {
         compose.waitForIdle(); Thread.sleep(500)
         shot("t10_groups")
         toList(hasTestTag("grp-hot")); compose.onNodeWithTag("grp-hot").assertIsDisplayed()
+        toList(hasTestTag("top-B0TEST0103")); compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
+        // 1.0 (owner: '"Instock now" should be a collapsible field like the others'): it folds, is remembered, and opens again
+        compose.onNodeWithTag("grp-hot").performClick(); compose.waitForIdle()
+        compose.onNodeWithTag("top-B0TEST0103").assertDoesNotExist()
+        compose.onNodeWithTag("grp-hot").assertIsDisplayed()                                        // (the bar and its count stay)
+        assertEquals(true, s.readFile("folded.json")!!.contains("\"hot\""))
+        Thread.sleep(300); shot("t10_hot_folded")
+        toList(hasTestTag("product-B0TEST0103"))                                                    // (still in its year, with the green chip on the year's bar)
+        toList(hasTestTag("grp-hot"))
+        compose.onNodeWithTag("grp-hot").performClick(); compose.waitForIdle()
+        assertEquals(false, s.readFile("folded.json")!!.contains("\"hot\""))
         toList(hasTestTag("top-B0TEST0103")); compose.onNodeWithTag("top-B0TEST0103").assertIsDisplayed()
         toList(hasTestTag("product-B0TEST0101"))
         toList(hasTestTag("grp-2025"))
@@ -557,6 +569,30 @@ class ScreenTests {
             android.util.Log.i("RkTest", "t19 step 8")
             compose.onNodeWithTag("bought-total").assertExists()
             shot("t19_bought")
+            // 1.0 (owner: '"Bought" should be sortable by all, product, store, etc.'): All = a navy bar per month; Product / Store / Device
+            compose.onNodeWithTag("bgrp-0").assertIsDisplayed()
+            compose.onNodeWithTag("bgrp-0").assert(androidx.compose.ui.test.hasText(java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.US).format(java.util.Date())))
+            compose.onNodeWithTag("bsort2").performClick(); compose.waitForIdle()                 // Store
+            compose.onNodeWithTag("bgrp-0").assert(androidx.compose.ui.test.hasText("Amazon"))
+            Thread.sleep(300); shot("t19_bought_by_store")
+            compose.onNodeWithTag("bsort3").performClick(); compose.waitForIdle()                 // Device
+            compose.onNodeWithTag("bgrp-0").assert(androidx.compose.ui.test.hasText("(this device)", substring = true))
+            Thread.sleep(300); shot("t19_bought_by_device")
+            compose.onNodeWithTag("bsort1").performClick(); compose.waitForIdle()                 // Product
+            // (earlier tests' purchases of other products come first, A to Z: scroll to this one's bar - in this view only the bar has the name)
+            val name = androidx.compose.ui.test.hasText("The Hobbit Collector Booster Box")
+            val hobbit = name and androidx.compose.ui.test.hasAnyAncestor(hasTestTag("bought"))
+            compose.onNodeWithTag("bought").performScrollToNode(name)
+            Thread.sleep(300); shot("t19_bought_by_product")
+            // a group folds with a tap on its bar (remembered) and opens again
+            compose.onNode(hobbit).performClick(); compose.waitForIdle()
+            assertEquals(true, s.readFile("folded.json")!!.contains("\"b:p:the hobbit collector booster box\""))
+            Thread.sleep(300); shot("t19_bought_folded")
+            compose.onNode(hobbit).performClick(); compose.waitForIdle()
+            assertEquals(false, s.readFile("folded.json")!!.contains("\"b:p:"))
+            compose.waitUntil(5_000) { compose.onAllNodesWithTag("buy-row").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("bought").performScrollToNode(hasTestTag("bsort0"))
+            compose.onNodeWithTag("bsort0").performClick(); compose.waitForIdle()                 // All again
         android.util.Log.i("RkTest", "t19 step 9")
         } finally { compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }           // (back on Watch even when it failed)
         android.util.Log.i("RkTest", "t19 step 10")
@@ -706,6 +742,15 @@ class ScreenTests {
             compose.onAllNodesWithText("cap \$485.00.", substring = true).fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Today").assertExists()
         Thread.sleep(400); shot("t23_activity_days")
+        // 1.0 (owner: "Activities ... should also be collapsible"): a day folds with a tap on its bar (remembered) and opens again
+        compose.onNodeWithText("Today").performClick(); compose.waitForIdle()
+        assertTrue("today is folded", compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isEmpty())
+        assertEquals(true, s.readFile("folded.json")!!.contains("\"day:"))
+        compose.onNodeWithText("Today").assertExists()                                             // (the bar stays)
+        Thread.sleep(300); shot("t23_activity_folded")
+        compose.onNodeWithText("Today").performClick(); compose.waitForIdle()
+        assertTrue("today is open again", compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isNotEmpty())
+        assertEquals(false, s.readFile("folded.json")!!.contains("\"day:"))
         compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
     }
 
@@ -750,6 +795,34 @@ class ScreenTests {
         compose.waitForIdle()
         toList(hasTestTag("product-B0TEST0802"))
         Thread.sleep(300); shot("t24_added_no_cap")
+    }
+
+    /** 1.0 (owner: "My version of the app should clearly distinguish itself as "beta" whereas all other versions should be standard"):
+     *  a copy newer than the one everyone has shows an amber BETA right after its version (title and About); a standard copy does not. */
+    @Test fun t25_beta_mark_only_on_a_beta() {
+        try {
+            MainActivity.betaForTests = true; RkApp.store().log("t25 marker a", quiet = true)
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("beta", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("list").performScrollToNode(hasTestTag("title"))
+            val lay = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithTag("title").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(lay) }
+            val l0 = lay.first(); val full = l0.layoutInput.text.text
+            assertEquals("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION} BETA", full)
+            assertEquals("the whole title, BETA included, is visible: $full", full.length, l0.getLineEnd(l0.lineCount - 1, visibleEnd = true))
+            assertEquals("no line is cut with ...", false, (0 until l0.lineCount).any { l0.isLineEllipsized(it) })
+            compose.onNodeWithTag("beta", useUnmergedTree = true).assertIsDisplayed()
+            Thread.sleep(300); shot("t25_beta")
+            compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+            compose.onNodeWithTag("settings").performScrollToNode(hasTestTag("sech-about"))
+            compose.onAllNodesWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION} beta", substring = true, useUnmergedTree = true).onFirst().assertExists()
+            Thread.sleep(300); shot("t25_beta_about")
+            compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+            // a standard copy (the one everyone has): no mark, only the version
+            MainActivity.betaForTests = false; RkApp.store().log("t25 marker b", quiet = true)
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("beta", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("Restalker Mobile v${com.restalker.mobile.core.APP_VERSION}").assertIsDisplayed()
+            Thread.sleep(300); shot("t25_standard")
+        } finally { MainActivity.betaForTests = null }
     }
 
     @Test fun t8_turnPhoneSideways_noCrash() {

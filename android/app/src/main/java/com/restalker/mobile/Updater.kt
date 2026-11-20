@@ -66,6 +66,13 @@ object Updater {
     fun mayAsk(ctx: Context, code: Int, explicit: Boolean, now: Long = System.currentTimeMillis()): Boolean =
         explicit || now - askedAt(ctx, code) >= ASK_GAP_MS
 
+    /** 1.0: this copy is a beta - newer than the version everyone has (UpdatePlan.isBeta). The version everyone has is the one read
+     *  at the last look for updates (kept, so it is known without internet too). */
+    fun beta(ctx: Context): Boolean = try {
+        val pub = prefs(ctx).getLong("publicCode", 0L).takeIf { it > 0 }
+        UpdatePlan.isBeta(BuildConfig.VERSION_CODE, pub, if (pub == null) DeskLink.master() else false)
+    } catch (e: Exception) { false }
+
     /** At most every 3 hours (sooner while waiting for a purchase to finish). Any thread. [explicit]: you asked for it (Update now). */
     fun tick(ctx: Context, force: Boolean = false, explicit: Boolean = false) {
         if (running || (!force && System.currentTimeMillis() < nextCheck)) return
@@ -79,6 +86,7 @@ object Updater {
     private fun run(ctx: Context, explicit: Boolean) {
         nextCheck = System.currentTimeMillis() + UpdatePlan.CHECK_EVERY_MS
         val note = try { get(UpdatePlan.NOTE_URL) } catch (e: Exception) { state = "could not check for updates (no internet?)"; nextCheck = System.currentTimeMillis() + 30 * 60_000L; return }
+        try { UpdatePlan.publicCode(note)?.let { prefs(ctx).edit().putLong("publicCode", it).apply() } } catch (e: Exception) { }     // 1.0: for the BETA mark
         val beta = if (DeskLink.master()) try { UpdatePlan.parse(get(UpdatePlan.BETA_URL), BuildConfig.VERSION_CODE) } catch (e: Exception) { null } else null
         val offer = UpdatePlan.pick(UpdatePlan.parse(note, BuildConfig.VERSION_CODE), beta)
         available = offer

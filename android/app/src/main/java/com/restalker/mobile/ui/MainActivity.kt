@@ -48,6 +48,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import com.restalker.mobile.BuildConfig
@@ -73,6 +74,8 @@ import com.restalker.mobile.core.PriceMarks
 import com.restalker.mobile.core.RefreshTiming
 import com.restalker.mobile.core.Settings
 import com.restalker.mobile.core.Buys
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import com.restalker.mobile.core.Tcg
 import com.restalker.mobile.core.asLong
 import com.restalker.mobile.core.asStr
@@ -172,6 +175,8 @@ class MainActivity : ComponentActivity() {
         runOnUiThread { update.value = Updater.available?.let { it.version to it.apk } }
     }.start()
 
+    /** 1.0: this copy is a beta (newer than the version everyone has) - see Updater.beta. (The screen tests set [betaForTests].) */
+    private fun isBeta(): Boolean = betaForTests ?: Updater.beta(this)
     private fun signedIn() = CookieManager.getInstance().getCookie("https://www.amazon.com")?.let { it.contains("at-main=") || it.contains("x-main=") || it.contains("sess-at-main=") } == true
     private fun battOk() = (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
     private fun notesOk() = NotificationManagerCompat.from(this).areNotificationsEnabled()
@@ -437,8 +442,19 @@ class MainActivity : ComponentActivity() {
                         androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(com.restalker.mobile.R.drawable.ic_launcher), contentDescription = "Restalker",
                             modifier = Modifier.padding(end = 12.dp).size(48.dp).clip(RoundedCornerShape(12.dp)).testTag("logo"))
                         Column(Modifier.weight(1f)) {
-                            Text("Restalker Mobile v$APP_VERSION", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp,
-                                maxLines = 2, modifier = Modifier.testTag("title"))
+                            // 1.0 (owner: "My version of the app should clearly distinguish itself as "beta" whereas all other versions
+                            // should be standard"): an amber BETA mark right after the version while this copy is newer than the one
+                            // everyone has; a copy everyone has shows only its version
+                            val beta = isBeta()
+                            Text(androidx.compose.ui.text.buildAnnotatedString {
+                                    append("Restalker Mobile v$APP_VERSION")
+                                    if (beta) { append(" "); appendInlineContent("beta", "BETA") }
+                                }, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 21.sp, lineHeight = 25.sp, maxLines = if (beta) 3 else 2,
+                                inlineContent = if (!beta) emptyMap() else mapOf("beta" to InlineTextContent(
+                                    androidx.compose.ui.text.Placeholder(2.7.em, 1.05.em, androidx.compose.ui.text.PlaceholderVerticalAlign.TextCenter)) {
+                                    Box(Modifier.fillMaxSize().background(Look.Accent, RoundedCornerShape(6.dp)).testTag("beta"), contentAlignment = Alignment.Center) {
+                                        Text("BETA", color = Look.Ink, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, softWrap = false) } }),
+                                modifier = Modifier.testTag("title"))
                             // 2.6 (owner: "small text ... the total number of workers (individual devices contributing) ... XXX total
                             // contributors and counting")
                             // 2.15 (owner: "This number should be dynamic and tied directly to the total active number of devices working"):
@@ -529,8 +545,11 @@ class MainActivity : ComponentActivity() {
             val shown = products.filter { when (filter.intValue) { 1 -> it.inStock && !it.purchased; 2 -> it.buy; 3 -> it.watch; else -> true } }
             val hot = shown.filter { it.inStock && !it.purchased }
             if (filter.intValue == 0 && hot.isNotEmpty()) {
-                stickyHeader(key = "hdr-hot") { GroupHeader("In stock now", hot.size, null, false, "grp-hot") {} }
-                items(hot, key = { "hot-" + it.id }) { p -> ProductCard(p, deskBuys, "top-${p.asin}", boughtN(p)) { onOpen(p) } }
+                // 1.0 (owner: '"Instock now" should be a collapsible field like the others'): it folds with a tap and stays folded, like the
+                // years (its count stays on the bar, and every year's bar still says how many of its products are in stock)
+                val hotFolded = "hot" in folded
+                stickyHeader(key = "hdr-hot") { GroupHeader("In stock now", hot.size, null, hotFolded, "grp-hot", accent = true) { fold("hot") } }
+                if (!hotFolded) items(hot, key = { "hot-" + it.id }) { p -> ProductCard(p, deskBuys, "top-${p.asin}", boughtN(p)) { onOpen(p) } }
             }
             if (products.isNotEmpty() && shown.isEmpty()) item { MascotNote(when (filter.intValue) { 1 -> "Nothing is in stock right now - still watching."; 2 -> "No product is set to buy."; else -> "No product is watched." }) }
             val years = shown.groupBy { Groups.of(it).first }.toList().sortedBy { Groups.yearRank(it.first) }
@@ -553,23 +572,31 @@ class MainActivity : ComponentActivity() {
         try { MiniJson.read(RkApp.store().readFile("folded.json") ?: "[]").let { (it as? List<*>)?.mapNotNull { x -> x as? String }?.let { l -> addAll(l) } } } catch (e: Exception) { }
     }
     private val filter = mutableIntStateOf(0)
-    private fun fold(key: String) {
+    /** [liveDays] (Activity): the days in the log now - folded days that are gone are forgotten (a date comes round again next year). */
+    private fun fold(key: String, liveDays: List<String>? = null) {
         if (key in folded) folded.remove(key) else folded.add(key)
+        if (liveDays != null) { val gone = folded.filter { it.startsWith("day:") && it !in liveDays }; if (gone.isNotEmpty()) folded.removeAll(gone) }
         try { RkApp.store().writeFile("folded.json", MiniJson.write(folded.toList())) } catch (e: Exception) { }
     }
 
     /** 2.15 (owner chose look B, 2026-11-19): every year (and "In stock now") is a navy bar across the screen with an amber button; it
-     *  stays pinned at the top while its products scroll under it, so the brand colours never scroll away. */
+     *  stays pinned at the top while its products scroll under it, so the brand colours never scroll away.
+     *  1.0 (owner: "navy being primary features and amber being secondary. Match the other tabs and options"): the same bar on every tab -
+     *  the years and "In stock now" (Watch), the groups of Bought, the days of Activity - and every one folds with a tap. [accent]: an
+     *  amber title ("In stock now"); [hot]: how many of the group are in stock (a green chip); [extra]: a note on the right (a total). */
     @Composable
-    fun GroupHeader(title: String, count: Int, hot: Int?, isFolded: Boolean, tag: String, onClick: () -> Unit) {
+    fun GroupHeader(title: String, count: Int, hot: Int?, isFolded: Boolean, tag: String, accent: Boolean = false, extra: String? = null, onClick: () -> Unit) {
         Box(Modifier.fillMaxWidth().background(Look.Ground).padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 6.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Look.Navy).clickable(enabled = hot != null, onClick = onClick)
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Look.Navy).clickable(onClick = onClick)
                 .padding(start = 14.dp, end = 10.dp, top = 8.dp, bottom = 8.dp).heightIn(min = 30.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (hot == null) Look.OnNavyAccent else Color.White)
-                Text("  $count", color = Look.OnNavyDim, fontSize = 13.sp)
-                if (hot != null && hot > 0) Chip("$hot in stock", Look.GoodSoft, Look.GoodText, Modifier.padding(start = 8.dp))
-                Spacer(Modifier.weight(1f))
-                if (hot != null) Box(Modifier.size(28.dp).background(Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 20.sp, color = if (accent) Look.OnNavyAccent else Color.White,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text("  $count", color = Look.OnNavyDim, fontSize = 13.sp, maxLines = 1)
+                    if (hot != null && hot > 0) Chip("$hot in stock", Look.GoodSoft, Look.GoodText, Modifier.padding(start = 8.dp))
+                }
+                if (extra != null) Text(extra, color = Look.OnNavyDim, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+                Box(Modifier.padding(start = 8.dp).size(28.dp).background(Look.Accent, CircleShape), contentAlignment = Alignment.Center) {
                     Icon(if (isFolded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (isFolded) "Show" else "Hide", tint = Look.Ink, modifier = Modifier.size(20.dp)) }
             }
         }
@@ -1299,22 +1326,44 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun TabHeader(text: String) = Text(text, fontWeight = FontWeight.Bold, fontSize = 24.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 10.dp))
 
+    /** 1.0: how the Bought list is grouped now (Buys.ALL / PRODUCT / STORE / DEVICE). */
+    private val boughtBy = mutableIntStateOf(Buys.ALL)
+
+    @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
     @Composable
     fun BoughtTab(r: Int) {
         // 2.4 (owner: 'the "bought" section of the app should include the data from the PC version as well ... time, device, price, store,
         // and browser'): every linked device's purchases, newest first
+        // 1.0 (owner: '"Bought" should be sortable by all, product, store, etc. This should keep the same color scheme of navy being primary
+        // features and amber being secondary. Match the other tabs and options'): amber choices as on Watch - All (by month), Product,
+        // Store, Device; each group under a navy bar with an amber fold button (its count and what it cost together on the bar)
         val list = remember(r) { try { DeskLink.get().buys(DeskLink.name()) } catch (e: Exception) { emptyList() } }
-        LazyColumn(Modifier.fillMaxSize().testTag("bought")) {
+        val by = boughtBy.intValue
+        val groups = remember(list, by) { try { Buys.grouped(list, by) } catch (e: Exception) { emptyList() } }
+        LazyColumn(Modifier.fillMaxSize().testTag("bought"), contentPadding = PaddingValues(bottom = 24.dp)) {
             item { TabHeader("Bought") }
             if (list.isEmpty()) item { MascotNote("Nothing bought yet (by this device or the linked PC).") }
             else item {
                 val total = list.mapNotNull { it.price }.sum()
                 Text("${list.size} purchase${if (list.size == 1) "" else "s"}" + (if (total > 0) " · \$${Engine.money(total)} in all" else ""),
                     color = Look.Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp).testTag("bought-total"))
+                Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("All", "Product", "Store", "Device").forEachIndexed { i, l ->
+                        FilterChip(by == i, { boughtBy.intValue = i }, { Text(l) }, modifier = Modifier.testTag("bsort$i"),
+                            colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Look.Accent, selectedLabelColor = Look.Ink))
+                    }
+                }
             }
-            items(list) { x ->
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().background(Color.White, Look.card).padding(14.dp).testTag("buy-row")) {
-                    BuyLines(x, withName = true)
+            groups.forEachIndexed { i, g ->
+                val key = "b:" + g.key
+                val isFolded = key in folded
+                stickyHeader(key = key) {
+                    GroupHeader(g.title, g.rows.size, null, isFolded, "bgrp-$i", extra = if (g.total > 0) "\$" + Engine.money(g.total) else null) { fold(key) }
+                }
+                if (!isFolded) items(g.rows) { x ->
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth().background(Color.White, Look.card).padding(14.dp).testTag("buy-row")) {
+                        BuyLines(x, withName = by != Buys.PRODUCT)
+                    }
                 }
             }
         }
@@ -1351,17 +1400,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (days.isEmpty()) item { MascotNote("Nothing yet - restocks, checkouts and purchases show up here.") }
+            // 1.0 (owner: "Activities are now sorted correctly, but should also be collapsible"): a day folds with a tap on its bar (the
+            // same navy bar and amber button as on Watch and Bought) and stays folded
+            val dayKeys = days.map { "day:" + it.first }
             for ((d, lines) in days) {
-                stickyHeader(key = "day-$d") {
-                    Box(Modifier.fillMaxWidth().background(Look.Ground).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)) {
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Look.Navy).padding(horizontal = 14.dp, vertical = 7.dp).testTag("day-$d"),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Text(L.dayLabel(d, now), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            Text("${lines.size}", color = Look.OnNavyAccent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-                items(lines) { l ->
+                val key = "day:$d"
+                val isFolded = key in folded
+                stickyHeader(key = "day-$d") { GroupHeader(L.dayLabel(d, now), lines.size, null, isFolded, "day-$d") { fold(key, dayKeys) } }
+                if (!isFolded) items(lines) { l ->
                     val (t, text) = L.split(l)
                     val warn = text.startsWith("!")
                     val good = text.contains("BOUGHT")
@@ -1567,7 +1613,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 // ---- 2.6 (owner: 'a section at the bottom of settings for "about"')
-                Section("about", "About", "Restalker Mobile v$APP_VERSION" + if (DeskLink.master()) " · master" else "", mascot = true) {
+                Section("about", "About", "Restalker Mobile v$APP_VERSION" + (if (isBeta()) " beta" else "") + if (DeskLink.master()) " · master" else "", mascot = true) {
                     Column(Modifier.fillMaxWidth().padding(16.dp).testTag("about")) {
                         Text("Restocks of sought-after Magic products often last only minutes, and no single phone or PC can look at every store all " +
                             "the time. When you share with the Restalker crowd, each device that spots a product from the central list in stock tells " +
@@ -1579,7 +1625,8 @@ class MainActivity : ComponentActivity() {
                         Text("Fair play: Restalker buys each product at most ${com.restalker.mobile.core.Limit.MAX} times, counting every linked device, so restocks " +
                             "go to players rather than resellers.", fontSize = 12.sp, lineHeight = 17.sp, color = Look.Muted, modifier = Modifier.padding(top = 8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                            Text("Restalker Mobile v$APP_VERSION" + if (DeskLink.master()) " · master" else "", color = Look.Muted, fontSize = 12.sp, modifier = Modifier.weight(1f).testTag("about-version"))
+                            Text("Restalker Mobile v$APP_VERSION" + (if (isBeta()) " beta (newer than the version everyone has)" else "") +
+                                if (DeskLink.master()) " · master" else "", color = Look.Muted, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.weight(1f).testTag("about-version"))
                             TextButton(onClick = { masterAsk = true }, modifier = Modifier.testTag("master-open")) { Text("Master code", fontSize = 12.sp) }
                         }
                     }
@@ -1852,6 +1899,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         @Volatile var lookedAtStart = false          // 2.15: the start-up look - once per start of the app
         @Volatile var startLookInTests = false
+        @Volatile var betaForTests: Boolean? = null
         /** 1.7: the app's screen is in front (an update's "Install" question can then be shown at once). */
         @Volatile var shown = false
         const val SHARE_URL = "https://github.com/stevenmanuel01-cloud/Restalker/releases/latest"

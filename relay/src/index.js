@@ -312,13 +312,17 @@ export class Hub {
       if (!prev || L.verNewer(pc.version, prev)) this.kvSet("rel_pc", pc.version);
     }
     if (ph && ph.version) {
+      // (the phone app's numbering started again at 1.0 after 2.15: newer = a higher version code - L.phoneNewer)
       const prev = this.kvGet("rel_phone");
-      if (prev && L.verNewer(ph.version, prev) && ch) {
+      const code = Number(ph.code) || 0, prevCode = Number(this.kvGet("rel_phone_code")) || 0;
+      const newer = L.phoneNewer(code, prevCode, ph.version, prev);
+      if (prev && newer && ch) {
         const notes = L.newestSection(await this.cached("phnotes", "android/RELEASE_NOTES.md", 60_000, true));
         await this.say(ch, `**Restalker Mobile ${ph.version} is out.** Phones and tablets update by themselves.\n${notes}`);
         out.phone = ph.version;
       }
-      if (!prev || L.verNewer(ph.version, prev)) this.kvSet("rel_phone", ph.version);
+      if (!prev || newer) this.kvSet("rel_phone", ph.version);
+      if (code > 0 && (!prevCode || newer)) this.kvSet("rel_phone_code", code);
     }
     return out;
   }

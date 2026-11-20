@@ -1297,6 +1297,46 @@ object CoreTests {
             w.engine.send(Engine.Cmd.Baseline("idB0BASE0003")); w.engine.step()
             skipped && w.amz.places == 1
         }
+        // 1.0 (owner, 2026-11-19: '"Bought" should be sortable by all, product, store, etc.')
+        t("172_bought_groups_by_month_product_store_device") {
+            val z = java.time.ZoneId.of("UTC")
+            val at = { y: Int, m: Int, d: Int -> java.time.LocalDate.of(y, m, d).atTime(12, 0).atZone(z).toInstant().toEpochMilli() }
+            val list = listOf(
+                Buy(at(2026, 11, 18), "Amazon", "Nauctis Bundle", 89.99, "the app", "Pixel 9", "B0A", true),
+                Buy(at(2026, 11, 2), "Walmart", "Hobbit Box", 455.88, "Chrome", "Desktop", "", false),
+                Buy(at(2026, 10, 30), "Amazon", "hobbit box", null, "Firefox", "Desktop", "B0B", false),
+                Buy(at(2026, 11, 19), "Amazon", "", 10.0, "the app", "Galaxy Tab", "B0C", false),
+                Buy(at(2025, 12, 31), "Best Buy", "Nauctis Bundle", 80.0, "Edge", "Desktop", "", false))
+            val all = Buys.grouped(list, Buys.ALL, z); val pr = Buys.grouped(list, Buys.PRODUCT, z)
+            val st = Buys.grouped(list, Buys.STORE, z); val dv = Buys.grouped(list, Buys.DEVICE, z)
+            val none = Buys.grouped(emptyList(), Buys.ALL, z)
+            none.isEmpty() &&
+                // All: a bar per month, the newest month first; inside, the newest purchase first; the month's total (no price = not counted)
+                all.map { it.title } == listOf("November 2026", "October 2026", "December 2025") && all.map { it.key } == listOf("m:2026-11", "m:2026-10", "m:2025-12") &&
+                all[0].rows.map { it.asin } == listOf("B0C", "B0A", "") && Math.abs(all[0].total - 555.87) < 0.001 && all[1].total == 0.0 &&
+                // Product: A to Z, upper / lower case the same product; no name = its Amazon code
+                pr.map { it.title } == listOf("B0C", "Hobbit Box", "Nauctis Bundle") && pr[1].rows.size == 2 && pr[1].rows[0].store == "Walmart" &&
+                Math.abs(pr[2].total - 169.99) < 0.001 &&
+                // Store: A to Z
+                st.map { it.title } == listOf("Amazon", "Best Buy", "Walmart") && st[0].rows.size == 3 &&
+                // Device: this device first (marked), then A to Z
+                dv.map { it.title } == listOf("Pixel 9 (this device)", "Desktop", "Galaxy Tab") && dv[1].rows.size == 3 &&
+                // every purchase is in exactly one group, whatever the grouping
+                listOf(all, pr, st, dv).all { g -> g.sumOf { it.rows.size } == list.size && g.all { it.rows == it.rows.sortedByDescending { r -> r.at } } }
+        }
+        // 1.0 (owner, 2026-11-19: "My version of the app should clearly distinguish itself as "beta" whereas all other versions should be standard")
+        t("173_beta_only_while_newer_than_the_version_everyone_has") {
+            val note = "{\"version\": \"2.14\", \"code\": 25, \"apk\": \"x\", \"sha256\": \"y\"}"
+            UpdatePlan.publicCode(note) == 25L && UpdatePlan.publicCode("") == null && UpdatePlan.publicCode("not json") == null &&
+                UpdatePlan.publicCode("{\"code\": 0}") == null && UpdatePlan.publicCode(null) == null &&
+                UpdatePlan.isBeta(27, 25, false) && UpdatePlan.isBeta(27, 25, true) &&            // newer than everyone's: beta (whoever runs it)
+                !UpdatePlan.isBeta(27, 27, true) && !UpdatePlan.isBeta(27, 27, false) &&          // released to everyone: standard, the owner's too
+                !UpdatePlan.isBeta(25, 27, false) && !UpdatePlan.isBeta(25, 27, true) &&          // an older copy: standard
+                UpdatePlan.isBeta(27, null, true) && !UpdatePlan.isBeta(27, null, false) &&       // not known yet: only the owner's devices
+                // the name starts again at 1.0, the code keeps counting: 1.0 (code 27) is offered to a 2.15 (code 26), never the other way
+                UpdatePlan.parse("{\"version\": \"1.0\", \"code\": 27, \"apk\": \"${UpdatePlan.APK_PREFIX}1.0/restalker-mobile-1.0.apk\", \"sha256\": \"${"a".repeat(64)}\"}", 26)?.version == "1.0" &&
+                UpdatePlan.parse("{\"version\": \"2.15\", \"code\": 26, \"apk\": \"${UpdatePlan.APK_PREFIX}2.15/restalker-mobile-2.15.apk\", \"sha256\": \"${"a".repeat(64)}\"}", 27) == null
+        }
         return results
     }
 

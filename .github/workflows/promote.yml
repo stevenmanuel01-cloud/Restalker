@@ -43,7 +43,7 @@ jobs:
               json.dump(b, open(pub, "w"), indent=1); open(pub, "a").write("\n")
               changed.append(pub); out.append(f"{name}: {p['version']} -> {b['version']} for everyone")
           print("\n".join(out))
-          open(os.environ["GITHUB_OUTPUT"], "a").write(f"changed={' '.join(changed)}\npc={'latest.json' in changed}\n")
+          open(os.environ["GITHUB_OUTPUT"], "a").write(f"changed={' '.join(changed)}\npc={'latest.json' in changed}\nphone={'mobile/latest.json' in changed}\n")
           EOF
       - name: Save
         if: steps.copy.outputs.changed != ''
@@ -52,6 +52,15 @@ jobs:
           git add ${{ steps.copy.outputs.changed }}
           git commit -m "Release to everyone: ${{ steps.copy.outputs.changed }} [skip ci]"
           git push
+      # 1.0: the phone app's version for everyone is also the one on the download page (.../releases/latest) - until now it is a
+      # pre-release there (android.yml). Never fails the job.
+      - name: The download page gives this version now
+        if: steps.copy.outputs.phone == 'True'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(python3 -c "import json;print(json.load(open('mobile/latest.json'))['version'])")
+          gh release edit "mobile-v$V" --prerelease=false --latest && echo "DOWNLOAD PAGE: mobile-v$V is the latest release" || echo "DOWNLOAD PAGE NOT CHANGED (mobile-v$V)"
       - name: Tell every PC at once (the release channel)
         if: steps.copy.outputs.pc == 'True'
         env:

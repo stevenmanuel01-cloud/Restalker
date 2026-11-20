@@ -154,4 +154,7 @@ jobs:
           APK=$(ls apk/outputs/apk/release/*.apk | head -1)
           cp "$APK" "restalker-mobile-$VER.apk"
           sha256sum "restalker-mobile-$VER.apk"
-          gh release create "mobile-v$VER" "restalker-mobile-$VER.apk" --title "Restalker Mobile $VER" --notes-file android/RELEASE_NOTES.md
+          # 1.0 (owner: "all other versions should be standard"): a new version is the owner's beta first - a PRE-release here, so the
+          # download page for everyone (.../releases/latest: the README and the app's share QR) keeps giving the version everyone has.
+          # "Release to everyone" (promote.yml) makes it the latest one.
+          gh release create "mobile-v$VER" "restalker-mobile-$VER.apk" --title "Restalker Mobile $VER" --notes-file android/RELEASE_NOTES.md --prerelease

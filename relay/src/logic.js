@@ -244,3 +244,12 @@ export function verNewer(a, b) {
   for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; }
   return false;
 }
+
+/** (owner, 2026-11-19: "we can reset the version number on the next release"): the phone app's numbering started again at 1.0, right
+ *  after 2.15 - so by its NAME 1.0 looks older than 2.14. Only its version code (mobile/latest.json "code") keeps counting up: the
+ *  phone app's release note goes by the code. While the last announced code is not known yet (0: a relay from before this), by name. */
+export function phoneNewer(code, prevCode, ver, prevVer) {
+  const c = Number(code) || 0, p = Number(prevCode) || 0;
+  if (c > 0 && p > 0) return c > p;
+  return verNewer(ver, prevVer);
+}

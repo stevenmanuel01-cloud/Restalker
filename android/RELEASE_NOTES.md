@@ -1,3 +1,14 @@
+# Restalker Mobile 1.0 (2026-11-19; your notes of 7:32 PM)
+- New numbering: this is 1.0 - it comes right after 2.15. (Only the name starts again; every device still sees it as the newer version
+  and updates to it as usual.)
+- BETA: a copy that is newer than the version everyone has shows an amber BETA right after its version (the header and About). That is
+  your devices, which get every version first. Once you release a version to everyone it is the standard one - no mark, on any device.
+  The download page (the QR code under Share Restalker) now also gives the version everyone has, not the beta.
+- Watch: "In stock now" folds like the years - tap its bar (it stays folded; its count stays on the bar).
+- Bought: sort it with the amber choices - All (a bar per month), Product, Store, Device. Every group is under a navy bar with its count
+  and what it cost together, and folds with the amber button.
+- Activity: every day folds with a tap on its bar (the same navy bar and amber button as on Watch and Bought).
+
 # Restalker Mobile 2.15 (2026-11-19; your notes of 1:01 PM)
 - The race to checkout: your phones and tablets buy at the same time as the PC (Who buys: both, set once on every device). The first
   of your devices to reach Place your order claims the product on the Restalker server and orders; the others stop - never two orders.

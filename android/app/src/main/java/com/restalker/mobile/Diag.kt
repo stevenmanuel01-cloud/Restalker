@@ -20,7 +20,7 @@ object Diag {
         val st = s.settings()
         val sb = StringBuilder()
         val t = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-        sb.append("Restalker Mobile v$APP_VERSION (Amazon checkout from desktop $ENGINE_FROM) diagnostics, ${t.format(Date())}\n")
+        sb.append("Restalker Mobile v$APP_VERSION${if (Updater.beta(ctx)) " beta" else ""} (Amazon checkout from desktop $ENGINE_FROM) diagnostics, ${t.format(Date())}\n")
         sb.append("Phone: Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}\n")
         val wv = try { WebViewCompat.getCurrentWebViewPackage(ctx)?.versionName } catch (e: Exception) { null }
         sb.append("Browser part (WebView): ${wv ?: "?"}\n")

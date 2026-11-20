@@ -130,4 +130,14 @@ test("release notes only for a newer version (a version taken back is not announ
   assert.equal(L.verNewer("2.14", "2.15"), false);
   assert.equal(L.verNewer("2.15", "2.15"), false);
   assert.equal(L.verNewer("2.10", "2.9"), true);
+  // the phone app's numbering started again at 1.0 (code 27) after 2.15 (code 26): its release note goes by the code
+  assert.equal(L.verNewer("1.0", "2.14"), false);                    // (by name it looks older - why the code is used)
+  assert.equal(L.phoneNewer(27, 25, "1.0", "2.14"), true);
+  assert.equal(L.phoneNewer(28, 27, "1.1", "1.0"), true);
+  assert.equal(L.phoneNewer(27, 27, "1.0", "1.0"), false);
+  assert.equal(L.phoneNewer(25, 27, "2.14", "1.0"), false);          // (a version taken back is never announced)
+  assert.equal(L.phoneNewer(25, 0, "2.14", "2.14"), false);          // (the last code not known yet: by name - nothing new)
+  assert.equal(L.phoneNewer(26, 0, "2.15", "2.14"), true);
+  assert.equal(L.phoneNewer("27", "25", "1.0", "2.14"), true);       // (kept as text)
+  assert.equal(L.phoneNewer(0, 25, "1.0", "2.14"), false);           // (a note without a code: by name)
 });

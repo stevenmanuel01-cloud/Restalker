@@ -13,6 +13,13 @@ object UpdatePlan {
 
     /** The newer of the two offers (the owner's devices: the test version when it is newer than the one for everyone). */
     fun pick(stable: Offer?, beta: Offer?): Offer? = listOfNotNull(stable, beta).maxByOrNull { it.code }
+    /** 1.0 (owner, 2026-11-19: "My version of the app should clearly distinguish itself as "beta" whereas all other versions should be
+     *  standard"): the version code everyone has (mobile/latest.json) - null when that note could not be read. */
+    fun publicCode(json: String?): Long? = MiniJson.obj(json)?.get("code").asLong()?.takeIf { it > 0 }
+    /** This copy is a beta when it is NEWER than the version everyone has (it reached the owner's devices first and waits for "Release
+     *  to everyone"). Once released to everyone the same copy is standard - on every device, the owner's too. Before the first look at
+     *  the release note (no internet yet): the owner's devices only. */
+    fun isBeta(myCode: Int, publicCode: Long?, master: Boolean): Boolean = if (publicCode != null) myCode > publicCode else master
     const val APK_PREFIX = "https://github.com/stevenmanuel01-cloud/Restalker/releases/download/mobile-v"
     const val CHECK_EVERY_MS = 3 * 3_600_000L
     const val RETRY_SOON_MS = 2 * 60_000L
