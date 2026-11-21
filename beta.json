@@ -1,8 +1,8 @@
 {
- "version": "v147",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v147_update.zip",
- "sha256": "af5eb94b2ae41f493f27612bd649018a4f6274cc0d7b8851b0914766de802134",
- "size": 775171,
- "notes": "This PC and its linked phones / tablets now talk through the Restalker relay, not the free message service (its 250 messages a day per home were used up by the linked devices alone). Same sealed link; one request a minute. The crowd's sightings go there too. This PC's own messages (a purchase, something that needs you) now also show in the linked Restalker app (1.0.6). ntfy stays for alerts on a phone without the app, and for a linked device with an older app - it keeps working without updating. Phone (top right) now shows both ways to connect a phone.",
+ "version": "v148",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v148_update.zip",
+ "sha256": "b497dfc3a06937427855367767e9268e91d4ec2ad8424c386ebcdadb9f3d4ba5",
+ "size": 776163,
+ "notes": "Amazon sign-in check fixed: it no longer says 'not signed in' when Amazon's page just did not show your name; signed out must be seen twice in a row, and that phone message comes at most once every 6 hours. The regular report every 4 hours is no longer sent (reports after a problem stay). Works with Restalker app 1.0.8, which fixes Re-arm.",
  "files": 84
 }
