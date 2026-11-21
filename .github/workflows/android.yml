@@ -297,6 +297,8 @@ jobs:
           files="restalker-play-$VER.aab"
           mkdir -p kit; cp results/phone-play-api36/shots/*.png kit/ 2>/dev/null || true
           (cd kit && rm -f *.small.png fail_* && ls | head -80 && zip -q ../play-screenshots.zip *.png) && files="$files play-screenshots.zip" || echo "no screenshots"
+          # (the store page's icon, banner and five pictures, kept in the repository: store/play)
+          if ls store/play/*.png >/dev/null 2>&1; then zip -q -j restalker-store-graphics.zip store/play/*.png && files="$files restalker-store-graphics.zip"; fi
           v=results/phone-play-api36/store/restalker-background-watching.mp4
           if [ -s "$v" ]; then cp "$v" .; files="$files restalker-background-watching.mp4"; else echo "no store film"; fi
           gh release view play-kit >/dev/null 2>&1 || gh release create play-kit --prerelease --title "Google Play upload kit" \
