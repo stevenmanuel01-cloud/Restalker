@@ -87,11 +87,11 @@ object CoreTests {
         val store = Store(dir) { clock.t }
         val amz = FakeAmazon(clock).also { it.store = store }
         val said = Said()
-        var mode = "pc"; var other = false; var fo = true; var handed = false
+        var mode = "pc"; var other = false; var fo = true; var handed = false; var pcw = false
         val verdicts = HashMap<String, Pair<String, Long>>()
         var verdictFn: ((String) -> Pair<String, Long>?)? = null
         val engine = Engine(store, amz, said, clock, { net }, { desk }, { other }, { mode }, { a -> verdictFn?.invoke(a) ?: verdicts[a] },
-            failover = { fo }, pcHanded = { handed })
+            failover = { fo }, pcHanded = { handed }, pcWatches = { pcw })
         init { store.setSettings { it.copy(watching = true, buying = buying, practice = practice) } }
         fun add(asin: String, cap: Double, buy: Boolean, stock: Boolean = true, price: Double = 99.99): Product {
             amz.items[asin] = FakeAmazon.Item(stock, price, "Magic: The Gathering Test Product $asin Collector Booster Box")
@@ -1683,6 +1683,42 @@ object CoreTests {
             w.store.update("idB0TEST0001") { it.copy(buy = true) }
             w.check("B0TEST0001")
             w.amz.places == 1 }
+        // 1.0.9 (owner: "I think the app may be making my phone slower"): "Both buy" while the PC is watching -> this phone's own looks
+        // every 10 min (not every 90 s); the PC's in-stock signal still makes it look and buy at once; PC not watching -> 90 s again
+        fun nextLookAfter(w: World, asin: String, maxMs: Long): Long? {
+            val t0 = w.clock.t; val last = w.p(asin).lastCheck
+            while (w.clock.t - t0 < maxMs) { w.engine.step(); if (w.p(asin).lastCheck != last) return w.p(asin).lastCheck - t0 }
+            return null
+        }
+        t("191_both_while_the_pc_watches_this_phone_looks_every_10_min") {
+            val w = World(desk = false); w.mode = "both"; w.pcw = true; w.add("B0TEST0951", 120.0, true, stock = false)
+            w.store.setSettings { it.copy(ordersReadAt = w.clock.t) }
+            w.store.update("idB0TEST0951") { it.copy(lastCheck = w.clock.t) }
+            val gap = nextLookAfter(w, "B0TEST0951", 15 * 60_000L)
+            gap != null && gap >= 10 * 60_000L && gap < 11 * 60_000L }
+        t("192_both_pc_not_watching_or_phone_mode_the_usual_90_s") {
+            val w = World(desk = false); w.mode = "both"; w.pcw = false; w.add("B0TEST0952", 120.0, true, stock = false)
+            w.store.setSettings { it.copy(ordersReadAt = w.clock.t) }
+            w.store.update("idB0TEST0952") { it.copy(lastCheck = w.clock.t) }
+            val gap = nextLookAfter(w, "B0TEST0952", 15 * 60_000L)
+            val w2 = World(desk = false); w2.mode = "phone"; w2.pcw = true; w2.add("B0TEST0953", 120.0, true, stock = false)
+            w2.store.setSettings { it.copy(ordersReadAt = w2.clock.t) }
+            w2.store.update("idB0TEST0953") { it.copy(lastCheck = w2.clock.t) }
+            val gap2 = nextLookAfter(w2, "B0TEST0953", 15 * 60_000L)
+            // and the PC stops being heard while waiting: back to 90 s
+            val w3 = World(desk = false); w3.mode = "both"; w3.pcw = true; w3.add("B0TEST0954", 120.0, true, stock = false)
+            w3.store.setSettings { it.copy(ordersReadAt = w3.clock.t) }
+            w3.store.update("idB0TEST0954") { it.copy(lastCheck = w3.clock.t) }
+            val none = nextLookAfter(w3, "B0TEST0954", 3 * 60_000L)
+            w3.pcw = false
+            val gap3 = nextLookAfter(w3, "B0TEST0954", 2 * 60_000L)
+            gap != null && gap in 90_000L..120_000L && gap2 != null && gap2 in 90_000L..120_000L && none == null && gap3 != null && gap3 < 60_000L }
+        t("193_both_while_the_pc_watches_its_signal_still_looks_and_buys_at_once") {
+            val w = World(desk = true); w.mode = "both"; w.pcw = true; w.add("B0TEST0955", 120.0, true)
+            w.store.update("idB0TEST0955") { it.copy(lastCheck = w.clock.t) }
+            val t0 = w.clock.t
+            w.engine.send(Engine.Cmd.Go("B0TEST0955")); w.engine.step()
+            w.amz.places == 1 && w.p("B0TEST0955").purchased && w.clock.t - t0 < 60_000L }
         return results
     }
 

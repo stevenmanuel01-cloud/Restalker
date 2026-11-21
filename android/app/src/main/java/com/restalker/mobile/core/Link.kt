@@ -123,6 +123,7 @@ class Link(private val store: Store, private val net: LinkNet,
         const val FILE = "link.json"
         const val BEAT = 60 * 60.0            // the phone posts at least every hour (its products; the desktop needs no faster sign)
         const val DESK_SILENT = 45 * 60.0     // the desktop not heard for this long -> the phone buys
+        const val PC_WATCHING = 25 * 60.0     // 1.0.9: the PC heard this lately (post or relay beat) = it is watching now
         const val INLINE_MAX = 3500
         const val TOMB_KEEP = 60 * 86400.0
         const val PEND_RETRY = 5 * 60.0
@@ -659,6 +660,13 @@ class Link(private val store: Store, private val net: LinkNet,
 
     /** 2.0: someone else buys (the desktop, or another phone first in line) - this phone stands by. */
     fun othersBuy(): Boolean = desktopBuys() || otherPhoneBuys()
+
+    /** 1.0.9: the PC is watching RIGHT NOW - it buys on Amazon (desktopBuys) and was heard within PC_WATCHING (its relay beat comes
+     *  every 15 minutes, its post every 30). Then a "Both buy" phone looks by itself only every Engine.WITH_PC_MS. */
+    fun pcWatchesNow(): Boolean {
+        val sn = snap ?: return false
+        return desktopBuys() && nowS() - pcSeen(sn.second) < PC_WATCHING
+    }
 
     /** 2.0: the other phones / tablets heard within PHONE_ALIVE. */
     fun otherPhones(): Int { val (dev, ph) = snapPhones; val t = nowS(); return ph.count { (d, v) -> d != dev && t - (v["at"].asDouble() ?: 0.0) < PHONE_ALIVE } }

@@ -36,7 +36,7 @@ class WatchService : Service() {
         val store = RkApp.store()
         startRx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); startAt = System.currentTimeMillis()
         // 2.2: the PC and the other phones apart (Who buys: pc / phone / both decides what the PC's buying means for this phone)
-        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() },
+        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() }, pcWatches = { DeskLink.get().pcWatchesNow() },
             otherPhoneBuys = { DeskLink.get().otherPhoneBuys() },
             buyerMode = { if (DeskLink.get().linked()) RkApp.store().settings().buyMode else "solo" },     // (not linked: this phone buys)
             pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() },

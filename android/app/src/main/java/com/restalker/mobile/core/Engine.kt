@@ -66,7 +66,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
              /** 2.15: how this device's claimed checkout ended ("bought" keeps the others out for a day; "failed" frees it). */
              private val raceRelease: (String, String) -> Unit = { _, _ -> },
              /** 1.0.4: this device's time zone (the watch hours are times of day on its own clock; the tests give their own). */
-             private val zone: () -> java.util.TimeZone = { java.util.TimeZone.getDefault() }) {
+             private val zone: () -> java.util.TimeZone = { java.util.TimeZone.getDefault() },
+             /** 1.0.9: the linked PC is watching right now (Link.pcWatchesNow). */
+             private val pcWatches: () -> Boolean = { false }) {
     val meter = DataMeter(rxBytes)
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
@@ -136,7 +138,15 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val desk = standby()
         if (watched.any { it.buy } && !desk && now() - st.ordersReadAt > ORDERS_EVERY) { meter.run("orders") { readOrders() }; return }   // (the desktop reads them while it buys)
         // 1.4: while the linked desktop watches and buys, this phone looks only every 10 minutes (a backup; it saves battery and data)
-        val interval = if (desk) maxOf(STANDBY_MS, st.intervalSec * 1000L) else st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
+        // 1.0.9 (owner, 2026-11-21: "I think the app may be making my phone slower"): with "Both buy" this phone opened a full Amazon page
+        // about every 16 s all day (9 products every 90 s, ~1.5 MB each) while the PC watched the same products. While the PC is watching
+        // NOW, this phone looks by itself only every WITH_PC_MS: the PC's in-stock signal (Cmd.Go - at or under the cap, a product set to
+        // Buy) and another Restalker's (Cmd.Crowd) still make it look AT ONCE and race the PC to the checkout. PC not heard lately -> the
+        // usual pace again
+        val withPc = !desk && buyerMode() == "both" && pcWatches()
+        val interval = if (desk) maxOf(STANDBY_MS, st.intervalSec * 1000L)
+            else if (withPc) maxOf(WITH_PC_MS, st.intervalSec * 1000L)
+            else st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
         val due = watched.minByOrNull { it.lastCheck } ?: return
         val wait = due.lastCheck + interval - now()
         offlineSince = 0
@@ -145,7 +155,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
         // with 8 products every 90 s the last page stayed open, its scripts and ads still working, between all the looks
         if (wait > 3_000) page.rest()
         if (wait > 0) { status(if (desk) (when { otherPhoneBuys() -> "Another phone / tablet buys"; desktopBuys() -> "The PC buys"; pcHanded() -> "Another device buys"
-            else -> "Not buying here" }) + " · this device stands by (a backup look every 30 min - Settings, Linked devices) · next look ${secs(wait)}" else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
+            else -> "Not buying here" }) + " · this device stands by (a backup look every 30 min - Settings, Linked devices) · next look ${secs(wait)}"
+            else if (withPc) "The PC is watching - this phone looks every ${WITH_PC_MS / 60_000} min, and at once when the PC sees a restock · ${watched.size} product(s) · next look ${secs(wait)}"
+            else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
     }
 
@@ -673,6 +685,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val PRACTICE_ID = "practice-"
         const val HOLD_MS = 85_000L             // 2.2: Who buys = both - the longest wait at Place your order for the PC's result
         const val HOLD_NONE_MS = 10_000L        // 2.2: ... and when the PC says nothing at all about this product in that time, it is not trying it
+        const val WITH_PC_MS = 10 * 60_000L     // 1.0.9: "Both buy" while the PC is watching - this phone's own looks (Go / Crowd still at once)
         const val STANDBY_MS = 30 * 60_000L     // 1.6: was 10 min (about 80 MB an hour on the owner's phone); the desktop's view shows meanwhile
         const val PIC_RETRY_MS = 24 * 3600_000L
         const val BASELINE_FRESH = 6 * 3_600_000L          // 2.15: a product looked at in the last 6 hours is not looked at again on start-up

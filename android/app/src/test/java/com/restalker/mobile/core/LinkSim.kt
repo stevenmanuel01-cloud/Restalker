@@ -66,6 +66,7 @@ object LinkSim {
             "watch" -> { store.update(prod(a[0]).id) { it.copy(watch = a[1] == "1") }; println("ok") }
             "remove" -> { store.remove(prod(a[0]).id); println("ok") }
             "bought" -> { val p = prod(a[0]); store.addPurchase(Purchase(clock(), p.asin, p.label, p.cap, "111-0000000-0000000", true)); store.update(p.id) { it.copy(purchased = true, attempted = true, buy = false) }; println("ok") }   // (1.0.8: as the Engine marks a purchase)
+            "pcw" -> println(link.pcWatchesNow())                                            // (1.0.9: the PC is watching now)
             "rearm" -> { store.update(prod(a[0]).id) { it.rearmed() }; println("ok") }       // (1.0.8: the Re-arm button)
             "buyon" -> { store.update(prod(a[0]).id) { it.withBuy(true) }; println("ok") }    // (1.0.8: the Buy switch)
             "cycle" -> println(link.cycle())
