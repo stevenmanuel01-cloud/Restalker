@@ -167,6 +167,13 @@ grep -E "FATAL EXCEPTION|AndroidRuntime" -A12 logcat.txt | head -60
 # while a test starts watching (a tap), shows the notice, leaves the app, comes back and stops. The test's stand-in Amazon only.
 # Never fails the job.
 if [ "$EDITION" = "play" ] && up; then
+  echo "=== the store pictures"
+  adb shell am force-stop $P 2>/dev/null || true
+  adb shell dumpsys deviceidle whitelist +$P >/dev/null 2>&1 || true        # (as someone who finished "Getting started" sees the app)
+  timeout 240 adb shell am instrument -w -r -e debug false -e demo 1 -e class $P.ScreenTests#z98_store_shots $P.test/androidx.test.runner.AndroidJUnitRunner > instrument_pictures.txt 2>&1
+  adb shell dumpsys deviceidle whitelist -$P >/dev/null 2>&1 || true
+  grep -E "^OK|FAILURES|Tests run" instrument_pictures.txt | tail -2; awk '/INSTRUMENTATION_STATUS: stack=/{print; getline; print}' instrument_pictures.txt | cut -c1-400 | head -6
+  echo "store pictures: $(adb shell run-as $P ls files/shots 2>/dev/null | grep -c '^store_')"
   echo "=== the store film (background watching)"
   adb shell am force-stop $P 2>/dev/null || true; adb shell rm -f /sdcard/rk_watch.mp4 2>/dev/null
   (adb shell screenrecord --bit-rate 4000000 --time-limit 90 /sdcard/rk_watch.mp4 > screenrecord.txt 2>&1 &); sleep 2

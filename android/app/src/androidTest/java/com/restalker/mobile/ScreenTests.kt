@@ -1096,6 +1096,57 @@ class ScreenTests {
         compose.onNodeWithTag("title").assertIsDisplayed()
     }
 
+    /** 1.0.7: the pictures for the store page (Google Play edition, only with "-e demo 1"; android/ci/phone.sh): the app as someone who
+     *  has set it up sees it - real product names, the tests' stand-in Amazon (no real store is reached), no product pictures (the
+     *  app's own initials stand in: box art belongs to its makers). Every picture is taken on its own; one that fails loses only itself. */
+    @Test fun z98_store_shots() {
+        org.junit.Assume.assumeTrue("only for the store pictures", InstrumentationRegistry.getArguments().getString("demo") == "1")
+        val site = FakeAmazonSite()
+        site.loadMs = 300
+        site.items["B0TEST0001"] = FakeAmazonSite.Item(true, 455.88, "The Hobbit Collector Booster Box")
+        site.items["B0TEST0002"] = FakeAmazonSite.Item(false, 107.99, "Reality Fracture Secret Lair Bundle")
+        site.items["B0TEST0003"] = FakeAmazonSite.Item(true, 164.99, "Reality Fracture Play Booster Box")
+        site.items["B0TEST0004"] = FakeAmazonSite.Item(false, 54.99, "Edge of Eternities Bundle")
+        com.restalker.mobile.web.AmazonWeb.testSite = { url, method -> site.handle(url, method) }
+        val cm = android.webkit.CookieManager.getInstance()
+        val s = RkApp.store()
+        val now = System.currentTimeMillis()
+        try {
+            s.products().forEach { s.remove(it.id) }; s.writeFile("folded.json", "[]")
+            s.setSettings { com.restalker.mobile.core.Settings().copy(watching = false, buying = false, reportAsked = true, autoReport = false) }
+            cm.setCookie("https://www.amazon.com", "x-main=storepicture"); cm.flush()
+            s.add(prod("B0TEST0001", "The Hobbit Collector Booster Box", "2026", "The Hobbit").copy(cap = 460.0, msrp = 455.88, practiceOkAt = now - 86_400_000L))
+            s.add(prod("B0TEST0003", "Reality Fracture Play Booster Box", "2026", "Reality Fracture").copy(cap = 170.0, msrp = 164.99))
+            s.add(prod("B0TEST0002", "Reality Fracture Secret Lair Bundle", "2026", "Reality Fracture").copy(cap = 110.0, msrp = 107.99))
+            s.add(prod("B0TEST0004", "Edge of Eternities Bundle", "2025", "Edge of Eternities").copy(cap = 55.0, msrp = 53.99))
+            s.add(prod("B0TEST0905", "Edge of Eternities Collector Booster Box", "2025", "Edge of Eternities", price = 847.97).copy(cap = 400.0, msrp = 359.88, watch = false))
+            s.add(prod("B0TEST0906", "Star Trek Beam Me Up Bundle", "2026", "Star Trek", price = 99.99).copy(cap = 100.0, msrp = 99.99, watch = false))
+            s.addPurchase(com.restalker.mobile.core.Purchase(now - 3 * 86_400_000L, "B0TEST0906", "Star Trek Beam Me Up Bundle", 99.99, null, true))
+            s.addPurchase(com.restalker.mobile.core.Purchase(now - 9 * 86_400_000L, "B0TEST0003", "Reality Fracture Play Booster Box", 164.99, null, true))
+            compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle(); Thread.sleep(1_500)
+            toList(hasTestTag("watching")); Thread.sleep(500)
+            compose.onNodeWithTag("watching").performClick()                 // Start
+            Thread.sleep(22_000)                                              // every product is looked at; the alerts' pop-ups are gone again
+            compose.waitForIdle()
+            runCatching { toList(hasTestTag("watching")); Thread.sleep(800); shot("store_1_watch") }
+            runCatching { toList(hasTestTag("product-B0TEST0003")); Thread.sleep(800); shot("store_2_list") }
+            runCatching {
+                toList(hasTestTag("product-B0TEST0001")); compose.onNodeWithTag("product-B0TEST0001").performClick(); compose.waitForIdle()
+                compose.waitUntil(5_000) { compose.onAllNodesWithTag("product-screen").fetchSemanticsNodes().isNotEmpty() }
+                Thread.sleep(1_200); shot("store_3_product")
+            }
+            runCatching { androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack(); compose.waitForIdle(); Thread.sleep(700) }
+            runCatching { compose.onNodeWithTag("tab1").performClick(); compose.waitForIdle(); Thread.sleep(1_200); shot("store_4_bought") }
+            runCatching { compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle(); Thread.sleep(1_200); shot("store_5_activity") }
+            runCatching { compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle(); sec("notes"); Thread.sleep(1_000); shot("store_6_alerts") }
+            runCatching { compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }
+        } finally {
+            com.restalker.mobile.web.AmazonWeb.testSite = null
+            s.setSettings { it.copy(watching = false) }; WatchService.stop(ctx)
+            cm.removeAllCookies(null); cm.flush()
+        }
+    }
+
     /** 1.0.7: the short film Google Play asks for with the background-watching declaration (android/ci/phone.sh records the screen
      *  while this runs, Google Play edition, only with "-e demo 1"): watching starts with the user's own tap, the notice says it is
      *  running, it goes on with the app left, and Stop ends it. No real store is reached - the tests' stand-in Amazon. */
