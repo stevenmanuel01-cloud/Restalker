@@ -34,7 +34,7 @@ object Diag {
         sb.append("Settings: watching=${st.watching} buying=${st.buying} practice=${st.practice} every=${st.intervalSec}s wifiOnly=${st.wifiOnly}" +
             " snoozed=${st.snoozeUntil > System.currentTimeMillis()} resting=${st.cooldownUntil > System.currentTimeMillis()} (streak ${st.cooldownStreak})" +
             " ordersRead=${if (st.ordersReadAt > 0) t.format(Date(st.ordersReadAt)) else "never"}\n")
-        sb.append("Desktop link: ${DeskLink.get().state().second}; desktop buys now: ${DeskLink.get().desktopBuys()}; last round: ${DeskLink.lastResult.ifBlank { "-" }}\n")
+        sb.append("Desktop link: ${DeskLink.get().state().second}; desktop buys now: ${DeskLink.get().desktopBuys()}; PC watching now (1.0.9: a Both-buy phone then looks every 10 min): ${DeskLink.get().pcWatchesNow()}; last round: ${DeskLink.lastResult.ifBlank { "-" }}\n")
         sb.append(try { CrowdNet.status() } catch (e: Exception) { "Restalker crowd: ?" }).append("\n")
         sb.append("\nProducts (${s.products().size}):\n")
         for (p in s.products()) sb.append("- ${p.asin} cap \$${Engine.money(p.cap)} ${p.kind} watch=${p.watch} buy=${p.buy} qty=${p.qty} pic=${p.image.isNotBlank()} desk=${p.dSt} bought=${p.purchased} attempted=${p.attempted}" +

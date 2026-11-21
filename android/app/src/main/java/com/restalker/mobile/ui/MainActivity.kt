@@ -348,7 +348,7 @@ class MainActivity : ComponentActivity() {
     private fun modeChip(m: String) = when (m) { "phone" -> "Instead of PC"; "both" -> "Both buy"; else -> "PC only" }
     private fun modeLine(m: String, fo: Boolean) = when (m) {
         "phone" -> "Buys on Amazon instead of the PC (the PC keeps watching and tells it at once)."
-        "both" -> "Buys too, alongside the PC - never two orders."
+        "both" -> "Buys too, alongside the PC - never two orders. While the PC is watching, this phone looks every 10 min and at once when the PC sees a restock."
         else -> "Watches only, does not buy" + if (fo) " - unless the PC stops." else "."
     }
     private fun agoS(sec: Long) = when {

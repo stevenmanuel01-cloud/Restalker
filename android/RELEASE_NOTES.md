@@ -1,3 +1,9 @@
+# Restalker Mobile 1.0.9 (2026-11-21; "I think the app may be making my phone slower")
+- With Who buys = "Both", this phone opened a full Amazon page about every 16 seconds all day - while your PC was watching the same
+  products. Now, while your PC is watching, this phone looks by itself only every 10 minutes (about 85% less work, battery and data).
+- It still races the PC: when the PC (or another Restalker) sees a restock, this phone looks at once and can buy it.
+- If the PC goes quiet, this phone goes back to its usual pace by itself.
+
 # Restalker Mobile 1.0.8 (2026-11-21; "I also have been unable to clear the 'bought' message on products. When I rearm something, it automatically switches back to just watching")
 - Re-arm now really re-arms: the "Bought" note goes away AND Buy is switched on. Until now Re-arm left Buy off, so the product stayed
   "just watching" (and a linked PC heard "Buy off").
