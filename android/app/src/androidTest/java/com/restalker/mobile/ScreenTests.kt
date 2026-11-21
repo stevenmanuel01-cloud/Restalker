@@ -1156,24 +1156,27 @@ class ScreenTests {
         val site = FakeAmazonSite()
         com.restalker.mobile.web.AmazonWeb.testSite = { url, method -> site.handle(url, method) }
         val s = RkApp.store()
+        // (a test's screen is only drawn anew when the test lets it: waiting in small steps keeps the picture live for the film)
+        fun live(ms: Long) { val end = System.currentTimeMillis() + ms; while (System.currentTimeMillis() < end) { runCatching { compose.waitForIdle() }; Thread.sleep(200) } }
         try {
             s.products().forEach { s.remove(it.id) }; s.writeFile("folded.json", "[]")
             s.setSettings { it.copy(watching = false, buying = false, reportAsked = true) }
             s.add(prod("B0TEST0001", "The Hobbit Collector Booster Box", "2026", "The Hobbit").copy(cap = 120.0))
             s.add(prod("B0TEST0002", "Bloomburrow Bundle", "2024", "Bloomburrow"))
-            compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle(); Thread.sleep(3_000)
-            toList(hasTestTag("watching")); Thread.sleep(1_500)
+            compose.onNodeWithTag("tab0").performClick(); live(3_000)
+            toList(hasTestTag("watching")); live(2_000)
             compose.onNodeWithTag("watching").performClick()                 // Start: the user's own tap
-            Thread.sleep(10_000)                                              // it looks at the products; the restock alert arrives
+            live(9_000)                                                       // "Watching 2 products"; it looks at them; the restock alert arrives
             dev.openNotification(); Thread.sleep(5_000)                      // "Restalker is watching" and the alert
-            dev.pressBack(); Thread.sleep(1_000)
+            dev.pressBack(); live(1_500)
             dev.pressHome(); Thread.sleep(4_000)                             // the app is left: watching goes on
             dev.openNotification(); Thread.sleep(4_000); dev.pressBack(); Thread.sleep(1_000)
-            ctx.startActivity(ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)!!.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)); Thread.sleep(3_500)
-            toList(hasTestTag("watching")); Thread.sleep(1_000)
+            ctx.startActivity(ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)!!.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            live(4_000)
+            toList(hasTestTag("watching")); live(2_500)
             compose.onNodeWithTag("watching").performClick()                 // Stop: watching ends, the notice goes
-            Thread.sleep(3_000)
-            dev.openNotification(); Thread.sleep(3_500); dev.pressBack(); Thread.sleep(1_000)
+            live(4_000)
+            dev.openNotification(); Thread.sleep(3_500); dev.pressBack(); live(1_500)
         } finally {
             com.restalker.mobile.web.AmazonWeb.testSite = null
             s.setSettings { it.copy(watching = false) }; WatchService.stop(ctx)
