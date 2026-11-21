@@ -33,6 +33,9 @@ class BrowserActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 1.0.7: an app made for Android 16 is no longer told about Back through onBackPressed - it registers for it (Android 13+)
+        if (android.os.Build.VERSION.SDK_INT >= 33)
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { goBack() }
         url = intent.getStringExtra(EXTRA_URL)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.WHITE) }
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(24, 16, 24, 8); gravity = Gravity.CENTER_VERTICAL }
@@ -47,6 +50,19 @@ class BrowserActivity : Activity() {
         box = FrameLayout(this)
         root.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
+        // 1.0.7: from Android 15 on, an app is drawn under the status bar and the navigation bar (this screen's note and its Done button
+        // sat under the clock and the battery mark, white on white). The bar and the page are kept clear of both, and of the keyboard;
+        // the status bar's marks are dark, as the bar under them is white. Older Android keeps the bars to itself - nothing changes there.
+        if (android.os.Build.VERSION.SDK_INT >= 35) {
+            root.setOnApplyWindowInsetsListener { v, insets ->
+                val b = insets.getInsets(android.view.WindowInsets.Type.systemBars() or android.view.WindowInsets.Type.displayCutout() or android.view.WindowInsets.Type.ime())
+                v.setPadding(b.left, b.top, b.right, b.bottom)
+                insets
+            }
+            val light = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            window.insetsController?.setSystemBarsAppearance(light, light)
+            root.requestApplyInsets()
+        }
         if (WatchService.instance == null) makeOwn()
     }
 
@@ -101,7 +117,9 @@ class BrowserActivity : Activity() {
     }
 
     @Deprecated("Back goes back a page in the browser first.")
-    override fun onBackPressed() {
+    override fun onBackPressed() = goBack()
+
+    private fun goBack() {
         val w = shared?.web ?: own
         if (w != null && w.canGoBack()) w.goBack() else finish()
     }

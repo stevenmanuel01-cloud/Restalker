@@ -377,6 +377,8 @@ export class Hub {
     const now = Date.now();
     this.sql.exec("DELETE FROM rate WHERE at < ?", now - 3600_000);
     this.sql.exec("DELETE FROM events WHERE last_at < ?", now - 60 * 86400_000);
+    // (2026-11-20, the privacy policy says so: a device that has not been heard for 90 days is forgotten - its code and its last time)
+    this.sql.exec("DELETE FROM seen WHERE at < ?", now - 90 * 86400_000);
     this.sql.exec("DELETE FROM msgs WHERE at < ? OR (ch = ? AND at < ?) OR (ch LIKE '%-go' AND at < ?)", now - L.CH_KEEP_MS, L.CH_CROWD, now - L.CROWD_KEEP_MS, now - L.GO_KEEP_MS);
   }
 
@@ -447,6 +449,10 @@ export class Hub {
       devices12h: one("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 12 * 3600_000),
       devicesAll: one("SELECT COUNT(*) AS n FROM seen"),
       lines: one("SELECT COUNT(*) AS n FROM msgs"), syncPerDay: this.win.perDay,
+      // (2026-11-21: counted from what is stored - "syncPerDay" lives in memory and is 0 again whenever the relay has slept)
+      linkLines: one("SELECT COUNT(*) AS n FROM msgs WHERE ch LIKE 'rkl-%'"),          // sealed posts of linked devices held right now
+      linked1h: one("SELECT COUNT(*) AS n FROM seen WHERE g IS NOT NULL AND g != '' AND at > ?", now - 3600_000),   // linked devices heard in the last hour
+      checkedIn1h: one("SELECT COUNT(*) AS n FROM seen WHERE hb IS NOT NULL AND at > ?", now - 3600_000),            // devices that check in themselves (1.0.4+ / v145+)
       restocks24h: one("SELECT COUNT(*) AS n FROM events WHERE first_at > ?", now - 24 * 3600_000),
       confirmed24h: one("SELECT COUNT(*) AS n FROM events WHERE first_at > ? AND n >= ?", now - 24 * 3600_000, L.CONFIRM_DEVICES),
       last, crowdReadAt: Number(this.kvGet("crowd_at") || 0), tickAt: Number(this.kvGet("tick_at") || 0),

@@ -44,6 +44,7 @@ class PhoneTests {
         site = FakeAmazonSite()
         AmazonWeb.testSite = { url, method -> site.handle(url, method) }
         RkApp.resetForTests(File(ctx.filesDir, "rk-test"))
+        RkApp.store().setSettings { it.copy(reportAsked = true) }     // (1.0.7: the Google Play edition's one question is answered; ScreenTests t45 tests it)
     }
 
     @After fun tearDown() {
@@ -192,6 +193,15 @@ class PhoneTests {
         Thread.sleep(4_000)
         val paused = WatchService.instance?.engine?.pausedFor
         shot("t6_browser")
+        // 1.0.7: the Done button is clear of the status bar (from Android 15 on an app is drawn under it - the button sat under the clock)
+        run {
+            val dev = androidx.test.uiautomator.UiDevice.getInstance(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation())
+            val done = dev.wait(androidx.test.uiautomator.Until.findObject(androidx.test.uiautomator.By.text(java.util.regex.Pattern.compile("(?i)done"))), 5_000)
+            org.junit.Assert.assertNotNull("the browser's Done button is on screen", done)
+            val id = ctx.resources.getIdentifier("status_bar_height", "dimen", "android")
+            val bar = if (id > 0) ctx.resources.getDimensionPixelSize(id) else 0
+            assertTrue("Done sits below the status bar (top ${done.visibleBounds.top}, bar $bar)", done.visibleBounds.top >= bar - 2)
+        }
         // a page outside Amazon is refused (the app's browser stays on amazon.com)
         val l = java.util.concurrent.CountDownLatch(1)
         android.os.Handler(android.os.Looper.getMainLooper()).post { WatchService.instance!!.web.web.evaluateJavascript("location.href='https://evil.example.com/x'") { l.countDown() } }

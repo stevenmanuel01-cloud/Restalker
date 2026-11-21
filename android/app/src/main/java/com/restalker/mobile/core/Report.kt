@@ -7,6 +7,11 @@ import java.security.SecureRandom
  *  1.0.4 (owner, 2026-11-20: "it should be a generic message to allow automatic reporting, and sending a manual report"): the
  *  app's own words name no one - "Report sent". */
 object Report {
+    /** 1.0.7: a report that goes to the Restalker team (every device but the owner's own) carries no Amazon order number - "order
+     *  111-2223334-5556667" becomes "order (hidden)". The numbers stay on the device (Bought) and in what the owner's own devices send. */
+    private val ORDER = Regex("\\b\\d{3}-\\d{7}-\\d{7}\\b")
+    fun noOrders(text: String): String = ORDER.replace(text, "(hidden)")
+
     const val SERVER = "https://ntfy.sh"
     // 1.0.4: 2 hours (was 30 minutes). Every report is one of the 250 messages a day the free message service gives a home for ALL its
     // devices; four devices reporting a lasting problem every 30 minutes used most of them - and then the link itself was refused.

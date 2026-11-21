@@ -374,8 +374,11 @@ class ScreenTests {
         sec("share")
         compose.onNodeWithTag("share-qr").performScrollTo().assertIsDisplayed()
         // 1.0.1: what to do when the other phone (a newer Samsung) blocks the install stands under the code
-        compose.onNodeWithTag("share-blocked").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("share-blocked").assert(androidx.compose.ui.test.hasText("Auto Blocker", substring = true))
+        // (1.0.7: that is about installing from outside the store - the Google Play edition does not say it)
+        if (BuildConfig.PLAY) compose.onNodeWithTag("share-blocked").assertDoesNotExist() else {
+            compose.onNodeWithTag("share-blocked").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("share-blocked").assert(androidx.compose.ui.test.hasText("Auto Blocker", substring = true))
+        }
         shot("t15_settings_share")
     }
 
@@ -1091,5 +1094,131 @@ class ScreenTests {
         compose.onNodeWithTag("title").assertIsDisplayed()
         dev.setOrientationNatural(); Thread.sleep(1_500)
         compose.onNodeWithTag("title").assertIsDisplayed()
+    }
+
+    /** 1.0.7: the pictures for the store page (Google Play edition, only with "-e demo 1"; android/ci/phone.sh): the app as someone who
+     *  has set it up sees it - real product names, the tests' stand-in Amazon (no real store is reached), no product pictures (the
+     *  app's own initials stand in: box art belongs to its makers). Every picture is taken on its own; one that fails loses only itself. */
+    @Test fun z98_store_shots() {
+        org.junit.Assume.assumeTrue("only for the store pictures", InstrumentationRegistry.getArguments().getString("demo") == "1")
+        val site = FakeAmazonSite()
+        site.loadMs = 300
+        site.items["B0TEST0001"] = FakeAmazonSite.Item(true, 455.88, "The Hobbit Collector Booster Box")
+        site.items["B0TEST0002"] = FakeAmazonSite.Item(false, 107.99, "Reality Fracture Secret Lair Bundle")
+        site.items["B0TEST0003"] = FakeAmazonSite.Item(true, 164.99, "Reality Fracture Play Booster Box")
+        site.items["B0TEST0004"] = FakeAmazonSite.Item(false, 54.99, "Edge of Eternities Bundle")
+        com.restalker.mobile.web.AmazonWeb.testSite = { url, method -> site.handle(url, method) }
+        val cm = android.webkit.CookieManager.getInstance()
+        val s = RkApp.store()
+        val now = System.currentTimeMillis()
+        try {
+            s.products().forEach { s.remove(it.id) }; s.writeFile("folded.json", "[]")
+            s.setSettings { com.restalker.mobile.core.Settings().copy(watching = false, buying = false, reportAsked = true, autoReport = false) }
+            cm.setCookie("https://www.amazon.com", "x-main=storepicture"); cm.flush()
+            s.add(prod("B0TEST0001", "The Hobbit Collector Booster Box", "2026", "The Hobbit").copy(cap = 460.0, msrp = 455.88, practiceOkAt = now - 86_400_000L))
+            s.add(prod("B0TEST0003", "Reality Fracture Play Booster Box", "2026", "Reality Fracture").copy(cap = 170.0, msrp = 164.99))
+            s.add(prod("B0TEST0002", "Reality Fracture Secret Lair Bundle", "2026", "Reality Fracture").copy(cap = 110.0, msrp = 107.99))
+            s.add(prod("B0TEST0004", "Edge of Eternities Bundle", "2025", "Edge of Eternities").copy(cap = 55.0, msrp = 53.99))
+            s.add(prod("B0TEST0905", "Edge of Eternities Collector Booster Box", "2025", "Edge of Eternities", price = 847.97).copy(cap = 400.0, msrp = 359.88, watch = false))
+            s.add(prod("B0TEST0906", "Star Trek Beam Me Up Bundle", "2026", "Star Trek", price = 99.99).copy(cap = 100.0, msrp = 99.99, watch = false))
+            s.addPurchase(com.restalker.mobile.core.Purchase(now - 3 * 86_400_000L, "B0TEST0906", "Star Trek Beam Me Up Bundle", 99.99, null, true))
+            s.addPurchase(com.restalker.mobile.core.Purchase(now - 9 * 86_400_000L, "B0TEST0003", "Reality Fracture Play Booster Box", 164.99, null, true))
+            compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle(); Thread.sleep(1_500)
+            toList(hasTestTag("watching")); Thread.sleep(500)
+            compose.onNodeWithTag("watching").performClick()                 // Start
+            Thread.sleep(22_000)                                              // every product is looked at; the alerts' pop-ups are gone again
+            compose.waitForIdle()
+            runCatching { toList(hasTestTag("watching")); Thread.sleep(800); shot("store_1_watch") }
+            runCatching { toList(hasTestTag("product-B0TEST0003")); Thread.sleep(800); shot("store_2_list") }
+            runCatching {
+                toList(hasTestTag("product-B0TEST0001")); compose.onNodeWithTag("product-B0TEST0001").performClick(); compose.waitForIdle()
+                compose.waitUntil(5_000) { compose.onAllNodesWithTag("product-screen").fetchSemanticsNodes().isNotEmpty() }
+                Thread.sleep(1_200); shot("store_3_product")
+            }
+            runCatching { androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack(); compose.waitForIdle(); Thread.sleep(700) }
+            runCatching { compose.onNodeWithTag("tab1").performClick(); compose.waitForIdle(); Thread.sleep(1_200); shot("store_4_bought") }
+            runCatching { compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle(); Thread.sleep(1_200); shot("store_5_activity") }
+            runCatching { compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle(); sec("notes"); Thread.sleep(1_000); shot("store_6_alerts") }
+            runCatching { compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle() }
+        } finally {
+            com.restalker.mobile.web.AmazonWeb.testSite = null
+            s.setSettings { it.copy(watching = false) }; WatchService.stop(ctx)
+            cm.removeAllCookies(null); cm.flush()
+        }
+    }
+
+    /** 1.0.7: the short film Google Play asks for with the background-watching declaration (android/ci/phone.sh records the screen
+     *  while this runs, Google Play edition, only with "-e demo 1"): watching starts with the user's own tap, the notice says it is
+     *  running, it goes on with the app left, and Stop ends it. No real store is reached - the tests' stand-in Amazon. */
+    @Test fun z99_store_demo() {
+        org.junit.Assume.assumeTrue("only for the store film", InstrumentationRegistry.getArguments().getString("demo") == "1")
+        val dev = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+        val site = FakeAmazonSite()
+        com.restalker.mobile.web.AmazonWeb.testSite = { url, method -> site.handle(url, method) }
+        val s = RkApp.store()
+        try {
+            s.products().forEach { s.remove(it.id) }; s.writeFile("folded.json", "[]")
+            s.setSettings { it.copy(watching = false, buying = false, reportAsked = true) }
+            s.add(prod("B0TEST0001", "The Hobbit Collector Booster Box", "2026", "The Hobbit").copy(cap = 120.0))
+            s.add(prod("B0TEST0002", "Bloomburrow Bundle", "2024", "Bloomburrow"))
+            compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle(); Thread.sleep(3_000)
+            toList(hasTestTag("watching")); Thread.sleep(1_500)
+            compose.onNodeWithTag("watching").performClick()                 // Start: the user's own tap
+            Thread.sleep(10_000)                                              // it looks at the products; the restock alert arrives
+            dev.openNotification(); Thread.sleep(5_000)                      // "Restalker is watching" and the alert
+            dev.pressBack(); Thread.sleep(1_000)
+            dev.pressHome(); Thread.sleep(4_000)                             // the app is left: watching goes on
+            dev.openNotification(); Thread.sleep(4_000); dev.pressBack(); Thread.sleep(1_000)
+            ctx.startActivity(ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)!!.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)); Thread.sleep(3_500)
+            toList(hasTestTag("watching")); Thread.sleep(1_000)
+            compose.onNodeWithTag("watching").performClick()                 // Stop: watching ends, the notice goes
+            Thread.sleep(3_000)
+            dev.openNotification(); Thread.sleep(3_500); dev.pressBack(); Thread.sleep(1_000)
+        } finally {
+            com.restalker.mobile.web.AmazonWeb.testSite = null
+            s.setSettings { it.copy(watching = false) }; WatchService.stop(ctx)
+        }
+    }
+
+    /** 1.0.7: in the Google Play edition the one question about problem reports is answered for these tests (it has its own, t44) -
+     *  the screens are then the same in both editions. */
+    @org.junit.Before fun reportsAnswered() { RkApp.store().setSettings { it.copy(reportAsked = true) } }
+
+    /** 1.0.7 (both editions): Settings, Help and about has the privacy policy; the update row says what this edition does. */
+    @Test fun t44_privacy_and_updates_row() {
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("about")
+        compose.onNodeWithTag("privacy").performScrollTo().assertIsDisplayed()
+        assertTrue("the privacy policy row", compose.onAllNodesWithText("Privacy policy").fetchSemanticsNodes().isNotEmpty())
+        Thread.sleep(300); shot("t44_privacy")
+        sec("amazon")
+        compose.onNodeWithTag("autoupdate").performScrollTo().assertIsDisplayed()
+        assertTrue("the update row says what this edition does", compose.onAllNodesWithText(if (BuildConfig.PLAY) "New versions come from Google Play" else "Update by itself", substring = true)
+            .fetchSemanticsNodes().isNotEmpty())
+        Thread.sleep(300); shot("t44_updates")
+    }
+
+    /** 1.0.7, the Google Play edition only (the store's rule: say what is sent and ask first): the Watch page asks once whether problem
+     *  reports may be sent by themselves; nothing is sent by itself before the answer; the answer is kept and the question is gone. */
+    @Test fun t45_play_asks_before_sending_reports() {
+        org.junit.Assume.assumeTrue("the Google Play edition only", BuildConfig.PLAY)
+        val s = RkApp.store()
+        s.setSettings { it.copy(reportAsked = false, autoReport = true, reportAt = 0) }
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("report-ask").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("report-ask"))
+        assertTrue("it says what a report holds", compose.onAllNodesWithText("no name, address, password or card", substring = true).fetchSemanticsNodes().isNotEmpty())
+        assertEquals("nothing is sent by itself before the answer", false, Reporter.auto(ctx, "t45 before the answer"))
+        Thread.sleep(300); shot("t45_report_question")
+        compose.onNodeWithTag("report-no").performClick()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("report-ask").fetchSemanticsNodes().isEmpty() }
+        assertEquals(true, s.settings().reportAsked); assertEquals(false, s.settings().autoReport)
+        // asked again (a new install): Yes switches them on
+        s.setSettings { it.copy(reportAsked = false, autoReport = false) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("report-ask").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("list").performScrollToNode(hasTestTag("report-ask"))
+        compose.onNodeWithTag("report-yes").performClick()
+        compose.waitUntil(5_000) { !s.settings().let { !it.reportAsked || !it.autoReport } }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("report-ask").fetchSemanticsNodes().isEmpty() }
     }
 }

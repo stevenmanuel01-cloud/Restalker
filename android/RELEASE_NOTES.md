@@ -1,3 +1,19 @@
+# Restalker Mobile 1.0.7 (2026-11-20; "repackage the app into a compliant version" - Google Play)
+- The app is now made in two editions from the same program. The one on this page (GitHub) works as before and still updates
+  itself. The new Google Play edition follows the store's rules: it never installs anything itself (Google Play updates it), and it
+  does not ask Android to be let off battery saving with a pop-up - the Battery row opens Android's own list instead and says
+  what to pick there.
+- Both editions are now made for Android 16 (Google Play takes nothing older for a new app). Android 16 changed how the Back
+  button reaches an app; the built-in Amazon browser was adapted, so Back there still goes one page back first.
+- Fixed on Android 15 and 16: in the built-in Amazon browser the note and the Done button sat under the clock and the battery
+  mark at the top of the screen (white on white), and the bottom of the page under the navigation bar. Both are clear now.
+- Settings, Help and about has a new row: Privacy policy (what stays on your device, what is sent, and to whom).
+- Problem reports from devices that are not the owner's no longer carry Amazon order numbers (they read "(hidden)").
+- Google Play edition only: automatic problem reports are off until you answer one question on the Watch page (Yes, send them /
+  No). It sits under "Getting started". The switch in Settings says exactly what a report holds.
+- Google Play edition only: "Share the app" sends the Google Play link.
+- Tested on Android 16 too now (5 virtual phones: Android 11, 13, 14, 15, 16), and the Google Play edition has its own full run.
+
 # Restalker Mobile 1.0.6 (2026-11-20; "the ntfy messages aren't really needed anymore")
 - Your linked devices now talk to each other through the Restalker relay, not through the free message service (ntfy). That service
   allows a home 250 messages a day for all its devices together, and the linked devices' product updates alone used them up - then

@@ -188,9 +188,15 @@ class MainActivity : ComponentActivity() {
     private fun notesOk() = NotificationManagerCompat.from(this).areNotificationsEnabled()
     private fun openBrowser(url: String?) = startActivity(Intent(this, BrowserActivity::class.java).also { if (url != null) it.putExtra(BrowserActivity.EXTRA_URL, url) })
     private fun openNotifSettings() = startActivity(Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, packageName))
+    // 1.0.7: the Google Play edition does not ask Android directly (the store restricts that request) - it opens Android's own list,
+    // where you choose it yourself (BATTERY_HOW says how)
     private fun openBattery() = try {
-        startActivity(Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
-    } catch (e: Exception) { startActivity(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        if (BuildConfig.PLAY) startActivity(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        else startActivity(Intent(AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
+    } catch (e: Exception) {
+        try { startActivity(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        catch (e2: Exception) { startActivity(Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
+    }
     private fun setWatching(on: Boolean) {
         val store = RkApp.store()
         store.setSettings { it.copy(watching = on) }
@@ -549,6 +555,19 @@ class MainActivity : ComponentActivity() {
                     if (st.practice && products.any { it.buy } && st.buying) Text("Practice is on: checkouts stop before \"Place your order\" (Settings → Real purchases).",
                         color = Look.Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
                     SetupCard(products, r, onAdd, onSettings)
+                    // 1.0.7 (under "Getting started", so a new install sees its first steps first), the Google Play edition (the store's rule: say what is sent and ask first): the one question about problem
+                    // reports. Until it is answered none is sent by itself; the answer can be changed in Settings, Help and about.
+                    if (BuildConfig.PLAY && !st.reportAsked) Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(Color.White, Look.card).padding(14.dp).testTag("report-ask")) {
+                        Text("Send problem reports automatically?", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("When something goes wrong, Restalker can send a report to its makers so it gets fixed. It holds $REPORT_WHAT. " +
+                            "You can change this any time in Settings, Help and about.", fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp))
+                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { RkApp.store().setSettings { it.copy(autoReport = true, reportAsked = true) }; RkApp.store().log("Automatic problem reports: you said yes.") },
+                                modifier = Modifier.testTag("report-yes")) { Text("Yes, send them") }
+                            OutlinedButton(onClick = { RkApp.store().setSettings { it.copy(autoReport = false, reportAsked = true) }; RkApp.store().log("Automatic problem reports: you said no.") },
+                                modifier = Modifier.testTag("report-no")) { Text("No") }
+                        }
+                    }
                 }
             }
             item {
@@ -691,6 +710,7 @@ class MainActivity : ComponentActivity() {
             Step(batt, "Let it keep running in the background (battery)", "Allow") { openBattery() }
             Step(products.isNotEmpty(), "Add a product, or link the desktop", "Add") { onAdd() }
             Step(practiced, "Run one Practice checkout (Settings, Amazon, buying and this phone)", null) {}
+            if (!batt && BuildConfig.PLAY) Text(BATTERY_HOW, fontSize = 12.sp, color = Look.Muted, modifier = Modifier.testTag("battery-how"))
             if (!batt) Text("Samsung / Xiaomi / OnePlus: also set Restalker to \"Unrestricted\" in the phone's battery settings.", fontSize = 12.sp, color = Look.Muted)
         }
     }
@@ -1716,6 +1736,11 @@ class MainActivity : ComponentActivity() {
                     }
                     SubHead("This phone")
                     // 1.7 (owner: "Why do i have to manually download everything still?") / 2.9: says exactly whether Android will still ask (and why)
+                    // 1.0.7: the Google Play edition never updates itself - Google Play does; nothing to switch
+                    if (BuildConfig.PLAY) Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).testTag("autoupdate")) {
+                        Text("Updates", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                        Text(Updater.modeText("play"), fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted)
+                    } else
                     SwitchRow("Update by itself", (Updater.modeText(Updater.mode(this@MainActivity)) + " " + Updater.state).trim(), st.autoUpdate, "autoupdate") { on ->
                         store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true, explicit = true) }
                     HorizontalDivider(color = Look.Line)
@@ -1723,6 +1748,7 @@ class MainActivity : ComponentActivity() {
                         // 1.0.4 (owner: "I'm not sure I understand "watching all day""): said in plain words - this is the phone's battery
                         // setting that lets the app keep running in the background (without it Android puts it to sleep)
                         Step(batt, if (batt) "Android lets Restalker keep running in the background (battery setting)" else "Android may put Restalker to sleep - allow it to keep running (battery setting)", "Allow") { openBattery() }
+                        if (!batt && BuildConfig.PLAY) Text(BATTERY_HOW, fontSize = 12.sp, color = Look.Muted)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(onClick = { openBrowser(null) }, modifier = Modifier.testTag("browser")) { Text("Show browser") }
                             TextButton(onClick = {
@@ -1798,7 +1824,7 @@ class MainActivity : ComponentActivity() {
                         // user manually allowed it some other automated feature denied it"): that is Samsung's Auto Blocker (on by default
                         // on new Galaxy phones; it refuses every app from outside the store, also after "allow"). No app can switch it
                         // off - so the way round it stands here, where the code is shown, and at the top of the download page.
-                        Text("The other phone says the install is blocked? Newer Samsung phones do that. On that phone: Settings > Security and privacy > Auto Blocker > off. " +
+                        if (!BuildConfig.PLAY) Text("The other phone says the install is blocked? Newer Samsung phones do that. On that phone: Settings > Security and privacy > Auto Blocker > off. " +
                             "Install Restalker, then switch Auto Blocker back on.", fontSize = 12.sp, color = Look.Muted, lineHeight = 16.sp,
                             modifier = Modifier.padding(top = 4.dp).testTag("share-blocked"))
                     }
@@ -1807,8 +1833,8 @@ class MainActivity : ComponentActivity() {
                                 Section("about", "Help and about", "Restalker Mobile v" + shownVersion() + (if (DeskLink.master()) " · master" else "") + " · problems, words used", mascot = true) {
                     // 1.0.4 (owner: "a generic message to allow automatic reporting, and sending a manual report")
                     SwitchRow("Send problem reports automatically",
-                        if (Reporter.direct()) "When something goes wrong - at most one every 2 hours (nothing personal is sent)" else "When something goes wrong - looked at once a day (nothing personal is sent)", st.autoReport, "autoreport") { on ->
-                        store.setSettings { it.copy(autoReport = on) }; store.log("Automatic problem reports switched ${if (on) "ON" else "OFF"}.") }
+                        if (Reporter.direct()) "When something goes wrong - at most one every 2 hours (nothing personal is sent)" else "When something goes wrong - looked at once a day. Sent: $REPORT_WHAT.", st.autoReport, "autoreport") { on ->
+                        store.setSettings { it.copy(autoReport = on, reportAsked = true) }; store.log("Automatic problem reports switched ${if (on) "ON" else "OFF"}.") }
                     HorizontalDivider(color = Look.Line)
                     Row(Modifier.fillMaxWidth().clickable { report() }.padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 24.dp).testTag("report"),
                         verticalAlignment = Alignment.CenterVertically) {
@@ -1818,6 +1844,15 @@ class MainActivity : ComponentActivity() {
                     SubHead("Words used")
                     Glossary()
                     SubHead("About")
+                    Row(Modifier.fillMaxWidth().clickable { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL))) } catch (e: Exception) { } }
+                        .padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 24.dp).testTag("privacy"), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Privacy policy", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text("What is sent, to whom, and what never leaves this device", fontSize = 13.sp, color = Look.Muted)
+                        }
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Look.Muted)
+                    }
+                    HorizontalDivider(color = Look.Line)
                     Column(Modifier.fillMaxWidth().padding(16.dp).testTag("about")) {
                         Text("Restocks of sought-after Magic products often last only minutes, and no single phone or PC can look at every store all " +
                             "the time. When you share with the Restalker crowd, each device that spots a product from the central list in stock tells " +
@@ -2155,7 +2190,12 @@ class MainActivity : ComponentActivity() {
         @Volatile var betaForTests: Boolean? = null
         /** 1.7: the app's screen is in front (an update's "Install" question can then be shown at once). */
         @Volatile var shown = false
-        const val SHARE_URL = "https://github.com/stevenmanuel01-cloud/Restalker/releases/latest"
+        // (1.0.7: the Google Play edition shares its page in the store)
+        val SHARE_URL = if (BuildConfig.PLAY) "https://play.google.com/store/apps/details?id=com.restalker.mobile" else "https://github.com/stevenmanuel01-cloud/Restalker/releases/latest"
+        /** 1.0.7: what is sent, to whom, and what stays on the device - also asked for by Google Play. */
+        const val PRIVACY_URL = "https://github.com/stevenmanuel01-cloud/Restalker/blob/main/PRIVACY.md"
+        const val BATTERY_HOW = "In the list that opens: choose \"All apps\" at the top, tap Restalker, then \"Don't optimize\" (or \"Unrestricted\")."
+        const val REPORT_WHAT = "the app's log, your product list and what this app bought (no order numbers), and the phone's model - no name, address, password or card"
         const val UPDATE_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/latest.json"
         const val RELEASES = "https://github.com/stevenmanuel01-cloud/Restalker/releases"
         /** 1.0.4: where the PC program is downloaded (the README's part for it) - "Send me the link" sends this. */
