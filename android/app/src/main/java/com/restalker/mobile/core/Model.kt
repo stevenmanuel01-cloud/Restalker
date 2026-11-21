@@ -5,7 +5,7 @@ package com.restalker.mobile.core
  *  counting up, and updates go by the code alone (UpdatePlan), so every device still sees 1.0.0 as the newer one.
  *  THREE parts on purpose (1.0.0, 1.0.1, ...): the first versions of 2026-11-16/17 were 1.0 - 1.8 and their releases (mobile-v1.0 ...
  *  mobile-v1.8) are still on GitHub; a two-part 1.x name would meet its old release and never be published. */
-const val APP_VERSION = "1.0.7"
+const val APP_VERSION = "1.0.8"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -62,6 +62,16 @@ data class Product(
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
+
+    /** 1.0.8 (owner, 2026-11-21: "I also have been unable to clear the 'bought' message on products. When I rearm something, it
+     *  automatically switches back to just watching"): Re-arm = the one-order lock is cleared AND Buy is on (it needs a cap). Until 1.0.7
+     *  Re-arm cleared the lock but left Buy off - the product stayed "just watching", and a linked PC heard "Buy off". */
+    fun rearmed(): Product = copy(purchased = false, attempted = false, inProgress = false, fails = 0, lockedUntil = 0, orderNumber = null,
+        buy = cap > 0, watch = true, status = if (purchased || attempted) "re-armed - it may be bought again" else status)
+
+    /** Buy switched on or off by you. On a product that was bought (or whose order is unclear) switching Buy on is a re-arm: before 1.0.8
+     *  Buy came on but the lock stayed, so it was never bought and the linked PC was told "Buy off". (Not while a checkout is running.) */
+    fun withBuy(on: Boolean): Product = if (on && (purchased || attempted) && !inProgress) rearmed() else copy(buy = on, watch = watch || on)
 
     /** What the desktop's content.js needs to check the page and buy (a "custom" product: everything comes from here). */
     fun forPage(): Map<String, Any?> = linkedMapOf(

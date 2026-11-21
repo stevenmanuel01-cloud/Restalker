@@ -1661,6 +1661,28 @@ object CoreTests {
         t("183_the_live_count_says_stalkers") {
             Crowd.activeWords(3) == "3 stalkers active now" && Crowd.activeWords(1) == "1 stalker active now" && Crowd.activeWords(12) == "12 stalkers active now" &&
                 !Crowd.activeWords(2).contains("device") }
+        // 1.0.8 (owner: "I also have been unable to clear the 'bought' message on products. When I rearm something, it automatically
+        // switches back to just watching")
+        t("188_re_arm_clears_bought_and_turns_buy_on_and_it_is_bought_again") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.check("B0TEST0001")
+            val bought = w.p("B0TEST0001")
+            w.store.update("idB0TEST0001") { it.rearmed() }
+            val p = w.p("B0TEST0001")
+            val cleared = bought.purchased && !bought.buy && !p.purchased && !p.attempted && p.orderNumber == null && p.buy && p.watch && p.fails == 0
+            w.amz.items["B0TEST0001"]!!.stock = false; w.check("B0TEST0001"); w.amz.items["B0TEST0001"]!!.stock = true; w.check("B0TEST0001")
+            cleared && w.amz.places == 2 && w.store.purchases().size == 2 }
+        t("189_re_arm_without_a_cap_leaves_buy_off_and_buy_switch_on_a_bought_product_re_arms") {
+            val nocap = Product("x", "B0TEST0009", cap = 0.0, purchased = true, attempted = true).rearmed()
+            val on = Product("y", "B0TEST0009", cap = 99.0, purchased = true, attempted = true, orderNumber = "1").withBuy(true)
+            val running = Product("z", "B0TEST0009", cap = 99.0, attempted = true, inProgress = true).withBuy(true)
+            val off = Product("v", "B0TEST0009", cap = 99.0, buy = true).withBuy(false)
+            !nocap.buy && !nocap.purchased && on.buy && !on.purchased && !on.attempted && on.orderNumber == null &&
+                running.attempted && running.inProgress && running.buy && !off.buy && off.watch }
+        t("190_a_buy_switched_on_without_re_arm_is_still_never_a_second_order") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.check("B0TEST0001")
+            w.store.update("idB0TEST0001") { it.copy(buy = true) }
+            w.check("B0TEST0001")
+            w.amz.places == 1 }
         return results
     }
 

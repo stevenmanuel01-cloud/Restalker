@@ -1201,6 +1201,32 @@ class ScreenTests {
         Thread.sleep(300); shot("t44_updates")
     }
 
+    /** 1.0.8 (owner: "I also have been unable to clear the 'bought' message on products. When I rearm something, it automatically
+     *  switches back to just watching"): Re-arm clears the Bought note AND turns Buy on; Buy switched on for a bought product re-arms it. */
+    @Test fun t46_rearm_turns_buy_on_and_clears_bought() {
+        val s = RkApp.store()
+        s.products().forEach { s.remove(it.id) }
+        s.add(prod("B0TEST0901", "Rearm Collector Booster Box", "2026", "Rearm").copy(purchased = true, attempted = true, buy = false,
+            orderNumber = "111-0000000-0000000", status = "BOUGHT"))
+        compose.waitForIdle()
+        toList(hasTestTag("product-B0TEST0901"))
+        compose.onNodeWithTag("product-B0TEST0901").performClick(); compose.waitForIdle(); Thread.sleep(600)
+        compose.onNodeWithTag("rearm-B0TEST0901").performScrollTo().assertIsDisplayed()
+        Thread.sleep(300); shot("t46_bought")
+        compose.onNodeWithTag("rearm-B0TEST0901").performClick()
+        compose.waitUntil(5_000) { p("B0TEST0901").let { !it.purchased && it.buy } }
+        p("B0TEST0901").let { assertTrue("re-armed: not bought, Buy on, watched", !it.attempted && it.orderNumber == null && it.watch) }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("rearm-B0TEST0901").fetchSemanticsNodes().isEmpty() }
+        Thread.sleep(300); shot("t46_rearmed")
+        // bought again, then the Buy switch (not Re-arm) is turned on: re-armed too
+        s.update("idB0TEST0901") { it.copy(purchased = true, attempted = true, buy = false, orderNumber = "111-0000000-0000001") }
+        compose.waitForIdle(); Thread.sleep(400)
+        compose.onNodeWithTag("buy-B0TEST0901").performScrollTo().performClick()
+        compose.waitUntil(5_000) { p("B0TEST0901").let { !it.purchased && !it.attempted && it.buy } }
+        compose.onNodeWithTag("back").performClick(); compose.waitForIdle()
+        s.products().forEach { s.remove(it.id) }
+    }
+
     /** 1.0.7, the Google Play edition only (the store's rule: say what is sent and ask first): the Watch page asks once whether problem
      *  reports may be sent by themselves; nothing is sent by itself before the answer; the answer is kept and the question is gone. */
     @Test fun t45_play_asks_before_sending_reports() {

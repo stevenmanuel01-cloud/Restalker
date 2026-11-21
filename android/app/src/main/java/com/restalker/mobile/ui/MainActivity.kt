@@ -1073,8 +1073,8 @@ class MainActivity : ComponentActivity() {
         val s = RkApp.store()
         if (on && !com.restalker.mobile.core.Limit.mayBuy(DeskLink.boughtOf(p), DeskLink.master())) { s.log("${p.label}: ${com.restalker.mobile.core.Limit.WORDS}"); return true }
         if (on && p.cap <= 0) return false
-        s.update(p.id) { it.copy(buy = on, watch = it.watch || on) }
-        s.log("${p.label}: Buy ${if (on) "ON" else "OFF"}.")
+        s.update(p.id) { it.withBuy(on) }                     // (1.0.8: Buy on for a bought product re-arms it)
+        s.log("${p.label}: Buy ${if (on) "ON" else "OFF"}" + if (on && (p.purchased || p.attempted)) " - re-armed (it may be bought again)." else ".")
         return true
     }
 
@@ -1203,7 +1203,7 @@ class MainActivity : ComponentActivity() {
                         p.buy && !limitHit, "buy-${p.asin}") { v ->
                         if (v && limitHit) { store.log("${p.label}: ${com.restalker.mobile.core.Limit.WORDS}"); bump(); return@SwitchRow }
                         if (v && p.cap <= 0) { onEdit(p); return@SwitchRow }            // (2.2: a product without a cap gets one first)
-                        store.update(p.id) { it.copy(buy = v, watch = it.watch || v) }; store.log("${p.label}: Buy ${if (v) "ON" else "OFF"}.") }
+                        store.update(p.id) { it.withBuy(v) }; store.log("${p.label}: Buy ${if (v) "ON" else "OFF"}" + if (v && (p.purchased || p.attempted)) " - re-armed (it may be bought again)." else ".") }
                     HorizontalDivider(color = Look.Line)
                     // 2.15 (owner: "the CAP should not be required to watch, but is required for buying"): Watch without a cap - messages
                     // and the crowd at any price; Buy still asks for a cap first
@@ -1231,8 +1231,13 @@ class MainActivity : ComponentActivity() {
                             p.attempted -> "An order may have been placed. Check your Amazon orders, then re-arm it if nothing was ordered."
                             else -> "Paused after failed checkouts until ${hm(p.lockedUntil)}." }, color = Look.AmberText, fontSize = 13.sp)
                         Button(onClick = {
-                            store.update(p.id) { it.copy(purchased = false, attempted = false, inProgress = false, fails = 0, lockedUntil = 0, orderNumber = null) }
-                            store.log("${p.label}: re-armed by you (it may be bought again).")
+                            // 1.0.8 (owner: "When I rearm something, it automatically switches back to just watching"): Re-arm turns Buy on too
+                            // (Product.rearmed) - a product without a cap, or over the purchase limit, is re-armed with Buy off and says why
+                            val lim = com.restalker.mobile.core.Limit.mayBuy(DeskLink.boughtOf(p), DeskLink.master())
+                            store.update(p.id) { it.rearmed().let { q -> if (lim) q else q.copy(buy = false) } }
+                            store.log("${p.label}: re-armed by you - " + when { !lim -> com.restalker.mobile.core.Limit.WORDS
+                                p.cap <= 0 -> "set a cap to buy it."; else -> "Buy is on (it may be bought again)." })
+                            if (lim && p.cap <= 0) onEdit(p)
                         }, colors = ButtonDefaults.buttonColors(containerColor = Look.Amber), modifier = Modifier.padding(top = 8.dp).testTag("rearm-${p.asin}")) { Text("Re-arm (buy again)") }
                     }
                 }
