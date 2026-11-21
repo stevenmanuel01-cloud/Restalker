@@ -1,3 +1,11 @@
+# Restalker Mobile 1.0.8 (2026-11-21; "I also have been unable to clear the 'bought' message on products. When I rearm something, it automatically switches back to just watching")
+- Re-arm now really re-arms: the "Bought" note goes away AND Buy is switched on. Until now Re-arm left Buy off, so the product stayed
+  "just watching" (and a linked PC heard "Buy off").
+- Switching Buy on for a product that was bought also re-arms it.
+- A product re-armed on your PC is re-armed on this phone too: the "Bought" note clears here and the PC keeps it on Buy. Until now the
+  phone kept its "Bought" mark, told the PC "Buy off", and the PC went back to watching.
+- Still one order per product: a PC change made before it heard of this phone's purchase never re-arms it.
+
 # Restalker Mobile 1.0.7 (2026-11-20; "repackage the app into a compliant version" - Google Play)
 - The app is now made in two editions from the same program. The one on this page (GitHub) works as before and still updates
   itself. The new Google Play edition follows the store's rules: it never installs anything itself (Google Play updates it), and it

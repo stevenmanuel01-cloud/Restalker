@@ -284,12 +284,21 @@ class Link(private val store: Store, private val net: LinkNet,
         return out
     }
 
-    /** A change from the desktop, made here. */
-    private fun apply(n: LinkRec, old: LinkRec?, linkedAt: Double) {
+    /** 1.0.8: does the PC's record come from after this phone's last order? A purchase here: the record carries its time (ba). An order
+     *  whose result is unclear (no purchase written): the record is newer than the moment Place order was pressed. */
+    private fun rearmHeard(n: LinkRec, p: Product): Boolean {
+        val mine = store.purchases().filter { it.asin == n.a }.maxOfOrNull { it.at / 1000.0 } ?: 0.0
+        if (mine > 0) return n.ba + 1 >= mine
+        return p.submittedAt <= 0 || n.t * 1000 > p.submittedAt
+    }
+
+    /** A change from the desktop, made here. -> true when this phone's own state must go back to the PC at once (1.0.8: a PC record
+     *  from before it heard of this phone's latest order). */
+    private fun apply(n: LinkRec, old: LinkRec?, linkedAt: Double): Boolean {
         val p = store.products().firstOrNull { it.asin == n.a }
         if (n.g) {
             if (p != null) { store.remove(p.id); store.log("From the desktop: ${p.label} removed.") }
-            return
+            return false
         }
         val kind = if (n.k in Product.SHAPES) n.k else "other"
         // bought by the desktop SINCE the link (1.6: a purchase from before the link - e.g. weeks ago - is not "bought there": 1.5 marked
@@ -300,21 +309,34 @@ class Link(private val store: Store, private val net: LinkNet,
             store.add(Product(id = store.newId(), asin = n.a, name = n.n, cap = n.c, kind = kind, watch = n.w, buy = n.b && !boughtThere,
                 tokens = Tokens.fromTitle(n.n), qty = n.q, qtySince = clockMs()))
             store.log("From the desktop: ${n.n} added (cap \$${Engine.money(n.c)}${if (n.b) ", Buy on" else ""}).")
-            return
+            return false
         }
         val what = ArrayList<String>()
+        // 1.0.8: "Buy on" in a PC record that does not know yet that this phone ordered it is not a re-arm - Buy stays as it is here and
+        // this phone's "bought, Buy off" goes to the PC in this same round (before 1.0.8 it waited for the retry, minutes)
+        val stale = n.b && !boughtThere && (p.purchased || p.attempted) && !rearmHeard(n, p)
         if (Math.abs(p.cap - n.c) >= 0.005) what.add("cap \$${Engine.money(n.c)}")
         if (p.watch != n.w) what.add("Watch " + if (n.w) "on" else "off")
-        if (p.buy != n.b && !boughtThere) what.add("Buy " + if (n.b) "on" else "off")
+        if (p.buy != n.b && !boughtThere && !stale) what.add("Buy " + if (n.b) "on" else "off")
         if (boughtThere) what.add("BOUGHT by the desktop - not bought here again")
         if (p.qty != n.q) what.add("Buy ${n.q}")
         store.update(p.id) {
-            var q = it.copy(cap = n.c, watch = n.w, buy = if (boughtThere) false else n.b)
+            var q = it.copy(cap = n.c, watch = n.w, buy = if (boughtThere) false else if (stale) it.buy else n.b)
             if (it.qty != n.q) q = q.copy(qty = n.q, qtySince = clockMs())
-            if (n.b && !it.buy && !boughtThere) q = q.copy(fails = 0, lockedUntil = 0)
+            if (n.b && !it.buy && !boughtThere && !stale) q = q.copy(fails = 0, lockedUntil = 0)
+            // 1.0.8 (owner: "When I rearm something, it automatically switches back to just watching"): Buy set on the PC for a product
+            // this phone bought = re-armed there. Until 1.0.7 Buy came on here but the "bought" lock stayed, so this phone told the PC
+            // "Buy off" and the PC went back to watching. The lock is cleared only when the PC's record already knows this phone's latest
+            // purchase (n.ba) - a PC record from before it heard of the purchase never re-arms it (one order per product) - and never
+            // while a checkout runs here
+            if (n.b && !it.buy && !boughtThere && !stale && !it.inProgress && (it.purchased || it.attempted)) {
+                q = q.copy(purchased = false, attempted = false, orderNumber = null, fails = 0, lockedUntil = 0, status = "re-armed on the PC - it may be bought again")
+                what.add("re-armed (it may be bought again)")
+            }
             q
         }
         if (what.isNotEmpty()) store.log("From the desktop: ${p.label}: ${what.joinToString(", ")}.")
+        return stale
     }
 
     // ---- merging (the desktop's merge / scan)
@@ -578,7 +600,7 @@ class Link(private val store: Store, private val net: LinkNet,
         val msgs = ((rm ?: emptyList()) + (nm ?: emptyList())).sortedBy { it.second ?: (it.first["at"].asDouble() ?: 0.0) }
         for ((m, srv) in msgs) {
             for ((_, n, old) in merge(s, m, srv, now)) {
-                try { apply(n, old, s.linkedAt) } catch (e: Exception) { store.log("! A change from the desktop could not be made: ${e.message?.take(100)}") }
+                try { if (apply(n, old, s.linkedAt)) s.recs[n.a]?.let { s.recs[n.a] = it.copy(pend = 0.0) } } catch (e: Exception) { store.log("! A change from the desktop could not be made: ${e.message?.take(100)}") }
             }
             try { takeGroups(m) } catch (e: Exception) { }
         }
