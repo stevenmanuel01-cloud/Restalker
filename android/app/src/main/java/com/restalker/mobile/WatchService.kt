@@ -36,7 +36,7 @@ class WatchService : Service() {
         val store = RkApp.store()
         startRx = android.net.TrafficStats.getUidRxBytes(android.os.Process.myUid()); startAt = System.currentTimeMillis()
         // 2.2: the PC and the other phones apart (Who buys: pc / phone / both decides what the PC's buying means for this phone)
-        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() }, pcWatches = { DeskLink.get().pcWatchesNow() },
+        engine = Engine(store, web, notifier, network = { netKind(this) }, desktopBuys = { DeskLink.get().desktopBuys() }, pcWatches = { DeskLink.get().pcWatchesNow() }, battery = { battery(this) },
             otherPhoneBuys = { DeskLink.get().otherPhoneBuys() },
             buyerMode = { if (DeskLink.get().linked()) RkApp.store().settings().buyMode else "solo" },     // (not linked: this phone buys)
             pcVerdict = { a -> GoListener.verdict(a) }, failover = { RkApp.store().settings().failover }, pcHanded = { DeskLink.get().pcHanded() },
@@ -184,6 +184,13 @@ class WatchService : Service() {
             return if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) "wifi" else "mobile"
         }
         const val ACT_CMD = "com.restalker.mobile.CMD"
+
+        /** 1.1.0: this phone's battery -> (percent, charging); (null, false) when it cannot be read. */
+        fun battery(ctx: Context): Pair<Int?, Boolean> = try {
+            val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val pct = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0..100 }
+            pct to bm.isCharging
+        } catch (e: Exception) { null to false }
 
         fun start(ctx: Context) = ContextCompat.startForegroundService(ctx, Intent(ctx, WatchService::class.java))
         fun stop(ctx: Context) = ctx.stopService(Intent(ctx, WatchService::class.java))

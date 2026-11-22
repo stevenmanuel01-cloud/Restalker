@@ -6,6 +6,7 @@ package com.restalker.mobile.core
  *  later (no report for a moment's hiccup; a crash at once), and the same problem is reported at most once a day. */
 data class HealthIn(
     val now: Long,
+    val paceMs: Long = 0,                 // 1.1.0: the engine's time between looks right now (battery, the PC watching)
     val products: List<Product>,
     val purchases: List<Purchase>,
     val settings: Settings,
@@ -52,7 +53,7 @@ object Health {
         if (st.watching && watched.isNotEmpty()) {
             if (!i.serviceRunning) out += "service" to "watching is switched on but its service is not running (Android stopped it?)"
             else {
-                val limit = if (i.deskBuys) 50 * 60_000L else maxOf(15 * 60_000L, 3L * st.intervalSec * 1000)
+                val limit = if (i.deskBuys) 50 * 60_000L else maxOf(15 * 60_000L, 3L * st.intervalSec * 1000, 3L * i.paceMs)
                 val canLook = i.net != null && !(st.wifiOnly && i.net != "wifi") && st.cooldownUntil < i.now && !i.busy && !i.outsideHours
                 val newest = watched.maxOf { it.lastCheck }
                 if (canLook && i.serviceSince > 0 && i.now - i.serviceSince > limit && i.now - newest > limit)

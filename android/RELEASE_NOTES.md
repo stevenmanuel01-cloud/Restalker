@@ -1,3 +1,11 @@
+# Restalker Mobile 1.1.0 (2026-11-22; "throttle the system based on battery life. Use 50% and 25% battery life as the steps")
+- New setting, on by default: Settings > Amazon, buying and this phone > "Save battery when low".
+  - Battery at 50% or less: this phone looks at each product every 5 minutes.
+  - Battery at 25% or less: every 15 minutes.
+  - Charging: no slowing down. With or without the PC running.
+- A restock your PC or the crowd sees is still checked at once, and a checkout always runs - only the routine looks slow down.
+- Switch it off to keep the full pace even when the battery is low. The Watch page says when it is slowing down.
+
 # Restalker Mobile 1.0.9 (2026-11-21; "I think the app may be making my phone slower")
 - With Who buys = "Both", this phone opened a full Amazon page about every 16 seconds all day - while your PC was watching the same
   products. Now, while your PC is watching, this phone looks by itself only every 10 minutes (about 85% less work, battery and data).

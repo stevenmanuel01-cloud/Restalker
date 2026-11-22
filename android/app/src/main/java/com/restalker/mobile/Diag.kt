@@ -26,6 +26,9 @@ object Diag {
         sb.append("Browser part (WebView): ${wv ?: "?"}\n")
         sb.append("Notifications allowed: ${NotificationManagerCompat.from(ctx).areNotificationsEnabled()}\n")
         sb.append("Battery: watching all day allowed: ${(ctx.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(ctx.packageName)}\n")
+        WatchService.battery(ctx).let { (pct, chg) -> val st = RkApp.store().settings()
+            sb.append("Battery now: ${pct ?: "?"}%${if (chg) " (charging)" else ""}; save battery when low: ${if (st.batterySave) "on" else "off"}; " +
+                "look pace now: ${(WatchService.instance?.engine?.paceMs ?: 0L) / 1000} s (1.1.0: at 50% or less every 5 min, at 25% or less every 15 min, not while charging)\n") }
         sb.append("Network: ${WatchService.netKind(ctx) ?: "none"}\n")
         val svc = WatchService.instance
         sb.append("Watching service: ${if (svc != null) "running (${svc.engine.busyWith}; ${svc.notifier.lastStatus})" else "not running"}\n")

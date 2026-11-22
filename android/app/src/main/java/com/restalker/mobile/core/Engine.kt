@@ -68,7 +68,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
              /** 1.0.4: this device's time zone (the watch hours are times of day on its own clock; the tests give their own). */
              private val zone: () -> java.util.TimeZone = { java.util.TimeZone.getDefault() },
              /** 1.0.9: the linked PC is watching right now (Link.pcWatchesNow). */
-             private val pcWatches: () -> Boolean = { false }) {
+             private val pcWatches: () -> Boolean = { false },
+             /** 1.1.0: this phone's battery -> (percent or null when unknown, charging). */
+             private val battery: () -> Pair<Int?, Boolean> = { null to false }) {
     val meter = DataMeter(rxBytes)
     sealed class Cmd {
         data class CheckNow(val id: String) : Cmd()
@@ -85,6 +87,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private val q = LinkedBlockingDeque<Cmd>()
     @Volatile var pausedFor: String? = null               // e.g. "you are using the browser" - nothing is opened meanwhile
     @Volatile var busyWith: String = "idle"; private set
+    /** 1.1.0: the time between two looks at one product right now (the self-check allows for it). */
+    @Volatile var paceMs: Long = 0; private set
     @Volatile private var quietLook = false              // 2.15: a start-up look at a product that is not watched (nothing said or shared)
     @Volatile private var quit = false
     @Volatile private var overrideDesk: String? = null
@@ -144,9 +148,16 @@ class Engine(private val store: Store, private val page: Page, private val alert
         // Buy) and another Restalker's (Cmd.Crowd) still make it look AT ONCE and race the PC to the checkout. PC not heard lately -> the
         // usual pace again
         val withPc = !desk && buyerMode() == "both" && pcWatches()
-        val interval = if (desk) maxOf(STANDBY_MS, st.intervalSec * 1000L)
+        val usual = if (desk) maxOf(STANDBY_MS, st.intervalSec * 1000L)
             else if (withPc) maxOf(WITH_PC_MS, st.intervalSec * 1000L)
             else st.intervalSec.coerceAtLeast(Settings.MIN_INTERVAL) * 1000L
+        // 1.1.0 (owner, 2026-11-22: "throttle the system based on battery life. Use 50% and 25% battery life as the steps ... even when
+        // the PC is not running"): battery at 50% or less -> at most a look every 5 min per product, 25% or less -> every 15 min (not while
+        // charging; Settings, "Save battery when low"). Go / Crowd above still look at once
+        val bat = battery()
+        val batMs = BatteryPace.minMs(bat.first, bat.second, st.batterySave)
+        val interval = maxOf(usual, batMs)
+        paceMs = interval
         val due = watched.minByOrNull { it.lastCheck } ?: return
         val wait = due.lastCheck + interval - now()
         offlineSince = 0
@@ -156,6 +167,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (wait > 3_000) page.rest()
         if (wait > 0) { status(if (desk) (when { otherPhoneBuys() -> "Another phone / tablet buys"; desktopBuys() -> "The PC buys"; pcHanded() -> "Another device buys"
             else -> "Not buying here" }) + " · this device stands by (a backup look every 30 min - Settings, Linked devices) · next look ${secs(wait)}"
+            else if (batMs > usual) "${BatteryPace.words(bat.first, bat.second, st.batterySave)} (it looks at once when the PC or the crowd sees a restock; Settings) · ${watched.size} product(s) · next look ${secs(wait)}"
             else if (withPc) "The PC is watching - this phone looks every ${WITH_PC_MS / 60_000} min, and at once when the PC sees a restock · ${watched.size} product(s) · next look ${secs(wait)}"
             else "Watching ${watched.size} product(s) · next look ${secs(wait)}"); waitFor(minOf(wait, 30_000)); return }
         check(due)
