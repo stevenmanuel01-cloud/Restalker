@@ -1688,6 +1688,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     HorizontalDivider(color = Look.Line)
+                    // 1.1.0 (owner, 2026-11-22: "throttle the system based on battery life. Use 50% and 25% battery life as the steps ...
+                    // This should be a default setting but allowed to be changed by the user manually if they want to use more power")
+                    SwitchRow("Save battery when low", "Battery at 50% or less: looks every 5 min. At 25% or less: every 15 min. Not while charging. " +
+                        "A restock your PC or the crowd sees is still checked at once.", st.batterySave, "battsave") { on ->
+                        store.setSettings { it.copy(batterySave = on) }
+                        store.log("Save battery when low switched ${if (on) "ON" else "OFF (full pace even when the battery is low)"}.")
+                        WatchService.instance?.engine?.send(Engine.Cmd.Wake)
+                    }
+                    HorizontalDivider(color = Look.Line)
                     // 1.0.4 (owner, 2026-11-20: "Is it possible to allow the user to select times of the day to start and stop the watcher
                     // automatically? It might be nice to allow the device to look hard overnight when it's not otherwise in use")
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).testTag("hours")) {

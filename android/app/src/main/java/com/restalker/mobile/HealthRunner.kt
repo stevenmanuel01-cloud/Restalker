@@ -24,7 +24,7 @@ object HealthRunner {
         val s = RkApp.store()
         val svc = WatchService.instance
         val link = DeskLink.get()
-        return HealthIn(now = now, products = s.products(), purchases = s.purchases(), settings = s.settings(),
+        return HealthIn(now = now, paceMs = svc?.engine?.paceMs ?: 0L, products = s.products(), purchases = s.purchases(), settings = s.settings(),
             picFails = { PicCache.failures(it) }, picStatus = { PicCache.status[it] }, picInfo = { Engine.picInfo[it] },
             serviceRunning = svc != null, serviceSince = svc?.since ?: 0L, net = WatchService.netKind(ctx), deskBuys = DeskLink.standsBy(),
             linked = link.linked(), linkFailsInRow = DeskLink.failsInRow, linkLast = DeskLink.lastResult,

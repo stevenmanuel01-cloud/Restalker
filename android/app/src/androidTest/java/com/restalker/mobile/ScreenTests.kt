@@ -1201,6 +1201,23 @@ class ScreenTests {
         Thread.sleep(300); shot("t44_updates")
     }
 
+    /** 1.1.0 (owner, 2026-11-22: "throttle the system based on battery life ... This should be a default setting but allowed to be
+     *  changed by the user manually"): "Save battery when low" is on by default and can be switched off and on in Settings. */
+    @Test fun t47_save_battery_switch_on_by_default_and_switchable() {
+        val s = RkApp.store()
+        s.setSettings { it.copy(batterySave = true) }
+        assertTrue("on by default", com.restalker.mobile.core.Settings().batterySave)
+        compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+        sec("amazon")
+        compose.onNodeWithTag("battsave").performScrollTo().assertIsDisplayed()
+        Thread.sleep(300); shot("t47_battery_switch")
+        compose.onNodeWithTag("battsave").performScrollTo().performClick()
+        compose.waitUntil(3_000) { !s.settings().batterySave }
+        compose.onNodeWithTag("battsave").performScrollTo().performClick()
+        compose.waitUntil(3_000) { s.settings().batterySave }
+        compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
+    }
+
     /** 1.0.8 (owner: "I also have been unable to clear the 'bought' message on products. When I rearm something, it automatically
      *  switches back to just watching"): Re-arm clears the Bought note AND turns Buy on; Buy switched on for a bought product re-arms it. */
     @Test fun t46_rearm_turns_buy_on_and_clears_bought() {

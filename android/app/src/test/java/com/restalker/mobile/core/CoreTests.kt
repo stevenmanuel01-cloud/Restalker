@@ -87,11 +87,11 @@ object CoreTests {
         val store = Store(dir) { clock.t }
         val amz = FakeAmazon(clock).also { it.store = store }
         val said = Said()
-        var mode = "pc"; var other = false; var fo = true; var handed = false; var pcw = false
+        var mode = "pc"; var other = false; var fo = true; var handed = false; var pcw = false; var batt: Pair<Int?, Boolean> = null to false
         val verdicts = HashMap<String, Pair<String, Long>>()
         var verdictFn: ((String) -> Pair<String, Long>?)? = null
         val engine = Engine(store, amz, said, clock, { net }, { desk }, { other }, { mode }, { a -> verdictFn?.invoke(a) ?: verdicts[a] },
-            failover = { fo }, pcHanded = { handed }, pcWatches = { pcw })
+            failover = { fo }, pcHanded = { handed }, pcWatches = { pcw }, battery = { batt })
         init { store.setSettings { it.copy(watching = true, buying = buying, practice = practice) } }
         fun add(asin: String, cap: Double, buy: Boolean, stock: Boolean = true, price: Double = 99.99): Product {
             amz.items[asin] = FakeAmazon.Item(stock, price, "Magic: The Gathering Test Product $asin Collector Booster Box")
@@ -1719,6 +1719,49 @@ object CoreTests {
             val t0 = w.clock.t
             w.engine.send(Engine.Cmd.Go("B0TEST0955")); w.engine.step()
             w.amz.places == 1 && w.p("B0TEST0955").purchased && w.clock.t - t0 < 60_000L }
+        // 1.1.0 (owner, 2026-11-22: "throttle the system based on battery life. Use 50% and 25% battery life as the steps to reduce battery
+        // usage, even when the PC is not running. This should be a default setting but allowed to be changed by the user manually")
+        fun gapAt(level: Int?, charging: Boolean, save: Boolean = true, mode: String = "phone", pcw: Boolean = false): Long? {
+            val w = World(desk = false); w.mode = mode; w.pcw = pcw; w.batt = level to charging; w.add("B0TEST0961", 120.0, true, stock = false)
+            w.store.setSettings { it.copy(ordersReadAt = w.clock.t, batterySave = save) }
+            w.store.update("idB0TEST0961") { it.copy(lastCheck = w.clock.t) }
+            return nextLookAfter(w, "B0TEST0961", 20 * 60_000L)
+        }
+        t("194_battery_steps_50_and_25_percent") {
+            BatteryPace.minMs(100, false, true) == 0L && BatteryPace.minMs(51, false, true) == 0L && BatteryPace.minMs(50, false, true) == 5 * 60_000L &&
+                BatteryPace.minMs(26, false, true) == 5 * 60_000L && BatteryPace.minMs(25, false, true) == 15 * 60_000L && BatteryPace.minMs(1, false, true) == 15 * 60_000L &&
+                BatteryPace.minMs(10, true, true) == 0L && BatteryPace.minMs(10, false, false) == 0L && BatteryPace.minMs(null, false, true) == 0L &&
+                BatteryPace.words(80, false, true) == null && BatteryPace.words(40, false, true)!!.contains("every 5 min") && BatteryPace.words(20, false, true)!!.contains("every 15 min") }
+        t("195_low_battery_slows_this_phones_own_looks_even_without_the_pc") {
+            val full = gapAt(80, false); val half = gapAt(50, false); val quarter = gapAt(25, false)
+            full != null && full in 90_000L..120_000L && half != null && half in 300_000L..330_000L && quarter != null && quarter in 900_000L..930_000L }
+        t("196_charging_or_switched_off_or_unknown_full_pace") {
+            listOf(gapAt(20, true), gapAt(20, false, save = false), gapAt(null, false)).all { it != null && it in 90_000L..120_000L } }
+        t("197_with_the_pc_watching_the_slower_of_the_two") {
+            val a = gapAt(40, false, mode = "both", pcw = true); val b = gapAt(20, false, mode = "both", pcw = true)
+            a != null && a in 600_000L..630_000L && b != null && b in 900_000L..930_000L }
+        t("198_low_battery_a_restock_signal_still_looks_and_buys_at_once") {
+            val w = World(desk = false); w.mode = "phone"; w.batt = 10 to false; w.add("B0TEST0962", 120.0, true)
+            w.store.update("idB0TEST0962") { it.copy(lastCheck = w.clock.t) }
+            val t0 = w.clock.t
+            w.engine.send(Engine.Cmd.Go("B0TEST0962")); w.engine.step()
+            val w2 = World(desk = false); w2.mode = "phone"; w2.batt = 10 to false; w2.add("B0TEST0963", 120.0, false)
+            w2.store.update("idB0TEST0963") { it.copy(lastCheck = w2.clock.t) }
+            val last = w2.p("B0TEST0963").lastCheck
+            w2.engine.send(Engine.Cmd.Crowd("B0TEST0963")); w2.engine.step()
+            w.amz.places == 1 && w.p("B0TEST0962").purchased && w.clock.t - t0 < 60_000L && w2.p("B0TEST0963").lastCheck != last }
+        t("199_save_battery_on_by_default_kept_and_switchable") {
+            val dflt = Settings().batterySave; val old = Settings.fromMap(mapOf("watching" to true)).batterySave
+            val off = Settings.fromMap(Settings(batterySave = false).toMap()).batterySave
+            val on = Settings.fromMap(Settings(batterySave = true).toMap()).batterySave
+            dflt && old && !off && on }
+        t("200_self_check_allows_for_the_slower_pace") {
+            val st = Settings(watching = true, intervalSec = 90)
+            val p = Product("a", "B0TEST0964", cap = 99.0, watch = true, lastCheck = 1_000_000L)
+            val now = 1_000_000L + 20 * 60_000L
+            val slow = Health.check(HealthIn(now = now, paceMs = 15 * 60_000L, products = listOf(p), purchases = emptyList(), settings = st, serviceRunning = true, serviceSince = 1L, net = "wifi"))
+            val fast = Health.check(HealthIn(now = now, paceMs = 90_000L, products = listOf(p), purchases = emptyList(), settings = st, serviceRunning = true, serviceSince = 1L, net = "wifi"))
+            slow.none { it.first == "stalled" } && fast.any { it.first == "stalled" } }
         return results
     }
 
