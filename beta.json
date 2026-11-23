@@ -1,8 +1,8 @@
 {
- "version": "v148",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v148_update.zip",
- "sha256": "b497dfc3a06937427855367767e9268e91d4ec2ad8424c386ebcdadb9f3d4ba5",
- "size": 776163,
- "notes": "Amazon sign-in check fixed: it no longer says 'not signed in' when Amazon's page just did not show your name; signed out must be seen twice in a row, and that phone message comes at most once every 6 hours. The regular report every 4 hours is no longer sent (reports after a problem stay). Works with Restalker app 1.0.8, which fixes Re-arm.",
+ "version": "v149",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v149_update.zip",
+ "sha256": "c42ec2f290dcd1991a58372271cb800d5c32031339911c2275ba9d7adb9786c4",
+ "size": 777333,
+ "notes": "Fixed: 'Buy again' / re-arm was refused on the PC for every product you added by link once it had been bought (\"Custom ASIN metadata must be verified before Buy Again\") - the Nauctis Secret Lair Bundle, for one. The product is now checked against its Amazon page when it is added, and one added before this version is checked on the spot when you press Buy again. The safety check itself stays: if Amazon's page names another product, Buy again is still refused, with the reason.",
  "files": 84
 }
