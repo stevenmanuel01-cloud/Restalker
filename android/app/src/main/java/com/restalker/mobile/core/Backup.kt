@@ -26,7 +26,8 @@ object Backup {
     fun make(store: Store, app: String, device: String, now: Long): String {
         store.flushLog()
         val files = LinkedHashMap<String, Any?>()
-        for (n in FILES + DEVICE_FILES) store.readFile(n)?.let { files[n] = it }
+        files["products.json"] = store.readFile("products.json") ?: "[]"      // (a device that never had a product has no list yet - its file still loads)
+        for (n in FILES + DEVICE_FILES) if (n != "products.json") store.readFile(n)?.let { files[n] = it }
         return MiniJson.write(linkedMapOf(MARK to FORMAT, "app" to app, "at" to now, "device" to device,
             "products" to store.products().size, "purchases" to store.purchases().size, "files" to files))
     }

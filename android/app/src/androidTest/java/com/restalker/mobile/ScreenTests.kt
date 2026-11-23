@@ -777,7 +777,8 @@ class ScreenTests {
         compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
         // 1.0.2: one entry for the restock - what was seen, what was done (and how it ended, once it has)
         // (the big-text pass runs after the normal one on the same day: its entry is there too - so: the joined entry, no separate lines)
-        assertTrue("one entry: restock + checkout", compose.onAllNodesWithText("In stock \$350.00 → checkout", substring = true).fetchSemanticsNodes().isNotEmpty() &&
+        assertTrue("one entry: restock + checkout - Activity has: " + com.restalker.mobile.core.ActivityLog.events(s.log().filter { com.restalker.mobile.core.ActivityLog.important(it) }).take(4).joinToString(" || ") { it.time + " " + it.text },
+            compose.onAllNodesWithText("In stock \$350.00 → checkout", substring = true).fetchSemanticsNodes().isNotEmpty() &&
             compose.onAllNodesWithText("CHECKOUT started", substring = true).fetchSemanticsNodes().isEmpty() &&
             compose.onAllNodesWithText("buying it now", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue("settings changes are not in Activity", compose.onAllNodesWithText("Watching switched ON", substring = true).fetchSemanticsNodes().isEmpty() &&
@@ -1096,6 +1097,14 @@ class ScreenTests {
         compose.onNodeWithTag("title").assertIsDisplayed()
     }
 
+    /** 1.1.1: what the app keeps, as it is now - the store pictures and the film (z98, z99) put it back when they are done. They use the
+     *  same product name as t23 ("The Hobbit Collector Booster Box"), and a restock of the same product within 30 minutes is one
+     *  entry in Activity: left in the log, they made the big-text pass of t23 on the Google Play edition fail its first try. */
+    private fun kept(s: com.restalker.mobile.core.Store): Map<String, String?> {
+        s.flushLog()
+        return listOf("products.json", "settings.json", "purchases.json", "log.txt", "folded.json").associateWith { s.readFile(it) }
+    }
+
     /** 1.0.7: the pictures for the store page (Google Play edition, only with "-e demo 1"; android/ci/phone.sh): the app as someone who
      *  has set it up sees it - real product names, the tests' stand-in Amazon (no real store is reached), no product pictures (the
      *  app's own initials stand in: box art belongs to its makers). Every picture is taken on its own; one that fails loses only itself. */
@@ -1111,6 +1120,7 @@ class ScreenTests {
         val cm = android.webkit.CookieManager.getInstance()
         val s = RkApp.store()
         val now = System.currentTimeMillis()
+        val before = kept(s)
         try {
             s.products().forEach { s.remove(it.id) }; s.writeFile("folded.json", "[]")
             s.setSettings { com.restalker.mobile.core.Settings().copy(watching = false, buying = false, reportAsked = true, autoReport = false) }
@@ -1144,6 +1154,7 @@ class ScreenTests {
             com.restalker.mobile.web.AmazonWeb.testSite = null
             s.setSettings { it.copy(watching = false) }; WatchService.stop(ctx)
             cm.removeAllCookies(null); cm.flush()
+            Thread.sleep(1_500); s.restore(before)                   // (nothing of the pictures stays: the tests after them start as before)
         }
     }
 
@@ -1158,6 +1169,7 @@ class ScreenTests {
         val s = RkApp.store()
         // (a test's screen is only drawn anew when the test lets it: waiting in small steps keeps the picture live for the film)
         fun live(ms: Long) { val end = System.currentTimeMillis() + ms; while (System.currentTimeMillis() < end) { runCatching { compose.waitForIdle() }; Thread.sleep(200) } }
+        val before = kept(s)
         try {
             s.products().forEach { s.remove(it.id) }; s.writeFile("folded.json", "[]")
             s.setSettings { it.copy(watching = false, buying = false, reportAsked = true) }
@@ -1180,6 +1192,7 @@ class ScreenTests {
         } finally {
             com.restalker.mobile.web.AmazonWeb.testSite = null
             s.setSettings { it.copy(watching = false) }; WatchService.stop(ctx)
+            Thread.sleep(1_500); s.restore(before)                   // (nothing of the film stays)
         }
     }
 
@@ -1256,6 +1269,12 @@ class ScreenTests {
             val info = dm.readFrom(ctx, android.net.Uri.fromFile(f2))
             assertTrue("read back through it: ${info.why}", info.ok && info.sameDevice && info.products == 1)
             assertTrue("a file that is not there is told, not a crash", !dm.readFrom(ctx, android.net.Uri.fromFile(java.io.File(ctx.cacheDir, "rk-none.json"))).ok)
+            // Activity goes on as before after a load: the next restock is its own entry
+            s.log("Saved Collector Booster Box: in stock at \$111.00 - buying it now."); s.log("Saved Collector Booster Box: CHECKOUT started (\$111.00, cap \$123.00)")
+            compose.onNodeWithTag("tab2").performClick(); compose.waitForIdle()
+            assertTrue("Activity after a load - it has: " + com.restalker.mobile.core.ActivityLog.events(s.log().filter { com.restalker.mobile.core.ActivityLog.important(it) }).take(4).joinToString(" || ") { it.time + " " + it.text },
+                compose.onAllNodesWithText("In stock \$111.00 → checkout", substring = true).fetchSemanticsNodes().isNotEmpty())
+            compose.onNodeWithTag("tab0").performClick(); compose.waitForIdle()
         } finally { dm.testFile = null; dm.testRestart = null; f.delete(); f2.delete() }
     }
 

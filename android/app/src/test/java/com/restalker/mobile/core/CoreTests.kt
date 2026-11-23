@@ -1836,6 +1836,19 @@ object CoreTests {
             Backup.apply(s, Backup.read(text, "D"), 5_000L)
             val re = Store(a.dir).purchases()
             re.size == 3 && re.map { it.at } == listOf(4_000L, 3_000L, 1_000L) && !Limit.mayBuy(re.count { it.asin == "B0TEST0976" }, false) }
+        t("206_activity_reads_the_same_after_a_load_and_a_restart") {
+            val a = World(); val s = a.store
+            fun ev(st: Store) = ActivityLog.events(st.log().filter { ActivityLog.important(it) }).map { it.text }
+            s.log("The Hobbit Collector Booster Box: in stock at \$455.88."); a.clock.t += 60_000
+            s.log("The Hobbit Collector Booster Box: in stock at \$350.00 - buying it now."); s.log("The Hobbit Collector Booster Box: CHECKOUT started (\$350.00, cap \$400.00)")
+            val before = ev(s)
+            Backup.apply(s, Backup.read(Backup.make(s, "1.1.1", "D", a.clock.t), "D"), a.clock.t)
+            val after = ev(s)
+            val re = Store(a.dir) { a.clock.t + 120_000 }
+            re.log("The Hobbit Collector Booster Box: in stock at \$350.00 - buying it now."); re.log("The Hobbit Collector Booster Box: CHECKOUT started (\$350.00, cap \$400.00)")
+            val again = ev(re)
+            println("    206: $before | $after | $again")
+            before == listOf("In stock \$455.88 → checkout") && after == before && again == listOf("In stock \$350.00 → checkout", "In stock \$455.88 → checkout") }
         return results
     }
 
