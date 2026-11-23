@@ -1,6 +1,6 @@
 # Restalker privacy policy
 
-Last updated: November 20, 2026
+Last updated: November 23, 2026
 
 This policy covers **Restalker Mobile** (the Android app) and the **Restalker PC program**. Restalker watches products in online
 stores (Magic: The Gathering products on Amazon) and tells you when one is back in stock at or under the price you set. It watches
@@ -18,6 +18,9 @@ products, never people.
 Your products and price caps, your settings, the app's log, what the app bought for you (product, price, time, Amazon's order
 number), and - if you signed in to Amazon inside the app - Amazon's sign-in cookies, kept by the app's built-in browser exactly as
 a normal browser keeps them. Removing the app (or Android Settings > Apps > Restalker > Storage > Clear storage) erases all of it.
+
+"Save my data" (Settings > Help and about) writes this - without the Amazon sign-in - into one file, in the place you choose on
+your device. The file is sent nowhere; it is yours to keep, load again, or delete.
 
 ## What leaves your device
 

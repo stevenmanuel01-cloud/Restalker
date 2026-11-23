@@ -1857,6 +1857,9 @@ class MainActivity : ComponentActivity() {
                     }
                     SubHead("Words used")
                     Glossary()
+                    // 1.1.1 (owner: "i want to be able to save and reload all my data when i download the new app from the play store")
+                    SubHead("Your data")
+                    DataMoveRows()
                     SubHead("About")
                     Row(Modifier.fillMaxWidth().clickable { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL))) } catch (e: Exception) { } }
                         .padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 24.dp).testTag("privacy"), verticalAlignment = Alignment.CenterVertically) {

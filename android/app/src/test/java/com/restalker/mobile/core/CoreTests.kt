@@ -1762,6 +1762,80 @@ object CoreTests {
             val slow = Health.check(HealthIn(now = now, paceMs = 15 * 60_000L, products = listOf(p), purchases = emptyList(), settings = st, serviceRunning = true, serviceSince = 1L, net = "wifi"))
             val fast = Health.check(HealthIn(now = now, paceMs = 90_000L, products = listOf(p), purchases = emptyList(), settings = st, serviceRunning = true, serviceSince = 1L, net = "wifi"))
             slow.none { it.first == "stalled" } && fast.any { it.first == "stalled" } }
+        // 1.1.1 (owner: "i want to be able to save and reload all my data when i download the new app from the play store")
+        t("201_saved_data_comes_back_whole_on_the_same_device") {
+            val a = World(); val s = a.store
+            s.add(Product(id = "p1", asin = "B0TEST0970", name = "Hobbit Box", cap = 460.0, buy = true, watch = true, purchased = true, year = "2026"))
+            s.add(Product(id = "p2", asin = "B0TEST0971", name = "Bundle", cap = 55.0, watch = false))
+            s.setSettings { it.copy(watching = true, intervalSec = 120, masterCode = "M-1", deviceName = "My phone", nDrop = true, hoursOn = true, reportAsked = true, batterySave = false) }
+            s.addPurchase(Purchase(5_000L, "B0TEST0970", "Hobbit Box", 455.88, "111-1234567-1234567", true))
+            s.log("In stock: Hobbit Box"); s.writeFile("folded.json", "[\"2026\"]"); s.writeFile("link.json", "{\"code\":\"RK1.abc.def\",\"dev\":\"d1\"}")
+            s.writeFile("crowd.json", "{\"id\":\"c-77\"}"); s.writeFile("tcg_history.json", "{}")
+            val text = Backup.make(s, "1.1.1", "Google Pixel 7", 9_000_000L)
+            val b = World(); val t2 = b.store
+            t2.add(Product(id = "old", asin = "B0TEST0979", name = "Old one")); t2.writeFile("suggested.txt", "x")
+            val info = Backup.read(text, "google pixel 7")
+            val line = Backup.apply(t2, info, 9_100_000L)
+            val re = Store(b.dir)                                    // what a restart reads
+            val p1 = re.product("p1"); val st = re.settings()
+            info.ok && info.sameDevice && info.linked && info.products == 2 && info.purchases == 1 && !text.contains("tcg_history") &&
+                re.products().map { it.id } == listOf("p1", "p2") && p1?.cap == 460.0 && p1.buy && p1.purchased && p1.year == "2026" &&
+                !st.watching && st.intervalSec == 120 && st.masterCode == "M-1" && st.deviceName == "My phone" && st.nDrop && st.hoursOn && st.reportAsked && !st.batterySave &&
+                re.purchases().single().order == "111-1234567-1234567" && re.log().any { it.contains("In stock: Hobbit Box") } &&
+                re.log().last().contains("Saved data loaded (2 products, 1 purchase") && line.startsWith("Saved data loaded") &&
+                re.readFile("folded.json") == "[\"2026\"]" && re.readFile("link.json")!!.contains("RK1.abc.def") && re.readFile("crowd.json")!!.contains("c-77") &&
+                re.readFile("suggested.txt") == null && t2.products().size == 2 && !t2.settings().watching }
+        t("202_saved_data_on_another_device_leaves_the_link_and_the_codes_alone") {
+            val a = World(); val s = a.store
+            s.add(Product(id = "p1", asin = "B0TEST0972", name = "Box", cap = 99.0))
+            s.setSettings { it.copy(masterCode = "M-1", deviceName = "Old phone", alertTopic = "rk-old", alertsOn = true, reportTopic = "rep-old", intervalSec = 150) }
+            s.writeFile("link.json", "{\"code\":\"RK1.old.old\",\"dev\":\"d1\"}"); s.writeFile("crowd.json", "{\"id\":\"c-old\"}")
+            val text = Backup.make(s, "1.1.1", "Google Pixel 7", 1L)
+            val b = World(); val t2 = b.store
+            t2.setSettings { it.copy(deviceName = "New phone", reportTopic = "rep-new") }
+            t2.writeFile("link.json", "{\"code\":\"RK1.new.new\",\"dev\":\"d9\"}"); t2.writeFile("crowd.json", "{\"id\":\"c-new\"}")
+            val info = Backup.read(text, "samsung SM-S918U")
+            Backup.apply(t2, info, 2L)
+            val re = Store(b.dir); val st = re.settings()
+            info.ok && !info.sameDevice && !info.linked && Backup.summary(info).contains("link this device again") &&
+                re.products().single().asin == "B0TEST0972" && st.intervalSec == 150 &&
+                st.masterCode == "" && st.deviceName == "New phone" && st.alertTopic == "" && !st.alertsOn && st.reportTopic == "rep-new" &&
+                re.readFile("link.json")!!.contains("RK1.new.new") && re.readFile("crowd.json")!!.contains("c-new") &&
+                re.log().last().contains("the device link was not loaded") }
+        t("203_a_wrong_or_damaged_file_is_refused_and_nothing_changes") {
+            val a = World(); val s = a.store
+            s.add(Product(id = "keep", asin = "B0TEST0973", name = "Keep me", cap = 10.0))
+            val good = Backup.make(s, "1.1.1", "D", 1L)
+            val newer = good.replace("\"${Backup.MARK}\":1", "\"${Backup.MARK}\":2")
+            val noList = MiniJson.write(mapOf(Backup.MARK to 1, "files" to mapOf("settings.json" to "{}")))
+            val badList = MiniJson.write(mapOf(Backup.MARK to 1, "files" to mapOf("products.json" to "{not json")))
+            val badSet = MiniJson.write(mapOf(Backup.MARK to 1, "files" to mapOf("products.json" to "[]", "settings.json" to "oops")))
+            val sneaky = MiniJson.write(mapOf(Backup.MARK to 1, "files" to mapOf("products.json" to "[]", "../evil.txt" to "x", "crash.txt" to "x", "link.json" to 5)))
+            val bad = listOf(null, "", "hello", "[1,2]", "{\"a\":1}", good.dropLast(20), newer, noList, badList, badSet, "x".repeat(Backup.MAX_CHARS + 1))
+            val refused = bad.all { t -> val i = Backup.read(t, "D"); !i.ok && i.why.isNotBlank() && try { Backup.apply(s, i, 2L); false } catch (e: IllegalArgumentException) { true } }
+            val sn = Backup.read(sneaky, "D")
+            refused && Backup.read(newer, "D").why.contains("newer Restalker") && sn.ok && sn.files.keys == setOf("products.json") &&
+                Store(a.dir).products().single().id == "keep" && Backup.read(good, "D").ok }
+        t("204_after_a_load_nothing_writes_over_it_until_the_restart") {
+            val a = World(); val s = a.store
+            s.add(Product(id = "p1", asin = "B0TEST0974", name = "One", cap = 10.0))
+            val text = Backup.make(s, "1.1.1", "D", 1L)
+            val b = World(); val t2 = b.store
+            Backup.apply(t2, Backup.read(text, "D"), 2L); t2.freeze()
+            t2.add(Product(id = "late", asin = "B0TEST0975", name = "Late")); t2.setSettings { it.copy(intervalSec = 999) }; t2.writeFile("link.json", "{\"code\":\"late\"}")
+            val re = Store(b.dir)
+            re.products().map { it.id } == listOf("p1") && re.settings().intervalSec != 999 && re.readFile("link.json") == null &&
+                Backup.fileName(1_795_000_000_000L).matches(Regex("restalker-data-\\d{4}-\\d{2}-\\d{2}\\.json")) }
+        t("205_loading_an_older_file_never_forgets_a_purchase_made_since") {
+            val a = World(); val s = a.store
+            s.add(Product(id = "p1", asin = "B0TEST0976", name = "Box", cap = 99.0, buy = true))
+            s.addPurchase(Purchase(1_000L, "B0TEST0976", "Box", 90.0, "111-0000001-0000001", true))
+            val text = Backup.make(s, "1.1.1", "D", 2_000L)
+            s.addPurchase(Purchase(3_000L, "B0TEST0976", "Box", 91.0, "111-0000002-0000002", true))      // bought after the file was saved
+            s.addPurchase(Purchase(4_000L, "B0TEST0976", "Box", 92.0, "111-0000003-0000003", true))
+            Backup.apply(s, Backup.read(text, "D"), 5_000L)
+            val re = Store(a.dir).purchases()
+            re.size == 3 && re.map { it.at } == listOf(4_000L, 3_000L, 1_000L) && !Limit.mayBuy(re.count { it.asin == "B0TEST0976" }, false) }
         return results
     }
 

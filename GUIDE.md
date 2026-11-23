@@ -153,6 +153,8 @@ Started with the phone first? In the app, **Settings** > **Linked devices** > **
 
 With both on one phone, ntfy shows the PC's messages and the app does not repeat them.
 
+**Keeping the app's data (a new phone, or moving to the app from Google Play):** in the app, **Settings** > **Help and about** > **Save my data** writes your products, caps, settings, purchases and Activity into one file you keep. **Load my data** puts it back; the app restarts with watching off. The app from Google Play and the one from the download page cannot be installed over each other, so: Save my data, remove the app, install the other one, Load my data, sign in to Amazon again. Keep the file to yourself - it holds your device link. A file from another kind of phone loads everything but the link; link that phone again.
+
 ## Words used
 
 | Word | What it means |

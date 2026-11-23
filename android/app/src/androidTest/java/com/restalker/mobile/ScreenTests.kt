@@ -1201,6 +1201,64 @@ class ScreenTests {
         Thread.sleep(300); shot("t44_updates")
     }
 
+    /** 1.1.1 (owner, 2026-11-23: "i want to be able to save and reload all my data when i download the new app from the play store"):
+     *  Settings, Help and about, Your data. Save writes one file; a wrong file is refused in plain words and changes nothing; the saved
+     *  file comes back after a question (Cancel loads nothing), and the app restarts. (Android's file chooser is another app's screen:
+     *  the test hands the file over itself, and tries Android's own file access apart.) */
+    @Test fun t48_save_my_data_and_load_it_back() {
+        val dm = com.restalker.mobile.ui.DataMove
+        val s = RkApp.store(); val f = java.io.File(ctx.cacheDir, "rk-data-test.json"); f.delete()
+        val f2 = java.io.File(ctx.cacheDir, "rk-data-test2.json"); f2.delete()
+        var restarts = 0
+        dm.testFile = f; dm.testRestart = { restarts++ }
+        fun shown(tag: String) = compose.waitUntil(8_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+        try {
+            s.products().forEach { s.remove(it.id) }
+            s.setSettings { it.copy(watching = false, intervalSec = 120) }
+            s.add(prod("B0TEST0946", "Saved Collector Booster Box", "2026", "Saved Set").copy(cap = 123.0))
+            compose.onNodeWithTag("tab3").performClick(); compose.waitForIdle()
+            sec("about")
+            compose.onNodeWithTag("data-load").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("data-save").performScrollTo().assertIsDisplayed()
+            Thread.sleep(300); shot("t48_your_data")
+            compose.onNodeWithTag("data-save").performClick(); compose.waitForIdle(); shown("data-msg")
+            assertTrue("the file was written", f.length() > 50 && f.readText().contains("B0TEST0946"))
+            assertTrue("it says what the file holds", compose.onAllNodesWithText("keep it to yourself", substring = true).fetchSemanticsNodes().isNotEmpty())
+            Thread.sleep(300); shot("t48_saved")
+            compose.onNodeWithTag("data-ok").performClick(); compose.waitForIdle()
+            // what is on the device changes ...
+            s.products().forEach { s.remove(it.id) }
+            s.add(prod("B0TEST0947", "Another Bundle")); s.setSettings { it.copy(intervalSec = 300) }
+            // ... a wrong file is refused, and nothing changes
+            val good = f.readText(); f.writeText("hello")
+            compose.onNodeWithTag("data-load").performScrollTo().performClick(); compose.waitForIdle(); shown("data-msg")
+            assertTrue("a wrong file is refused in plain words", compose.onAllNodesWithText("not a file saved by Restalker", substring = true).fetchSemanticsNodes().isNotEmpty())
+            compose.onNodeWithTag("data-ok").performClick(); compose.waitForIdle()
+            assertTrue("a refused file changes nothing", s.products().single().asin == "B0TEST0947" && s.settings().intervalSec == 300 && restarts == 0)
+            // ... the saved file asks first; Cancel loads nothing
+            f.writeText(good)
+            compose.onNodeWithTag("data-load").performScrollTo().performClick(); compose.waitForIdle(); shown("data-summary")
+            assertTrue("the question says what is in the file", compose.onAllNodesWithText("1 product, ", substring = true).fetchSemanticsNodes().isNotEmpty())
+            Thread.sleep(300); shot("t48_load_question")
+            compose.onNodeWithTag("data-cancel").performClick(); compose.waitForIdle()
+            assertTrue("Cancel loads nothing", s.products().single().asin == "B0TEST0947" && restarts == 0)
+            // ... "Load it" brings everything back and restarts the app
+            compose.onNodeWithTag("data-load").performScrollTo().performClick(); compose.waitForIdle(); shown("data-confirm")
+            compose.onNodeWithTag("data-confirm").performClick(); compose.waitForIdle()
+            compose.waitUntil(8_000) { restarts == 1 }
+            val p = s.products().single()
+            assertTrue("the product and its cap are back", p.asin == "B0TEST0946" && p.cap == 123.0 && p.name == "Saved Collector Booster Box")
+            assertTrue("the settings are back, watching is off", s.settings().intervalSec == 120 && !s.settings().watching)
+            assertTrue("Activity says it", s.log().any { it.contains("Saved data loaded (1 product") })
+            // Android's own file access (what its file chooser hands the app)
+            val said = dm.saveTo(ctx, android.net.Uri.fromFile(f2))
+            assertTrue("written through Android's file access: $said", said.startsWith("Saved.") && f2.length() > 50)
+            val info = dm.readFrom(ctx, android.net.Uri.fromFile(f2))
+            assertTrue("read back through it: ${info.why}", info.ok && info.sameDevice && info.products == 1)
+            assertTrue("a file that is not there is told, not a crash", !dm.readFrom(ctx, android.net.Uri.fromFile(java.io.File(ctx.cacheDir, "rk-none.json"))).ok)
+        } finally { dm.testFile = null; dm.testRestart = null; f.delete(); f2.delete() }
+    }
+
     /** 1.1.0 (owner, 2026-11-22: "throttle the system based on battery life ... This should be a default setting but allowed to be
      *  changed by the user manually"): "Save battery when low" is on by default and can be switched off and on in Settings. */
     @Test fun t47_save_battery_switch_on_by_default_and_switchable() {
