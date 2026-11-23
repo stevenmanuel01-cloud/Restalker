@@ -37,6 +37,7 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
 
     private fun read(name: String): String? = try { File(dir, name).takeIf { it.exists() }?.readText() } catch (e: Exception) { null }
     private fun write(name: String, text: String) {
+        if (frozen) return                             // (1.1.1: saved data was just loaded - nothing is written over it before the restart)
         dir.mkdirs()                                   // (the folder is always there - unless removed under us; then it is made again)
         val tmp = File(dir, "$name.tmp"); tmp.writeText(text)
         if (!tmp.renameTo(File(dir, name))) { File(dir, name).delete(); tmp.renameTo(File(dir, name)) }
@@ -84,6 +85,22 @@ class Store(private val dir: File, private val clock: () -> Long = System::curre
     /** A small file of its own (the desktop link): read / written whole, safely. */
     fun readFile(name: String): String? = synchronized(lock) { read(name) }
     fun writeFile(name: String, text: String) = synchronized(lock) { write(name, text) }
+
+    /** 1.1.1 ("Load my data"): these files are put in place whole and everything kept in memory is read from them again. A file
+     *  given as null is removed. Whoever keeps a copy of its own (the device link, the crowd) reads its file again after a restart -
+     *  the app restarts itself right after ([freeze] keeps anything still running from writing over the loaded files until then). */
+    fun restore(files: Map<String, String?>) {
+        synchronized(lock) {
+            for ((name, text) in files) if (text == null) try { File(dir, name).delete() } catch (e: Exception) { } else write(name, text)
+            products = (list("products.json")?.mapNotNull { it.asMap()?.let(Product::fromMap) } ?: emptyList()).map { it.copy(inProgress = false) }
+            settings = Settings.fromMap(read("settings.json")?.let { MiniJson.obj(it) })
+            purchases = list("purchases.json")?.mapNotNull { it.asMap()?.let(Purchase::fromMap) } ?: emptyList()
+            logLines.clear(); read("log.txt")?.lines()?.filter { it.isNotBlank() }?.takeLast(LOG_MAX)?.forEach { logLines.addLast(it) }
+        }
+        onChange?.invoke()
+    }
+    fun freeze() { synchronized(lock) { frozen = true } }
+    @Volatile private var frozen = false
 
     fun newId(): String = synchronized(lock) { "p" + clock().toString(36) + (products.size + 1) }
 

@@ -1,3 +1,14 @@
+# Restalker Mobile 1.1.1 (2026-11-23; "i want to be able to save and reload all my data when i download the new app from the play store")
+- New: Settings > Help and about > Your data.
+  - **Save my data** writes one file (you choose where - Downloads is fine): your products with their caps and switches, your
+    settings, your purchases, Activity, and the link with your other devices.
+  - **Load my data** puts a saved file back, after asking. The app restarts itself, with watching off - press Start.
+- Moving to the app from Google Play: Save my data, remove this app, install Restalker from Google Play, Load my data.
+  (The two can not be installed over each other - that is why the file is needed.) You sign in to Amazon again afterwards.
+- A file saved on another kind of phone loads everything except the link with your other devices - link that phone again.
+- Loading an older file never forgets a purchase made since. A wrong or damaged file is refused and changes nothing.
+- The file is yours and is sent nowhere. Keep it to yourself: it holds your device link.
+
 # Restalker Mobile 1.1.0 (2026-11-22; "throttle the system based on battery life. Use 50% and 25% battery life as the steps")
 - New setting, on by default: Settings > Amazon, buying and this phone > "Save battery when low".
   - Battery at 50% or less: this phone looks at each product every 5 minutes.
