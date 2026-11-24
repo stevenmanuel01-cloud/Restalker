@@ -514,22 +514,20 @@ class MainActivity : ComponentActivity() {
                                 val watched = products.count { it.watch }
                                 Text(if (!st.watching) "Not watching" else if (!inHours) "Waiting for your watch hours" else "Watching $watched product${if (watched == 1) "" else "s"}", color = Color.White,
                                     fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.testTag("watch-title"))
-                                val line = if (!st.watching) "Press Start to watch" else svc?.notifier?.lastStatus?.ifBlank { null } ?: "starting..."
-                                Text(line, color = Look.OnNavyDim, fontSize = 13.sp, lineHeight = 17.sp, maxLines = 3, modifier = Modifier.testTag("status"))
-                                if (linked) Text(if (deskBuys) "Desktop linked · this device watches (Settings, Linked devices)" else "Desktop linked · this device buys", color = Look.Mint, fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp).testTag("linkchip"))
+                                // 1.1.4 (owner, 2026-11-24: "banner on the watch tab has too much going on. This should be reduced to only
+                                // include the number of products watched ..., the stop button (it should be clear that it stops the
+                                // watching processes), and we can lose the explanation at the bottom. Any detailed information on how the
+                                // program works should be located on the settings tab"): the line about what it is doing right now, the
+                                // linked-desktop line and the explanation moved to Settings > "Amazon, buying and this phone"
                             }
                             Button(onClick = { setWatching(!st.watching) },
                                 colors = if (st.watching) ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Look.Ink) else Look.btn(),
                                 contentPadding = PaddingValues(horizontal = 14.dp),
                                 modifier = Modifier.padding(start = 8.dp).heightIn(min = 44.dp).semantics { stateDescription = if (st.watching) "on" else "off" }.testTag("watching")) {
                                 Icon(if (st.watching) Icons.Filled.Close else Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
-                                Text(if (st.watching) "Stop" else "Start", fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(if (st.watching) "Stop watching" else "Start watching", fontWeight = FontWeight.SemiBold, maxLines = 1)
                             }
                         }
-                        Text(if (st.watching) "Runs in the background - also after you close the app or swipe it away. Stop ends it."
-                            else "Stopped: nothing is watched or bought until you press Start.",
-                            color = Look.OnNavyDim, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 8.dp).testTag("watch-hint"))
                     }
                 }
             }
@@ -1776,6 +1774,18 @@ class MainActivity : ComponentActivity() {
                     if (!st.buying) "buying off" else if (st.practice) "practice (nothing is bought)" else "real purchases",
                     "looks every ${if (st.intervalSec >= 180) "3 min" else "${st.intervalSec} s"}", if (batt) "" else "battery not allowed").filter { it.isNotEmpty() }.joinToString(" · "),
                     summaryColor = if (signed && batt) Look.Muted else Look.Red, attn = "amazon") {
+                    // 1.1.4: how watching works and what it is doing right now (moved here from the Watch tab's banner)
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).testTag("watch-how")) {
+                        Text("Watching", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                        val nowLine = if (!st.watching) "Stopped: nothing is watched or bought until you press Start watching (Watch tab)."
+                            else "Right now: " + (WatchService.instance?.notifier?.lastStatus?.ifBlank { null } ?: "starting...")
+                        Text(nowLine, fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, maxLines = 4, modifier = Modifier.testTag("status"))
+                        Text("Watching runs in the background - also after you close the app or swipe it away. Stop watching (Watch tab) ends it.",
+                            fontSize = 13.sp, lineHeight = 18.sp, color = Look.Muted, modifier = Modifier.padding(top = 4.dp).testTag("watch-hint"))
+                        if (DeskLink.get().linked()) Text(if (DeskLink.standsBy()) "Desktop linked: this device watches; the desktop buys (Linked devices)." else "Desktop linked: this device buys.",
+                            fontSize = 13.sp, lineHeight = 18.sp, color = Look.TealText, modifier = Modifier.padding(top = 4.dp).testTag("linkchip"))
+                    }
+                    HorizontalDivider(color = Look.Line)
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Amazon account", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
