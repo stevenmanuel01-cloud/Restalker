@@ -1,8 +1,8 @@
 {
- "version": "v153",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v153_update.zip",
- "sha256": "efce5903e9b508d3637e1197df0d955c83f498c6b2657dcf92ab3d212ccb3c97",
- "size": 801447,
- "notes": "v153: the offers-list detector (v152) no longer switches itself off for 6 hours after a short hiccup at Amazon - it rests 10 minutes, longer only while Amazon keeps refusing. New evidence in the diagnostics: how often a product page said 'buyable' while Amazon's offers list held no such offer (the page still showing an offer that is gone).",
+ "version": "v154",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v154_update.zip",
+ "sha256": "ad55852f54b7b2726a1df50aab374f386863b3958c3e5a635f958817f7011c8b",
+ "size": 804557,
+ "notes": "v154: (1) Amazon's purchase limit is recognised. When Amazon answers 'you've reached the purchase limit for this item' Restalker says so (one phone message), stops sending checkouts for that product for 6 hours instead of every minute, and keeps it set to Buy - nothing is locked; choosing Buy again ends the rest at once. (2) A turning circle with words shows while Restalker is working on something you asked for, e.g. preparing the diagnostics. (3) The yellow '--no-sandbox' line: it was Chrome's own note in the 'Hidden Chrome' buying browser only; that browser is now started with Chrome's sandbox on.",
  "files": 88
 }
