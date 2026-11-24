@@ -1367,17 +1367,17 @@ class ScreenTests {
             compose.onNodeWithTag("setup-fold", useUnmergedTree = true).performClick()
             compose.waitUntil(3_000) { compose.onAllNodesWithTag("setup-how", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             assertEquals(false, s.settings().setupFolded)
-            // one group of three products, none watched; one has a cap
-            s.add(prod("B0TEST4901", "Alpha Collector Booster Box", "2026", "Alpha", price = 100.0).copy(watch = false, cap = 120.0))
-            s.add(prod("B0TEST4902", "Alpha Bundle", "2026", "Alpha", price = 50.0).copy(watch = false, cap = 0.0))
-            s.add(prod("B0TEST4903", "Beta Bundle", "2026", "Beta", price = 50.0).copy(watch = false, cap = 0.0))
+            // one group of three products, none watched; one has a cap (a year no other test uses: a group an earlier test folded stays folded)
+            s.add(prod("B0TEST4901", "Alpha Collector Booster Box", "2031", "Alpha", price = 100.0).copy(watch = false, cap = 120.0))
+            s.add(prod("B0TEST4902", "Alpha Bundle", "2031", "Alpha", price = 50.0).copy(watch = false, cap = 0.0))
+            s.add(prod("B0TEST4903", "Beta Bundle", "2031", "Beta", price = 50.0).copy(watch = false, cap = 0.0))
             compose.waitForIdle()
-            toList(hasTestTag("all-2026-watch"))
-            compose.onNodeWithTag("all-2026-watch", useUnmergedTree = true).performClick()
+            toList(hasTestTag("all-2031-watch"))
+            compose.onNodeWithTag("all-2031-watch", useUnmergedTree = true).performClick()
             compose.waitUntil(3_000) { s.products().all { it.watch } }
             shot("t49_watch_all")
             // Buy all: the one with a cap is set at once, the caps of the other two are asked for
-            compose.onNodeWithTag("all-2026-buy", useUnmergedTree = true).performClick()
+            compose.onNodeWithTag("all-2031-buy", useUnmergedTree = true).performClick()
             compose.waitUntil(3_000) { s.product("idB0TEST4901")?.buy == true }
             compose.waitUntil(3_000) { compose.onAllNodesWithTag("allcap-B0TEST4902", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             assertEquals("no cap, no Buy", false, s.product("idB0TEST4902")?.buy)
@@ -1389,7 +1389,7 @@ class ScreenTests {
             assertEquals("left empty: stays on Watch only", false, s.product("idB0TEST4903")?.buy)
             assertEquals(0.0, s.product("idB0TEST4903")!!.cap, 0.001)
             // Watch all again (all are watched): it asks before it stops watching them
-            compose.onNodeWithTag("all-2026-watch", useUnmergedTree = true).performClick()
+            compose.onNodeWithTag("all-2031-watch", useUnmergedTree = true).performClick()
             compose.waitUntil(3_000) { compose.onAllNodesWithTag("all-unwatch-yes", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
             assertEquals("nothing changes before the answer", true, s.products().all { it.watch })
             compose.onNodeWithTag("all-unwatch-yes", useUnmergedTree = true).performClick()
