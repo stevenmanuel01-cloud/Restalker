@@ -210,6 +210,13 @@ test("the devices' own lines: channel names, marks, what a round may read, when 
   assert.equal(L.nextPoll(true, 0), 60); assert.equal(L.nextPoll(false, 0), 180); assert.equal(L.nextPoll(true, L.SYNC_BUDGET_DAY), 60);
   assert.equal(L.nextPoll(true, 2 * L.SYNC_BUDGET_DAY), 120); assert.equal(L.nextPoll(false, 2 * L.SYNC_BUDGET_DAY), 360);
   assert.equal(L.nextPoll(true, 1e9), L.SYNC_MAX); assert.equal(L.nextPoll(false, 1e9), L.SYNC_MAX);
+  // 2026-11-24: the load is counted from the devices heard (stored), not from a count in memory
+  assert.equal(L.syncDemand(0, 0), 0); assert.equal(L.syncDemand(1, 0), 1440); assert.equal(L.syncDemand(0, 3), 1440); assert.equal(L.syncDemand(-5, -5), 0);
+  assert.equal(L.nextPoll(true, L.syncDemand(41, 0)), 60);                      // 41 linked devices: 59,040 a day - inside the plan
+  assert.equal(L.nextPoll(true, L.syncDemand(84, 0)), 125);                     // 84 linked devices: twice the plan -> every 2 minutes
+  assert.equal(L.nextPoll(false, L.syncDemand(84, 0)), 365);
+  assert.ok(L.syncDemand(84, 0) / (L.nextPoll(true, L.syncDemand(84, 0)) / L.SYNC_BASE_LINKED) <= L.SYNC_BUDGET_DAY);   // slowed down, the day fits the plan again
+  assert.equal(L.nextPoll(true, L.syncDemand(5000, 5000)), L.SYNC_MAX);
   // the crowd's line: the devices' own message shape; one line per device, product, store and second
   const sg = { c: "aaaaaaaaaaaa", a: "B0HNTNV94J", s: "Amazon", t: 1795203760777, p: 323.88 };
   assert.deepEqual(JSON.parse(L.crowdMsg(sg)), { v: 1, c: "aaaaaaaaaaaa", k: "s", a: "B0HNTNV94J", s: "Amazon", st: "in", t: 1795203760.8, p: 323.88 });

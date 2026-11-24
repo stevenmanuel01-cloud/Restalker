@@ -243,8 +243,23 @@ export class Hub {
     }
     const wn = this.win; wn.n++;
     if (now - wn.t0 >= 10 * 60_000) { wn.perDay = Math.round(wn.n * 86400_000 / (now - wn.t0)); wn.t0 = now; wn.n = 0; }
-    out.next = L.nextPoll(linked, wn.perDay);
+    out.next = L.nextPoll(linked, Math.max(wn.perDay, this.demand(now)));
     return json(out);
+  }
+
+  /** Requests a day the devices heard in the last 20 minutes would make at the normal pace (read from storage at most once a minute). */
+  demand(now) {
+    const d = this.dem;
+    if (d && now - d.at < 60_000) return d.v;
+    let v = 0;
+    try {
+      const since = now - 20 * 60_000;
+      const linked = this.sql.exec("SELECT COUNT(*) AS n FROM seen WHERE at > ? AND hb IS NOT NULL AND g IS NOT NULL AND g != ''", since).one().n;
+      const all = this.sql.exec("SELECT COUNT(*) AS n FROM seen WHERE at > ? AND hb IS NOT NULL", since).one().n;
+      v = L.syncDemand(linked, all - linked);
+    } catch (e) { v = d ? d.v : 0; }
+    this.dem = { at: now, v };
+    return v;
   }
 
   rateHit(key, max) {
@@ -448,7 +463,7 @@ export class Hub {
       active: this.active(now),                      // (heard in the last 30 minutes: "active now")
       devices12h: one("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 12 * 3600_000),
       devicesAll: one("SELECT COUNT(*) AS n FROM seen"),
-      lines: one("SELECT COUNT(*) AS n FROM msgs"), syncPerDay: this.win.perDay,
+      lines: one("SELECT COUNT(*) AS n FROM msgs"), syncPerDay: Math.max(this.win.perDay, this.demand(now)), syncNext: L.nextPoll(true, Math.max(this.win.perDay, this.demand(now))),
       // (2026-11-21: counted from what is stored - "syncPerDay" lives in memory and is 0 again whenever the relay has slept)
       linkLines: one("SELECT COUNT(*) AS n FROM msgs WHERE ch LIKE 'rkl-%'"),          // sealed posts of linked devices held right now
       linked1h: one("SELECT COUNT(*) AS n FROM seen WHERE g IS NOT NULL AND g != '' AND at > ?", now - 3600_000),   // linked devices heard in the last hour

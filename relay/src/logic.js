@@ -338,6 +338,11 @@ export const line = row => ({ id: String(row.id), time: Math.round(row.at / 100)
 /** When to ask again (seconds): a linked device every minute, one that only reads the crowd every 3 - stretched for everyone alike
  *  when the day's requests would pass what the free plan carries (never refused, never more than 15 minutes). */
 export const SYNC_BASE_LINKED = 60, SYNC_BASE_CROWD = 180, SYNC_BUDGET_DAY = 60_000, SYNC_MAX = 900;
+/** 2026-11-24 (the owner's list, item 6): what the devices heard lately would ask for in a day at the normal pace. Counted from what
+ *  is STORED (the "seen" list), because the count kept in memory is 0 again each time the relay has slept - the slow-down below never
+ *  came on. It does not move when the devices are slowed down, so the slow-down does not swing back and forth. */
+export const syncDemand = (linkedDevices, crowdDevices) =>
+  Math.round(Math.max(0, linkedDevices) * 86400 / SYNC_BASE_LINKED + Math.max(0, crowdDevices) * 86400 / SYNC_BASE_CROWD);
 export function nextPoll(linked, perDay) {
   const base = linked ? SYNC_BASE_LINKED : SYNC_BASE_CROWD;
   const f = perDay > SYNC_BUDGET_DAY ? perDay / SYNC_BUDGET_DAY : 1;

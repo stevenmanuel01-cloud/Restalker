@@ -1,8 +1,8 @@
 {
- "version": "v149",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v149_update.zip",
- "sha256": "c42ec2f290dcd1991a58372271cb800d5c32031339911c2275ba9d7adb9786c4",
- "size": 777333,
- "notes": "Fixed: 'Buy again' / re-arm was refused on the PC for every product you added by link once it had been bought (\"Custom ASIN metadata must be verified before Buy Again\") - the Nauctis Secret Lair Bundle, for one. The product is now checked against its Amazon page when it is added, and one added before this version is checked on the spot when you press Buy again. The safety check itself stays: if Amazon's page names another product, Buy again is still refused, with the reason.",
+ "version": "v150",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v150_update.zip",
+ "sha256": "ee9fb2d631308bd57eeae792f51462220d8a8a5436abc2306205829b50bd25d2",
+ "size": 780012,
+ "notes": "Restocks are watched closely: for 3 minutes after a tracker's alert or an in-stock reading, the buying browser looks at the listing itself every 4 seconds (the other buying browsers every 10) and checks out the moment it can be bought at or under your cap. Until now it was told of the same listing at most once in 15 seconds, and only after a reader had seen it come back. The checkout itself, your caps and one order per product are unchanged. The diagnostics now list what every close watch saw. Failure messages no longer say 'MANUAL RE-ARM REQUIRED' next to 'it is tried again at once'.",
  "files": 84
 }
