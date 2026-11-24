@@ -1,4 +1,5 @@
 'use strict';
+try{globalThis.__rkT?.('engine')}catch{}
 const L=globalThis.AmazonBuyerLogic;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const perfNow=()=>globalThis.performance?.now?.()??Date.now();
@@ -409,6 +410,36 @@ function checkoutInterstitial(){
  if(buttons.some(t=>/^(choose delivery option|select delivery option)$/i.test(t)))return 'Amazon requires delivery confirmation';
  return null;
 }
+// v155 (owner, 2026-11-24: "it is important to distinguish between sellers ... if it is a different seller, then the limit should not
+// apply and checkout should continue"): WHO sells the offer in the buy box. Amazon's own number for the seller (in the buy box's form)
+// is the key; the name is for you. Amazon's purchase limit is kept per seller: only the seller Amazon refused rests.
+function buyBoxSeller(){
+ let id='';
+ for(const sel of ['#merchantID','input[name="merchantID"]','input[name="merchantId"]']){const e=document.querySelector(sel),v=String(e?.value||e?.getAttribute?.('value')||'').trim().toUpperCase();if(/^[A-Z0-9]{8,16}$/.test(v)){id=v;break}}
+ let name='';
+ for(const sel of ['#sellerProfileTriggerId','#merchantInfoFeature_feature_div .offer-display-feature-text-message','#tabular-buybox [tabular-attribute-name="Sold by"] .tabular-buybox-text-message','#tabular-buybox-truncate-1','#merchant-info a','#merchant-info']){const e=document.querySelector(sel);if(!e)continue;let t=canon(e.textContent||'').replace(/^(?:ships from and )?sold by\s*:?\s*/i,'').replace(/\s+and fulfilled by.*$/i,'').replace(/\.\s*$/,'').trim();if(t){name=t.slice(0,60);break}}
+ if(!id&&/^amazon(?:\.com)?(?: services llc)?$/i.test(name))id='ATVPDKIKX0DER';
+ return {id,name,key:id||(name?'n:'+name.toLowerCase():'')};
+}
+// -> null (buy), or {key,name} when the seller in the buy box is one Amazon's purchase limit was reached for. A seller that cannot be
+// read is never taken for the limited one (it is tried; Amazon's answer then tells).
+function sellerLimited(p){
+ const m=p?.limitSellers;if(!m||typeof m!=='object')return null;
+ const now=Date.now(),act=Object.entries(m).filter(([,v])=>Number(v?.until)>now);if(!act.length)return null;
+ const all=act.find(([k])=>k==='*');if(all)return {key:'*',name:''};
+ const s=buyBoxSeller();if(!s.key)return null;
+ const nm=s.name?s.name.toLowerCase():'';
+ const hit=act.find(([k,v])=>k===s.key||(nm&&(k==='n:'+nm||(!s.id||!/^[A-Z0-9]{8,16}$/.test(k))&&String(v?.name||'').toLowerCase()===nm)));
+ return hit?{key:hit[0],name:s.name||String(hit[1]?.name||'')}:null;
+}
+// v155: while the page is still arriving, is the buy box COMPLETE - has the browser read past the end of the form the button is in?
+// (Something after the form, or after one of the boxes around it, is in the page.) A page that is read to its end is always complete.
+function rkBoxClosed(control){
+ if(document.readyState!=='loading')return true;
+ let n=control?.form||control?.closest?.('form')||control;if(!n)return false;
+ for(let i=0;n&&n!==document.body&&n!==document.documentElement&&i<40;i++,n=n.parentNode)if(n.nextElementSibling)return true;
+ return false;
+}
 function sellerText(root=document){
  const sels=['#merchant-info','#tabular-buybox-truncate-1','#tabular-buybox-truncate-0','[data-csa-c-slot-id*="merchant" i]','[data-testid*="seller" i]'];
  for(const sel of sels){const e=root.querySelector?.(sel);if(e&&shown(e)){const t=canon(txt(e));if(t)return t}}
@@ -550,6 +581,7 @@ const UNAVAIL_RX=/you cannot buy this item because it(?:'s|’s| is) out of stoc
 function explicitCheckoutUnavailable(){const t=canon(body()).toLowerCase();return UNAVAIL_RX.test(t)}
 // v94 (review): on a checkout page the words count only for THIS product - its own box, or the page when no OTHER product's box is on it
 // (Amazon's "make updates to your items" step lists every item of the order with its own message)
+function purchaseLimitAtCheckout(){try{return /reached the purchase limit|purchase limit for this item/i.test(document.body?.innerText||'')}catch{return false}}
 function productUnavailableAtCheckout(p){
  if(!checkoutPath())return explicitCheckoutUnavailable();
  const asin=String(p.asin||'').toUpperCase();
@@ -615,6 +647,10 @@ async function check(p){const ctx=arguments[1]||{};
  // A real target buy box can expose preorder availability before its actionable input is discoverable.
  // Treat that as an eligible hit and resolve the control only after exclusive transaction ownership is acquired.
  const detectedAt=Date.now();const recognitionMs=Number.isFinite(Number(ctx.triggerPerf))?Math.max(0,perfNow()-Number(ctx.triggerPerf)):null;
+ // v155: the seller in the buy box is the one Amazon's purchase limit was reached for -> not bought from this seller (nothing is
+ // pressed, no checkout is opened); another seller's offer at or under the cap is bought as always
+ const limGate=()=>{const lim=sellerLimited(p);return lim?send('STATUS',p.id,{status:'WAITING — seller limit: Amazon\'s limit applies to '+(lim.name||'this listing\'s seller')+'; an offer of another seller is bought',price:v,limitSeller:lim.key,limitSellerName:lim.name}):null};
+ if((purchaseControl||preEvidence)&&(v===null||v<=p.cap+.001)){const g0=limGate();if(g0)return g0}
  if(v!==null&&v<=p.cap+.001&&(purchaseControl||preEvidence)){
    if(purchaseControl)pendingEligible={id:p.id,control:purchaseControl.control,kind:purchaseControl.kind,price:v,detectedAt};
    const r=await send('STATUS',p.id,{status:purchaseControl?'ELIGIBLE':'ELIGIBLE_CONTROL_PENDING',price:v,detectedAt,recognitionMs,trigger:ctx.trigger||'scheduled',parseMs:Math.max(0,parseDonePerf-parseStartPerf)});
@@ -630,6 +666,7 @@ async function check(p){const ctx=arguments[1]||{};
  // One short mutation-assisted retry covers late buy-box hydration without delaying a genuinely eligible hit by seconds.
  await waitDom(60);purchaseControl=purchaseEntry();preEvidence=preorderEvidence();if(v===null)v=productPrice(p);
  if(v!==null&&v>p.cap+.001)return send('STATUS',p.id,{status:`OVER CAP — $${v.toFixed(2)}`,price:v});
+ if((purchaseControl||preEvidence)&&(v===null||v<=p.cap+.001)){const g1=limGate();if(g1)return g1}
  if(v!==null&&v<=p.cap+.001&&(purchaseControl||preEvidence)){
    const hit=Date.now(),recognitionMs2=Number.isFinite(Number(ctx.triggerPerf))?Math.max(0,perfNow()-Number(ctx.triggerPerf)):null;if(purchaseControl)pendingEligible={id:p.id,control:purchaseControl.control,kind:purchaseControl.kind,price:v,detectedAt:hit};const r=await send('STATUS',p.id,{status:purchaseControl?'ELIGIBLE':'ELIGIBLE_CONTROL_PENDING',price:v,detectedAt:hit,recognitionMs:recognitionMs2,trigger:ctx.trigger||'scheduled'});
    if(r?.beginPurchase)queueMicrotask(()=>void begin(p,v,r.hitDetectedAt||hit,r.eventPushedAt||hit).catch(e=>send('FLOW_BLOCKED',p.id,{reason:'Purchase runtime error: '+String(e?.message||e)})));return r;
@@ -659,9 +696,12 @@ async function begin(p,lp,hitDetectedAt,eventPushedAt=null){
  if(fresh!==null&&!L.priceAtOrBelowCap(fresh,p.cap))return send('FLOW_BLOCKED',p.id,{reason:'Live one-time purchase price is above cap'});
  if(fresh===null&&entryKind!=='preorder')return send('FLOW_BLOCKED',p.id,{reason:'Live one-time purchase price could not be revalidated under cap'});
  if(Number.isFinite(lp)&&fresh!==null&&!L.priceMatches(fresh,Number(lp),.02))return send('FLOW_BLOCKED',p.id,{reason:'Listing price changed before purchase'});
- const f={id:p.id,lp:fresh,cap:p.cap,asin:p.asin,name:p.name,tokens:Array.isArray(p.tokens)?p.tokens.slice(0,16):[],forbid:Array.isArray(p.forbid)?p.forbid.slice(0,16):[],customProduct:!!p.customProduct,step:'adding',mode:entryKind==='preorder'?'preorder':entryKind==='buy_now'?'buy_now':'fast_cart',priceDeferred:fresh===null,started:Number.isFinite(Number(hitDetectedAt))?Number(hitDetectedAt):Date.now(),addStarted:Date.now(),cartBefore:cartCount(),purchaseClickAt:Date.now(),perf:{eligibleHitAt:Number.isFinite(Number(hitDetectedAt))?Number(hitDetectedAt):Date.now(),eventPushedAt:Number.isFinite(Number(eventPushedAt))&&Number(eventPushedAt)>0?Number(eventPushedAt):null,controlClickAt:Date.now()}};
+ {const lim=sellerLimited(p);if(lim)return send('FLOW_BLOCKED',p.id,{reason:'Not bought - seller limit: Amazon\'s limit applies to '+(lim.name||'this seller'),sellerGate:true})}
+ try{globalThis.__rkT?.(document.readyState==='loading'?'beginEarly':'begin')}catch{}
+ const f={id:p.id,seller:buyBoxSeller(),preDom:document.readyState==='loading',lp:fresh,cap:p.cap,asin:p.asin,name:p.name,tokens:Array.isArray(p.tokens)?p.tokens.slice(0,16):[],forbid:Array.isArray(p.forbid)?p.forbid.slice(0,16):[],customProduct:!!p.customProduct,step:'adding',mode:entryKind==='preorder'?'preorder':entryKind==='buy_now'?'buy_now':'fast_cart',priceDeferred:fresh===null,started:Number.isFinite(Number(hitDetectedAt))?Number(hitDetectedAt):Date.now(),addStarted:Date.now(),cartBefore:cartCount(),purchaseClickAt:Date.now(),perf:{eligibleHitAt:Number.isFinite(Number(hitDetectedAt))?Number(hitDetectedAt):Date.now(),eventPushedAt:Number.isFinite(Number(eventPushedAt))&&Number(eventPushedAt)>0?Number(eventPushedAt):null,controlClickAt:Date.now()}};
  if(!await saveFlow(f))return send('FLOW_BLOCKED',p.id,{reason:'Purchase state could not be persisted'});
  try{purchaseButton.click()}catch{await clearFlow();return send('FLOW_BLOCKED',p.id,{reason:'Purchase control click failed'})}
+ if(f.preDom)void send('RK_PRE_DOM',p.id,{start:true,t:f.addStarted});      // v155: started while the page was still arriving - its arrival at Amazon's next page is watched
 
  // Amazon often adds successfully without navigating or exposing the same confirmation markup.
  // Do not make navigation/DOM acknowledgement a terminal gate; resume owns the transition.
@@ -669,6 +709,7 @@ async function begin(p,lp,hitDetectedAt,eventPushedAt=null){
 }
 async function resume(){
  const f=await loadFlow();if(!f)return;
+ if(f.preDom&&!f.preDomOk&&(/^\/(?:checkout\/|gp\/buy\/|buy\/|gp\/checkoutportal\/|ap\/)/i.test(location.pathname)||(!f.selfCart&&/^\/(?:gp\/)?cart(?:\/|$)/i.test(location.pathname)))){/* v155: the press arrived at a page AMAZON sent it to - its checkout, its sign-in, or its cart (not the cart the engine opens itself when a press led nowhere) */f.preDomOk=true;void saveFlow(f);void send('RK_PRE_DOM',f.id,{ok:true,t:f.addStarted})}
  if(Date.now()-(f.started||0)>10*60*1000){await clearFlow();return send('FLOW_BLOCKED',f.id,{reason:'Purchase flow expired'})}
  const base=globalThis.AMAZON_CATALOG.find(x=>x.id===f.id);const p=base?{...base,cap:Number(f.cap),asin:f.asin||base.asin,name:f.name||base.name,tokens:Array.isArray(f.tokens)&&f.tokens.length?f.tokens:base.tokens,forbid:Array.isArray(f.forbid)?f.forbid:base.forbid,customProduct:!!(f.customProduct||base.customProduct)}:(f.customProduct?{id:f.id,set:'Custom ASIN',name:f.name,asin:f.asin,url:'https://www.amazon.com/dp/'+f.asin,tokens:f.tokens||[],forbid:f.forbid||[],cap:Number(f.cap),customProduct:true}:null);if(!p){await clearFlow();return}
  if(L.challenge(body()))return send('ACTION_REQUIRED',p.id,{reason:'Amazon verification challenge during checkout'});
@@ -714,7 +755,7 @@ async function resume(){
      }
 
      if(raised||ack){
-       f.perf={...(f.perf||{}),cartAckAt:Date.now()};f.step='cart';
+       f.perf={...(f.perf||{}),cartAckAt:Date.now()};f.step='cart';f.selfCart=true;
        if(!await saveFlow(f))return send('FLOW_BLOCKED',p.id,{reason:'Cart transition state could not be persisted'});
        location.href='https://www.amazon.com/gp/cart/view.html';return;
      }
@@ -725,7 +766,7 @@ async function resume(){
    // Normal Add-to-Cart may succeed without acknowledgement, so the cart probe remains valid there.
    // A preorder can use a retailer-specific transition; never destroy an unknown transaction-owned preorder page.
    if(f.mode==='preorder')return send('ACTION_REQUIRED',p.id,{reason:'Unrecognized preorder transition preserved for inspection'});
-   f.step='cart';
+   f.step='cart';f.selfCart=true;   // (v155: the engine goes to the cart itself here - that is no arrival of the press)
    if(!await saveFlow(f))return send('FLOW_BLOCKED',p.id,{reason:'Cart probe state could not be persisted'});
    location.href='https://www.amazon.com/gp/cart/view.html';return;
  }
@@ -790,6 +831,13 @@ async function resume(){
      // started from the cart - that page is the cart until it opens the checkout)
      if(!f.perf?.checkoutClickAt&&/\/(?:gp\/)?cart(?:\/|$)/i.test(location.pathname)&&Date.now()-stepT0>1500&&!exactCart(p))
        return send('FLOW_BLOCKED',p.id,{reason:'Amazon left the checkout and the product is not in the cart - sold out under us'});
+    }
+    // v154: Amazon's own sentence ("Sorry, you've reached the purchase limit for this item") is passed on as it is - until v153 it was
+    // reported as "unavailable / out of stock" and tried again every few seconds, which can never work
+    if(purchaseLimitAtCheckout()){
+      // v155: for WHICH seller - the one whose offer was in the buy box when Buy Now was pressed (kept with the purchase state)
+      const sl=f?.seller&&f.seller.key?f.seller:{id:'',name:'',key:''};
+      return send('FLOW_BLOCKED',p.id,{reason:'Amazon says you have reached its purchase limit for this item'+(sl.name?' (seller: '+sl.name+')':sl.id?' (seller '+sl.id+')':''),limitSeller:sl.key||'*',limitSellerName:sl.name||''});
     }
     if(productUnavailableAtCheckout(p))return send('FLOW_BLOCKED',p.id,{reason:'Amazon checkout says the product is unavailable / out of stock'});
     const iterStart=perfNow();const identity=checkoutIdentity(p,f.cp);const identityAt=perfNow();
@@ -904,17 +952,33 @@ chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m&&m.type==='RK_FETCH')return
  const base=globalThis.AMAZON_CATALOG.find(x=>x.id===m.product?.id);if(!base&&!m.product?.customProduct)return r({ok:false});const p={...(base||{}),...(m.product||{})};
  if(m.type==='EXTRACT_CUSTOM_META')return r(customMetadata(p));
  if(m.type==='REVALIDATE_QUEUED'){
+   // v155: asked many times a second while the page is arriving - until a buy button is in the page the answer costs nothing
+   // (two lookups by name; the page's text is not read, so the page is not slowed down while it loads)
+   if(document.readyState==='loading'&&!document.getElementById('buy-now-button')&&!document.getElementById('add-to-cart-button')&&!document.querySelector('input[name="submit.buy-now"],input[name="submit.add-to-cart"]'))return r({ok:true,eligible:false,ready:'loading',box:false,reason:'the page is still arriving'});
    if(L.challenge(body())||L.throttled?.(body()))return r({ok:true,eligible:false,reason:'Amazon challenge/throttle'});
    if(!pageHasProduct(p))return r({ok:true,eligible:false,reason:'product identity changed'});
    {const why=rkShapeProblem(p,productPageTitle());if(why)return r({ok:true,eligible:false,reason:'not the product of the table row: '+why});}
    const price=productPrice(p),entry=purchaseEntry(),pre=preorderEvidence();
    if(Number.isFinite(price)&&price>Number(p.cap)+.001)return r({ok:true,eligible:false,price,reason:'price above cap'});
    const eligible=(Number.isFinite(price)&&price<=Number(p.cap)+.001&&(!!entry||!!pre))||(price===null&&(entry?.kind==='preorder'||!!pre));
-   return r({ok:true,eligible,price:Number.isFinite(price)?price:null,reason:eligible?null:'purchase control no longer available'});
+   const ready=document.readyState,box=rkBoxClosed(entry?.control);
+   // v155: an answer given while the page is still arriving counts only once the buy box is complete (see rkBoxClosed)
+   if(eligible&&!box)return r({ok:true,eligible:false,ready,box:false,price:Number.isFinite(price)?price:null,reason:'the buy box is still arriving'});
+   if(eligible){const lim=sellerLimited(p);if(lim)return r({ok:true,eligible:false,limited:true,limitSeller:lim.key,limitSellerName:lim.name,ready,box,price:Number.isFinite(price)?price:null,reason:'purchase limit for this seller'+(lim.name?' ('+lim.name+')':'')})}
+   return r({ok:true,eligible,ready,box,early:eligible&&ready==='loading',price:Number.isFinite(price)?price:null,reason:eligible?null:'purchase control no longer available'});
  }
  if(m.type==='CHECK_PRODUCT'){watchedProduct={...p};return r((await check(p))||{ok:false})}
  if(m.type==='DISCOVER_PRODUCT'){watchedProduct=null;return r((await discover(p))||{ok:false})}
  if(m.type==='BEGIN_PURCHASE'){{const why=rkShapeProblem(p,productPageTitle());if(why){send('FLOW_BLOCKED',p.id,{reason:'Not bought - this page is not the product of your table row: '+why});return r({ok:false,reason:why})}}void begin(p,m.listingPrice,m.hitDetectedAt).catch(e=>send('FLOW_BLOCKED',p.id,{reason:'Purchase runtime error: '+String(e?.message||e)}));return r({ok:true,started:true})}
  r({ok:false});
  })().catch(e=>{try{r({ok:false,error:'content handler error: '+String(e?.message||e)})}catch{}});return true});
-setTimeout(()=>void resumeSafe(),0);
+// v155: this page part is in the page from its first moment now (so that "buyable" can be answered as soon as the buy box is read).
+// A checkout that is under way goes on exactly when it did before: when the page has been read and is idle (the browser's own
+// "idle" moment: after the page is read, at its first idle moment or 200 ms later, or when it is fully loaded - whichever is first).
+(()=>{let went=false;const go=()=>{if(went)return;went=true;setTimeout(()=>void resumeSafe(),0)};
+ if(typeof __RK_IN_PART__!=='undefined')return go();      // (the other buying browsers: from the first moment, as they always did)
+ const afterDom=()=>{try{if(typeof requestIdleCallback==='function')requestIdleCallback(go,{timeout:200});else setTimeout(go,200)}catch{setTimeout(go,200)}};
+ if(document.readyState==='complete')return go();
+ if(document.readyState==='interactive')afterDom();else document.addEventListener('DOMContentLoaded',afterDom,{once:true});
+ window.addEventListener('load',go,{once:true});
+})();

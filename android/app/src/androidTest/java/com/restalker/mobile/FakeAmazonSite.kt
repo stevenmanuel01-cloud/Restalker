@@ -19,6 +19,7 @@ class FakeAmazonSite {
     @Volatile var shipping = 0.0                       // shipping cost at the checkout
     @Volatile var phoneLayout = false                  // 1.7: Amazon's phone page (picture in data-a-hires, grey pixel src, logo og:image)
     @Volatile var soldOutAtCheckout = false            // "no longer available" at the checkout
+    @Volatile var limitAtCheckout = false              // 1.1.5: Amazon's "purchase limit" sentence at the checkout
     @Volatile var extraItem = false                    // another item is in the order
     @Volatile var signinAtCheckout = false             // Amazon asks to sign in after Buy Now
     @Volatile var noOrderNumber = false                // the thank-you page shows no order number (the order IS placed)
@@ -50,7 +51,8 @@ class FakeAmazonSite {
         val item = "<div class=\"order-item\" data-asin=\"$asin\"><a href=\"/dp/$asin\">${esc(it.title)}</a><span class=\"a-price\"><span class=\"a-offscreen\">\$${m(p)}</span></span>" +
             "<span class=\"a-dropdown-prompt\">1</span><div>Sold by: Amazon.com</div></div>" +
             (if (extraItem) "<div class=\"order-item\" data-asin=\"B0OTHER001\"><a href=\"/dp/B0OTHER001\">Pokemon Scarlet and Violet Elite Trainer Box</a><span class=\"a-price\"><span class=\"a-offscreen\">\$49.99</span></span><span class=\"a-dropdown-prompt\">1</span></div>" else "") +
-            (if (soldOutAtCheckout) "<div class=\"a-alert-content\">This item is no longer available from the seller.</div>" else "")
+            (if (soldOutAtCheckout) "<div class=\"a-alert-content\">This item is no longer available from the seller.</div>" else "") +
+            (if (limitAtCheckout) "<div class=\"a-alert-content\">There was a problem with some of the items in your order (see below for more information): Sorry, you\u2019ve reached the purchase limit for this item. Please remove the item to continue.</div>" else "")
         val order = "<div id=\"checkout-container\">$item<div id=\"subtotals-marketplace-table\"><table><tr><td>Items:</td><td>\$${m(p)}</td></tr>" +
             "<tr><td>Shipping &amp; handling:</td><td>\$${m(ship)}</td></tr><tr><td>Estimated tax to be collected:</td><td>\$${m(p * 0.0775)}</td></tr>" +
             "<tr><td>Order total:</td><td>\$${m(p * 1.0775 + ship + (if (extraItem) 49.99 else 0.0))}</td></tr></table></div><span id=\"submitOrderButtonId\"><input type=\"submit\" name=\"placeYourOrder1\" " +
