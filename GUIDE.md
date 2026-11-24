@@ -153,6 +153,12 @@ Started with the phone first? In the app, **Settings** > **Linked devices** > **
 
 With both on one phone, ntfy shows the PC's messages and the app does not repeat them.
 
+**Which phones:** the app needs Android 8 or newer (2017 and later). On an older phone (Android 5-7) use the free ntfy app instead (the second way above). A phone that cannot scan a QR code: open the download link on it - text or email the link to that phone - and in the app use **Type the code** to link.
+
+**In the app (1.1.3):** every group on the Watch tab has **Watch all** and **Buy all** (Buy asks for the most you'll pay where no cap is set). **Getting started** folds with a tap; every step is optional - skip the Amazon sign-in to get alerts only. After an update the app opens again by itself where Android allows it (**Settings** > **Updates**).
+
+**Amazon restocks are seen in Amazon's "All buying options" list first** (PC v152): Amazon's own offer shows there before the main page does. An alert from that list opens the page with the list - add Amazon's offer to the cart there.
+
 **Keeping the app's data (a new phone, or moving to the app from Google Play):** in the app, **Settings** > **Help and about** > **Save my data** writes your products, caps, settings, purchases and Activity into one file you keep. **Load my data** puts it back; the app restarts with watching off. The app from Google Play and the one from the download page cannot be installed over each other, so: Save my data, remove the app, install the other one, Load my data, sign in to Amazon again. Keep the file to yourself - it holds your device link. A file from another kind of phone loads everything but the link; link that phone again.
 
 ## Words used
