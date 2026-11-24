@@ -1849,7 +1849,93 @@ object CoreTests {
             val again = ev(re)
             println("    206: $before | $after | $again")
             before == listOf("In stock \$455.88 → checkout") && after == before && again == listOf("In stock \$350.00 → checkout", "In stock \$455.88 → checkout") }
+        // ---- 1.1.2: the held-open connection's client (Ws.kt) against a stand-in server on this machine
+        t("207_ws_connects_reads_pushed_lines_and_sends") {
+            val srv = WsStandIn(); srv.start()
+            val w = Ws("ws://127.0.0.1:${srv.port}/v1/ws?c=0123456789ab", 5_000)
+            val hello = w.recv(3_000)
+            val big = "x".repeat(70_000)
+            srv.push("{\"t\":\"m\",\"ch\":\"crowd\",\"id\":\"7\"}"); srv.push(big); srv.pushSplit("über ", "zwei Teile")
+            val a = w.recv(3_000); val b = w.recv(3_000); val c = w.recv(3_000)
+            w.send("hello relay ✓"); w.send("y".repeat(300)); w.send("z".repeat(70_000))
+            val got = (1..3).map { srv.taken.poll(3, java.util.concurrent.TimeUnit.SECONDS) }
+            val quiet = w.recv(300)
+            val t0 = System.currentTimeMillis(); w.ping(); w.recv(400); val ponged = w.lastRx >= t0
+            srv.pingClient(); w.recv(400); val answered = srv.pongs.poll(2, java.util.concurrent.TimeUnit.SECONDS) != null
+            w.close(); srv.stop()
+            println("    207: hello=$hello a=$a b=${b?.length} c=$c sent=${got.map { it?.length }} quiet=$quiet ponged=$ponged answered=$answered path=${srv.path}")
+            hello == "{\"t\":\"hello\"}" && a == "{\"t\":\"m\",\"ch\":\"crowd\",\"id\":\"7\"}" && b == big && c == "über zwei Teile" &&
+                got[0] == "hello relay ✓" && got[1]?.length == 300 && got[2]?.length == 70_000 && quiet == null && ponged && answered && srv.path == "/v1/ws?c=0123456789ab" }
+        t("208_ws_a_refused_or_ended_connection_is_said_plainly") {
+            val srv = WsStandIn(refuse = true); srv.start()
+            val refused = try { Ws("ws://127.0.0.1:${srv.port}/v1/ws?c=bad", 3_000); "opened" } catch (e: Ws.Closed) { e.message ?: "" }
+            srv.stop()
+            val srv2 = WsStandIn(); srv2.start()
+            val w = Ws("ws://127.0.0.1:${srv2.port}/x", 3_000); w.recv(2_000)
+            srv2.closeClient(4000, "a newer connection of this device")
+            val closed = try { w.recv(2_000); "still open" } catch (e: Ws.Closed) { e.message ?: "" }
+            val after = try { w.send("x"); "sent" } catch (e: Exception) { "refused" }
+            srv2.stop()
+            val nobody = try { Ws("ws://127.0.0.1:1/x", 1_500); "opened" } catch (e: Ws.Closed) { "closed" }
+            val wrongKey = WsStandIn(badAccept = true).let { s3 -> s3.start(); val r = try { Ws("ws://127.0.0.1:${s3.port}/x", 3_000); "opened" } catch (e: Ws.Closed) { e.message ?: "" }; s3.stop(); r }
+            println("    208: refused=$refused | closed=$closed | after=$after | nobody=$nobody | wrongKey=$wrongKey")
+            refused.startsWith("refused: HTTP/1.1 400") && closed.contains("4000") && closed.contains("a newer connection") && after == "refused" && nobody == "closed" && wrongKey.contains("wrong accept key") }
+        t("209_ws_base64_is_right") {
+            fun ok(sx: String) = Ws.b64(sx.toByteArray()) == java.util.Base64.getEncoder().encodeToString(sx.toByteArray())
+            listOf("", "a", "ab", "abc", "abcd", "the sample nonce", "ünïcödé ✓ \u0000\u00ff").all { ok(it) } &&
+                Ws.b64(ByteArray(256) { it.toByte() }) == java.util.Base64.getEncoder().encodeToString(ByteArray(256) { it.toByte() }) }
         return results
+    }
+
+    /** A tiny WebSocket server on this machine for the Ws tests (handshake, text / ping / close frames, split messages). */
+    class WsStandIn(private val refuse: Boolean = false, private val badAccept: Boolean = false) {
+        private val server = java.net.ServerSocket(0, 5, java.net.InetAddress.getByName("127.0.0.1"))
+        val port: Int get() = server.localPort
+        val taken = java.util.concurrent.LinkedBlockingQueue<String>()
+        val pongs = java.util.concurrent.LinkedBlockingQueue<Int>()
+        @Volatile var path = ""
+        @Volatile private var out: java.io.OutputStream? = null
+        @Volatile private var sock: java.net.Socket? = null
+        private val ready = java.util.concurrent.CountDownLatch(1)
+        fun start() { Thread({ try { serve() } catch (e: Exception) { } }, "ws-stand-in").also { it.isDaemon = true }.start() }
+        fun stop() { try { sock?.close() } catch (e: Exception) { }; try { server.close() } catch (e: Exception) { } }
+        private fun frame(op: Int, data: ByteArray, fin: Boolean = true) {
+            ready.await(3, java.util.concurrent.TimeUnit.SECONDS)
+            val o = java.io.ByteArrayOutputStream(); o.write((if (fin) 0x80 else 0) or op)
+            val n = data.size
+            when { n < 126 -> o.write(n); n < 65_536 -> { o.write(126); o.write(n ushr 8); o.write(n and 0xFF) }
+                   else -> { o.write(127); for (i in 7 downTo 0) o.write(((n.toLong() ushr (8 * i)) and 0xFF).toInt()) } }
+            o.write(data)
+            synchronized(this) { out!!.write(o.toByteArray()); out!!.flush() }
+        }
+        fun push(text: String) = frame(0x1, text.toByteArray(Charsets.UTF_8))
+        fun pushSplit(a: String, b: String) { frame(0x1, a.toByteArray(Charsets.UTF_8), fin = false); frame(0x0, b.toByteArray(Charsets.UTF_8)) }
+        fun pingClient() = frame(0x9, "p".toByteArray())
+        fun closeClient(code: Int, why: String) = frame(0x8, byteArrayOf((code ushr 8).toByte(), (code and 0xFF).toByte()) + why.toByteArray())
+        private fun serve() {
+            val s = server.accept(); sock = s
+            val ins = s.getInputStream(); val o = s.getOutputStream()
+            val head = StringBuilder()
+            while (!head.endsWith("\r\n\r\n")) { val b = ins.read(); if (b < 0) return; head.append(b.toChar()) }
+            path = head.toString().substringBefore("\r\n").split(" ").getOrElse(1) { "" }
+            if (refuse) { o.write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray()); o.flush(); s.close(); return }
+            val key = Regex("(?im)^sec-websocket-key:\\s*(\\S+)").find(head)!!.groupValues[1]
+            val acc = java.util.Base64.getEncoder().encodeToString(java.security.MessageDigest.getInstance("SHA-1").digest(((if (badAccept) "x" else "") + key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()))
+            o.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: $acc\r\n\r\n".toByteArray()); o.flush()
+            out = o; ready.countDown()
+            push("{\"t\":\"hello\"}")
+            val d = java.io.DataInputStream(ins)
+            while (true) {
+                val b0 = d.read(); if (b0 < 0) return
+                val b1 = d.readUnsignedByte()
+                var n = (b1 and 0x7F).toLong()
+                if (n == 126L) n = d.readUnsignedShort().toLong() else if (n == 127L) n = d.readLong()
+                val mask = ByteArray(4); if (b1 and 0x80 != 0) d.readFully(mask) else return        // (a client must mask what it sends)
+                val data = ByteArray(n.toInt()); d.readFully(data)
+                for (i in data.indices) data[i] = (data[i].toInt() xor mask[i and 3].toInt()).toByte()
+                when (b0 and 0x0F) { 0x1 -> taken.offer(String(data, Charsets.UTF_8)); 0x9 -> frame(0xA, data); 0xA -> pongs.offer(data.size); 0x8 -> return }
+            }
+        }
     }
 
     @JvmStatic fun main(args: Array<String>) {

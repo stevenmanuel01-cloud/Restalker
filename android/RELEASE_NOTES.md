@@ -1,3 +1,12 @@
+# Restalker Mobile 1.1.2 (2026-11-24; "send messages back to them in near zero latency")
+- Faster: while it watches, the app keeps one connection to the Restalker relay open. A restock another Restalker spots, and what your
+  linked PC or devices say, now arrive the moment they are sent (measured: under a tenth of a second on the relay's side). Until
+  1.1.1 the app asked once a minute.
+- Lighter: the open connection replaces the once-a-minute asking - less data and battery, and the relay can serve thousands of
+  devices on its free plan.
+- Nothing to set up. If the connection drops, the app opens it again by itself and asks the old way meanwhile, so nothing is missed.
+- "Active" (the number of Restalkers watching) now updates by itself whenever it changes.
+
 # Restalker Mobile 1.1.1 (2026-11-23; "i want to be able to save and reload all my data when i download the new app from the play store")
 - New: Settings > Help and about > Your data.
   - **Save my data** writes one file (you choose where - Downloads is fine): your products with their caps and switches, your

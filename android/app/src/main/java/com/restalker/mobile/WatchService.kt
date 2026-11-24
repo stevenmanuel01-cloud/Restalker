@@ -68,6 +68,7 @@ class WatchService : Service() {
                 GoListener.check()                          // 2.2: the fast channel with the PC (Who buys: phone / both)
                 Updater.tick(this@WatchService)            // 1.7: the app updates itself (checks every 3 hours)
                 CrowdNet.tick()                             // 2.6: the Restalker crowd (read every 2 minutes while watching)
+                Relay.wsCheck()                             // 1.1.2: the relay's held-open connection (lines are pushed, not asked for)
                 Relay.heartbeat()                           // 2.15: "active now" (every 15 minutes)
                 hoursCheck()                                // 1.0.4: the watch hours began / ended
                 // 2.12: price drop alerts - watched products that got clearly cheaper (this phone's look or the PC's); 1.0.4: under the cap too
@@ -109,6 +110,7 @@ class WatchService : Service() {
         try { StandbyAlarm.cancel(this) } catch (e: Exception) { }
         tick.removeCallbacksAndMessages(null)
         GoListener.stop()
+        Relay.wsStop()
         engine.send(Engine.Cmd.Quit)
         thread?.interrupt()
         web.destroy()

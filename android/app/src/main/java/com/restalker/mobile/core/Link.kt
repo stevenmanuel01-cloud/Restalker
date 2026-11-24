@@ -657,6 +657,8 @@ class Link(private val store: Store, private val net: LinkNet,
     /** (1.0.4: read from what is kept outside the lock - 2.15 - 1.0.3 took the link's lock here, so a claim right before Place your order
      *  could wait for a link round that was talking to the network) */
     fun lockGroup(): String? = ident?.first?.let { LinkCrypto.parse(it) }?.second?.let { LinkCrypto.lockGroup(it) }
+    /** 1.1.2: this link's channel on the relay (null when not linked) - for the held-open connection. */
+    fun relayChannel(): String? = ident?.first?.let { LinkCrypto.parse(it) }?.first
 
     /** 2.0: someone else buys (the desktop, or another phone first in line) - this phone stands by. */
     fun othersBuy(): Boolean = desktopBuys() || otherPhoneBuys()
