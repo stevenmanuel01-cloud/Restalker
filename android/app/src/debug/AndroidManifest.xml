@@ -6,6 +6,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 1.7: Android 12+ lets an app that updates ITSELF do so without asking (needs this; no effect on anything else) -->
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- 1.1.3: with "Display over other apps" allowed (your choice, Settings > Updates) Restalker can open its own screen again after it
+         updated itself. Nothing is ever drawn over other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <application>
         <receiver android:name=".UpdateReceiver" android:exported="false" />
         <!-- Test builds only (never in the app you install): lets the virtual-phone tests hand the updater a local file. -->

@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.printToString
@@ -1343,5 +1344,69 @@ class ScreenTests {
         compose.onNodeWithTag("report-yes").performClick()
         compose.waitUntil(5_000) { !s.settings().let { !it.reportAsked || !it.autoReport } }
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("report-ask").fetchSemanticsNodes().isEmpty() }
+    }
+
+    /** 1.1.3 (owner, 2026-11-24): Getting started folds to one line and stays folded, says what each step is for and links the guide;
+     *  Watch all / Buy all for a group - Buy asks for the caps of the products that have none; stopping to watch all asks first. */
+    /** Scrolls the list to [tag] and taps it - again when the list moved meanwhile (a row above it grew or shrank while it settled). */
+    private fun tapInList(tag: String) {
+        var last: AssertionError? = null
+        repeat(4) {
+            try {
+                toList(hasTestTag(tag)); compose.waitForIdle()
+                compose.onNodeWithTag(tag, useUnmergedTree = true).performClick(); compose.waitForIdle(); return
+            } catch (e: AssertionError) { last = e; Thread.sleep(800); compose.waitForIdle() }
+        }
+        throw last!!
+    }
+
+    @Test fun t49_setup_folds_and_watch_all_buy_all() {
+        val s = RkApp.store()
+        val before = kept(s)
+        try {
+            s.products().forEach { s.remove(it.id) }
+            s.setSettings { com.restalker.mobile.core.Settings() }
+            compose.waitForIdle()
+            compose.onNodeWithTag("setup").assertIsDisplayed()
+            compose.onNodeWithTag("setup-how", useUnmergedTree = true).assertExists()
+            compose.onNodeWithTag("setup-guide", useUnmergedTree = true).assertExists()
+            compose.onNodeWithTag("setup-count", useUnmergedTree = true).assertTextContains("of 5 done", substring = true)
+            compose.onNodeWithTag("setup-fold", useUnmergedTree = true).performClick()
+            compose.waitUntil(3_000) { compose.onAllNodesWithTag("setup-how", useUnmergedTree = true).fetchSemanticsNodes().isEmpty() }
+            assertEquals("the folded card is remembered", true, s.settings().setupFolded)
+            compose.onNodeWithTag("setup").assertIsDisplayed()
+            shot("t49_setup_folded")
+            compose.onNodeWithTag("setup-fold", useUnmergedTree = true).performClick()
+            compose.waitUntil(3_000) { compose.onAllNodesWithTag("setup-how", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals(false, s.settings().setupFolded)
+            // one group of three products, none watched; one has a cap (a year no other test uses: a group an earlier test folded stays folded)
+            s.add(prod("B0TEST4901", "Alpha Collector Booster Box", "2031", "Alpha", price = 100.0).copy(watch = false, cap = 120.0))
+            s.add(prod("B0TEST4902", "Alpha Bundle", "2031", "Alpha", price = 50.0).copy(watch = false, cap = 0.0))
+            s.add(prod("B0TEST4903", "Beta Bundle", "2031", "Beta", price = 50.0).copy(watch = false, cap = 0.0))
+            compose.waitForIdle()
+            tapInList("all-2031-watch")
+            compose.waitUntil(3_000) { s.products().all { it.watch } }
+            shot("t49_watch_all")
+            // Buy all: the one with a cap is set at once, the caps of the other two are asked for
+            tapInList("all-2031-buy")
+            compose.waitUntil(3_000) { s.product("idB0TEST4901")?.buy == true }
+            compose.waitUntil(3_000) { compose.onAllNodesWithTag("allcap-B0TEST4902", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals("no cap, no Buy", false, s.product("idB0TEST4902")?.buy)
+            shot("t49_buy_all_caps")
+            compose.onNodeWithTag("allcap-B0TEST4902", useUnmergedTree = true).performTextInput("64.50")
+            compose.onNodeWithTag("allcap-save", useUnmergedTree = true).performClick()
+            compose.waitUntil(3_000) { s.product("idB0TEST4902")?.buy == true }
+            assertEquals(64.5, s.product("idB0TEST4902")!!.cap, 0.001)
+            assertEquals("left empty: stays on Watch only", false, s.product("idB0TEST4903")?.buy)
+            assertEquals(0.0, s.product("idB0TEST4903")!!.cap, 0.001)
+            // Watch all again (all are watched): it asks before it stops watching them
+            tapInList("all-2031-watch")
+            compose.waitUntil(3_000) { compose.onAllNodesWithTag("all-unwatch-yes", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals("nothing changes before the answer", true, s.products().all { it.watch })
+            compose.onNodeWithTag("all-unwatch-yes", useUnmergedTree = true).performClick()
+            compose.waitUntil(3_000) { s.products().none { it.watch } }
+            assertEquals("Buy goes off with Watch", true, s.products().none { it.buy })
+            assertEquals("the caps are kept", 64.5, s.product("idB0TEST4902")!!.cap, 0.001)
+        } finally { s.restore(before) }
     }
 }

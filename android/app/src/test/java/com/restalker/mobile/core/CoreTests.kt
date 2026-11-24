@@ -79,6 +79,8 @@ object CoreTests {
         override fun status(text: String) { last = text }
         val problems = ArrayList<String>()
         override fun problem(what: String) { problems.add(what) }
+        var noShow: String? = null
+        override fun cannotShow(kind: String): String? = noShow
     }
 
     class World(practice: Boolean = false, buying: Boolean = true, var net: String? = "wifi", var desk: Boolean = false) {
@@ -1880,6 +1882,36 @@ object CoreTests {
             val wrongKey = WsStandIn(badAccept = true).let { s3 -> s3.start(); val r = try { Ws("ws://127.0.0.1:${s3.port}/x", 3_000); "opened" } catch (e: Ws.Closed) { e.message ?: "" }; s3.stop(); r }
             println("    208: refused=$refused | closed=$closed | after=$after | nobody=$nobody | wrongKey=$wrongKey")
             refused.startsWith("refused: HTTP/1.1 400") && closed.contains("4000") && closed.contains("a newer connection") && after == "refused" && nobody == "closed" && wrongKey.contains("wrong accept key") }
+        // ---- 1.1.3
+        t("210_a_restock_line_says_whether_a_message_could_really_be_shown") {
+            val w = World(buying = false); w.add("B0TEST0001", 120.0, false); w.check("B0TEST0001")
+            val shown = w.store.log().any { it.contains("in stock") && it.endsWith("you were sent a message.") }
+            val w2 = World(buying = false); w2.said.noShow = "notifications are switched off for Restalker in this device's settings."
+            w2.add("B0TEST0001", 120.0, false); w2.check("B0TEST0001")
+            val honest = w2.store.log().any { it.contains("in stock") && it.contains("NO message could be shown: notifications are switched off") }
+            val never = w2.store.log().none { it.contains("you were sent a message") }
+            shown && honest && never && w2.said.restocks.size == 1 }
+        t("211_a_page_that_fails_once_is_not_needs_you_three_in_a_row_is") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.silent = true
+            w.check("B0TEST0001"); val one = w.engine.failedInARow("idB0TEST0001")
+            w.check("B0TEST0001"); w.check("B0TEST0001"); val three = w.engine.failedInARow("idB0TEST0001")
+            w.amz.silent = false; w.check("B0TEST0001"); val after = w.engine.failedInARow("idB0TEST0001")
+            println("    211: $one $three $after status=${w.p("B0TEST0001").status}")
+            one == 1 && three == 3 && after == 0 }
+        t("212_settings_1_1_3_keep_their_values_and_old_files_get_the_defaults") {
+            val d = Settings()
+            val back = Settings.fromMap(MiniJson.obj(MiniJson.write(d.copy(setupFolded = true, reopenAfterUpdate = false).toMap()))!!)
+            val old = Settings.fromMap(MiniJson.obj(MiniJson.write(d.toMap().filterKeys { it != "setupFolded" && it != "reopenAfterUpdate" }))!!)
+            !d.setupFolded && d.reopenAfterUpdate && back.setupFolded && !back.reopenAfterUpdate && !old.setupFolded && old.reopenAfterUpdate }
+        t("213_after_an_update_open_notify_or_nothing") {
+            val now = 1_800_000_000_000L; val p = UpdatePlan::afterUpdate
+            p(now - 30_000, now, true, 28, false) == "open" &&            // Android 9: the screen may be opened
+                p(now - 30_000, now, true, 34, false) == "notify" &&      // Android 14 without the permission: a notification to tap
+                p(now - 30_000, now, true, 34, true) == "open" &&         // ... with "Display over other apps": opened
+                p(now - 30_000, now, false, 28, true) == "nothing" &&     // the setting is off
+                p(0, now, true, 28, true) == "nothing" &&                 // the screen was not open when the update started
+                p(now - 16 * 60_000, now, true, 28, true) == "nothing" && // long ago (not this update)
+                p(now + 5_000, now, true, 28, true) == "nothing" }
         t("209_ws_base64_is_right") {
             fun ok(sx: String) = Ws.b64(sx.toByteArray()) == java.util.Base64.getEncoder().encodeToString(sx.toByteArray())
             listOf("", "a", "ab", "abc", "abcd", "the sample nonce", "ünïcödé ✓ \u0000\u00ff").all { ok(it) } &&

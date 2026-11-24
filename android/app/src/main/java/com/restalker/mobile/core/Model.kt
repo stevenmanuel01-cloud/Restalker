@@ -5,7 +5,7 @@ package com.restalker.mobile.core
  *  counting up, and updates go by the code alone (UpdatePlan), so every device still sees 1.0.0 as the newer one.
  *  THREE parts on purpose (1.0.0, 1.0.1, ...): the first versions of 2026-11-16/17 were 1.0 - 1.8 and their releases (mobile-v1.0 ...
  *  mobile-v1.8) are still on GitHub; a two-part 1.x name would meet its old release and never be published. */
-const val APP_VERSION = "1.1.2"
+const val APP_VERSION = "1.1.3"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -200,6 +200,12 @@ data class Settings(
     // usage, even when the PC is not running. This should be a default setting but allowed to be changed by the user manually"):
     // on = this phone looks less often by itself when its battery is low (BatteryPace) - not while charging
     val batterySave: Boolean = true,
+    // 1.1.3 (owner, 2026-11-24: "The 'getting started' area should be a collapsible menu so that the user can minimize it if they dont
+    // intend to complete one of the steps"): folded = one line
+    val setupFolded: Boolean = false,
+    // 1.1.3 (owner: "When the app is updated, it does not launch automatically. This should be a default setting and changeable in the
+    // app settings"): after an update that started while the app's screen was open, the screen is opened again
+    val reopenAfterUpdate: Boolean = true,
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf("watching" to watching, "buying" to buying, "practice" to practice, "intervalSec" to intervalSec,
         "snoozeUntil" to snoozeUntil, "wifiOnly" to wifiOnly, "signinNeededAt" to signinNeededAt, "reportTopic" to reportTopic, "autoReport" to autoReport, "reportAt" to reportAt, "cooldownUntil" to cooldownUntil, "cooldownStreak" to cooldownStreak, "needYouAt" to needYouAt,
@@ -207,7 +213,8 @@ data class Settings(
         "buyMode" to buyMode, "buyModeAt" to buyModeAt, "failover" to failover, "deviceName" to deviceName, "crowd" to crowd, "masterCode" to masterCode,
         "alertTopic" to alertTopic, "alertsOn" to alertsOn, "nRestock" to nRestock, "nDrop" to nDrop, "nBuy" to nBuy, "nNeed" to nNeed,
         "noticeHidden" to noticeHidden, "noticeV" to 1, "modeV" to modeV, "attnDaily" to attnDaily, "attnSeen" to attnSeen,
-        "hoursOn" to hoursOn, "hoursFrom" to hoursFrom, "hoursTo" to hoursTo, "reportAsked" to reportAsked, "batterySave" to batterySave)
+        "hoursOn" to hoursOn, "hoursFrom" to hoursFrom, "hoursTo" to hoursTo, "reportAsked" to reportAsked, "batterySave" to batterySave,
+        "setupFolded" to setupFolded, "reopenAfterUpdate" to reopenAfterUpdate)
     companion object {
         const val MIN_INTERVAL = 60
         val BUY_MODES = listOf("pc", "phone", "both")
@@ -225,7 +232,7 @@ data class Settings(
                 attnSeen = (m["attnSeen"].asMap() ?: emptyMap()).entries.take(50).mapNotNull { (k, v) -> v.asStr()?.let { k.take(60) to it.take(10) } }.toMap(),
                 hoursOn = m["hoursOn"] == true, hoursFrom = ((m["hoursFrom"].asLong() ?: (22 * 60L)).toInt()).coerceIn(0, 1439),
                 hoursTo = ((m["hoursTo"].asLong() ?: (7 * 60L)).toInt()).coerceIn(0, 1439), reportAsked = m["reportAsked"] == true,
-                batterySave = m["batterySave"] != false)
+                batterySave = m["batterySave"] != false, setupFolded = m["setupFolded"] == true, reopenAfterUpdate = m["reopenAfterUpdate"] != false)
         }
     }
 }

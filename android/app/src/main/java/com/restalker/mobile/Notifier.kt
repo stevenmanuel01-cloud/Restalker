@@ -23,6 +23,8 @@ class Notifier(private val ctx: Context) : Alerts {
     /** 2.12: the kinds of message you chose in Settings (NotifyPrefs). */
     private fun wants(kind: String) = com.restalker.mobile.core.NotifyPrefs.allowed(RkApp.store().settings(), kind)
 
+    override fun cannotShow(kind: String): String? = whyNot(ctx, kind)
+
     override fun restock(p: Product, price: Double?) {
         if (!wants("restock")) return                    // (2.12: restocks switched off in Settings - neither here nor on ntfy)
         val practice = RkApp.store().settings().practice
@@ -114,6 +116,19 @@ class Notifier(private val ctx: Context) : Alerts {
         const val CH_WATCH = "watching"; const val CH_QUIET = "watching_quiet"; const val CH_RESTOCK = "restocks"; const val CH_BUY = "purchases"; const val CH_NEED = "needyou"; const val CH_DROP = "pricedrops"
         const val ONGOING_ID = 1
         fun idFor(kind: String, key: String) = (kind + key).hashCode() and 0x7fffffff or 0x100
+
+        /** 1.1.3: why a message of this kind cannot be shown on this device right now (null = it can). */
+        fun whyNot(ctx: Context, kind: String): String? = try {
+            val st = RkApp.store().settings()
+            val ch = when (kind) { "restock" -> CH_RESTOCK; "bought", "practice" -> CH_BUY; "drop" -> CH_DROP; else -> CH_NEED }
+            when {
+                !com.restalker.mobile.core.NotifyPrefs.allowed(st, kind) -> "this kind of message is switched off in Restalker's Settings (Notifications)."
+                !NotificationManagerCompat.from(ctx).areNotificationsEnabled() -> "notifications are switched off for Restalker in this device's settings."
+                Build.VERSION.SDK_INT >= 26 && (ctx.getSystemService(NotificationManager::class.java).getNotificationChannel(ch)?.importance ?: 3) == NotificationManager.IMPORTANCE_NONE ->
+                    "this kind of notification is switched off for Restalker in this device's settings."
+                else -> null
+            }
+        } catch (e: Exception) { null }
 
         fun channels(ctx: Context) {
             if (Build.VERSION.SDK_INT < 26) return

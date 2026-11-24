@@ -83,7 +83,7 @@ jobs:
           PLAY=app/build/outputs/apk/play/app-play.apk; GH=app/build/outputs/apk/release/app-release.apk; AAB=app/build/outputs/bundle/play/app-play.aab
           ls -la $PLAY $GH $AAB || bad=1
           pp=$($A dump permissions $PLAY); gp=$($A dump permissions $GH)
-          for p in REQUEST_INSTALL_PACKAGES UPDATE_PACKAGES_WITHOUT_USER_ACTION REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do
+          for p in REQUEST_INSTALL_PACKAGES UPDATE_PACKAGES_WITHOUT_USER_ACTION REQUEST_IGNORE_BATTERY_OPTIMIZATIONS SYSTEM_ALERT_WINDOW; do
             if echo "$pp" | grep -q "$p"; then echo "THE GOOGLE PLAY EDITION HOLDS $p"; bad=1; fi
             if ! echo "$gp" | grep -q "$p"; then echo "THE GITHUB EDITION LOST $p"; bad=1; fi
           done

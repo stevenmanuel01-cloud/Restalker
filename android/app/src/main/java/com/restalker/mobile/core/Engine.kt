@@ -26,6 +26,9 @@ interface Alerts {
     fun status(text: String)
     /** Something went wrong (a checkout that did not finish, a message that needs you): the Android side may send a report. */
     fun problem(what: String) {}
+    /** 1.1.3: null = a message of this kind can be shown on this device; else why not, in plain words (the Activity then says so
+     *  instead of "you were sent a message"). */
+    fun cannotShow(kind: String): String? = null
 }
 
 interface Clock { fun now(): Long; fun sleep(ms: Long) }
@@ -100,6 +103,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun log(s: String) = store.log(s)
     /** 2.13: a detail for the problem reports only (not shown in Activity). */
     private fun detail(s: String) = store.log(s, quiet = true)
+    // 1.1.3 (owner: "every time i get an update, there are several error message indicators on specific products. When i click the
+    // product, there is no error visible"): right after the app starts again a page may fail to load once - that is not something that
+    // needs you. How many looks in a row could not read each product's page (its red mark shows from the third).
+    private val failRun = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    fun failedInARow(id: String): Int = failRun[id] ?: 0
     // 2.13 (owner: the crowd's "saw it - looking now", "BUYABLE at" and "the linked desktop buys it" lines "seem redundant and could
     // maybe be consolidated"): who tipped this phone off (the crowd / the PC) and whether the look found it newly in stock - so ONE line
     // says it all: "in stock at $89.99 (another Restalker spotted it first) - the linked desktop buys it (this phone stands by)."
@@ -264,12 +272,13 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun openAndRead(p: Product): Boolean {
         busyWith = "looking at ${p.label}"
         page.images(false)
-        if (!page.goto(p.url)) { setSeen(p, "the page did not load", null, false); loadFailed(); return false }
+        if (!page.goto(p.url)) { failRun.merge(p.id, 1, Int::plus); setSeen(p, "the page did not load", null, false); loadFailed(); return false }
         loadFails = 0
         page.ask(mapOf("bb" to "reset"), 10_000)
         val r = page.ask(mapOf("bb" to "eligible", "product" to p.forPage()), 12_000)
         lastReply = r
-        if (r == null) { setSeen(p, "the page did not answer", null, false); return false }
+        if (r == null) { failRun.merge(p.id, 1, Int::plus); setSeen(p, "the page did not answer", null, false); return false }
+        failRun.remove(p.id)
         val reason = r["reason"].asStr() ?: ""
         val title = r["title"].asStr() ?: ""
         if (Regex("challenge|throttle", RegexOption.IGNORE_CASE).containsMatchIn(reason)) { amazonCheck(p); return false }
@@ -341,7 +350,10 @@ class Engine(private val store: Store, private val page: Page, private val alert
             }
             else if (!canAutoBuy(p) && !p.purchased && !p.attempted && p.alertedEpisode != p.episodeStart && now() >= s().snoozeUntil) {
                 store.update(p.id) { it.copy(alertedEpisode = p.episodeStart) }
-                log("$seen - you were sent a message.")
+                // 1.1.3 (owner, 2026-11-24: "lots of activity claiming restocks and delivered messages, but ... the app is not pushing
+                // these messages as notifications"): the line says what really happened on this device
+                val no = try { alerts.cannotShow("restock") } catch (e: Exception) { null }
+                log(if (no == null) "$seen - you were sent a message." else "$seen - NO message could be shown: $no")
                 alerts.restock(p, p.price)
             }
             else if (fresh) log("$seen.")
