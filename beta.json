@@ -1,8 +1,8 @@
 {
- "version": "v151",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v151_update.zip",
- "sha256": "9b2fd2531117bdd4c20245ba3eed29b8af31b740a7bb778e140cb44eb779f2fb",
- "size": 797352,
- "notes": "v151: (1) One connection to the relay, held open: lines from linked devices, the buy-now doorbell and the crowd's sightings are pushed to this PC the moment the relay has them (until v150: asked for once a minute). Asking stays as the fallback. (2) When a store page does not load, the browser's real reason is recorded and shown (the store cut the connection / refused this browser / did not answer / this PC's internet), and the page is loaded again at once, up to three times (until v150: 15 s on the error page, one reload, no reason). (3) Amazon: an armed listing's look ends as soon as the page itself says 'buyable at or under your cap' instead of waiting for the page's last picture - the checkout starts sooner. (4) Amazon's pages are timed on every load; the diagnostics show where the seconds go.",
- "files": 89
+ "version": "v152",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v152_update.zip",
+ "sha256": "0a8ed5ce4d98534cb0ceada3ed0bfc8a73069b1e1e4787c3e6a6e8a8fdf1d624",
+ "size": 800804,
+ "notes": "v152: (1) Amazon's offers list is the detector now: it showed Amazon's own offer before the product page in 20 of 32 restocks (46 s before in your last run) although it was read only about once in 7 minutes per product. It is now read in 3 of every 4 rounds, first and every 8 s after a tracker or crowd report; Amazon's own offer at or under your cap in that list counts as a sighting (alert, crowd, the buying browser's look), and the alert's link opens the list. (2) When the page with Amazon as the seller shows that offer, the buying browser looks at that page for 2.5 minutes - its check and checkout are unchanged. (3) Fixed: v151's Amazon page timings never reached the diagnostics.",
+ "files": 88
 }
