@@ -102,6 +102,26 @@ sweep.AOD["last"]["amazon_third"]["at"] -= 9
 say("11d ... and again after 8 s", (sweep._aod_due(st, rows) or {}).get("id") == "amazon_third")
 st["tpoked"]["amazon_third"] = time.time() - 181
 say("11e three minutes after the report the extra reads end", sweep._aod_due(st, rows) is None)
+# 13. (v153) the page says buyable under the cap, the list holds no such offer: counted as evidence, nothing else changes
+if hasattr(sweep, "others_at"):
+    sweep.LIST_IN.clear(); sweep.AOD.get("left", {}).clear(); puts.clear()
+    page.update(status="IN_STOCK", price=455.88); answers["aod"] = aod(offer("NNU Store", 699.00, True))
+    sweep._aod_round(st, H)
+    say("13a page 'in stock under the cap' but no such offer in the list: counted (evidence), no sighting made", sweep.AOD.get("page_only") == 1 and not puts)
+    answers["aod"] = aod(offer("Some Seller", 455.88, True)); sweep._aod_round(st, H)
+    say("13b ... not counted when another seller really offers it at that price", sweep.AOD.get("page_only") == 1)
+    page.update(status="OUT_OF_STOCK", price=699.0)
+    # 14. (v153) six unreadable answers: the list rests 10 minutes (not 6 hours), longer only while it keeps failing; a good answer resets
+    answers["aod"] = "<html>robot check</html>"; sweep.AOD["off_until"] = 0.0; sweep.AOD["bad_row"] = 0; sweep.AOD["off_n"] = 0
+    for _ in range(6): sweep._aod_round(st, H)
+    first = sweep.AOD["off_until"] - time.time()
+    sweep.AOD["off_until"] = 0.0
+    for _ in range(6): sweep._aod_round(st, H)
+    second = sweep.AOD["off_until"] - time.time()
+    say("14a after 6 unreadable answers the list rests 10 minutes, then 20 (not 6 hours)", 590 < first < 610 and 1190 < second < 1210, (round(first), round(second)))
+    sweep.AOD["off_until"] = 0.0; answers["aod"] = aod(offer("NNU Store", 699.00, True)); sweep._aod_round(st, H)
+    say("14b one good answer and it starts from 10 minutes again", sweep.AOD.get("off_n") == 0)
+    answers["aod"] = aod(offer("Amazon.com", 455.88)); sweep._aod_round(st, H)
 # 12. the diagnostics text
 txt = sweep.aod_text([])
 say("12 the diagnostics show the reads per product, the list-first sightings and what the seller page said", "list reads per product" in txt and "in the list first; a product page showed it 46 s later" in txt and "showed it buyable 2x" in txt, txt[-330:])

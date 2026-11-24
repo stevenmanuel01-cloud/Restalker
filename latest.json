@@ -1,8 +1,8 @@
 {
- "version": "v152",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v152_update.zip",
- "sha256": "0a8ed5ce4d98534cb0ceada3ed0bfc8a73069b1e1e4787c3e6a6e8a8fdf1d624",
- "size": 800804,
- "notes": "v152: (1) Amazon's offers list is the detector now: it showed Amazon's own offer before the product page in 20 of 32 restocks (46 s before in your last run) although it was read only about once in 7 minutes per product. It is now read in 3 of every 4 rounds, first and every 8 s after a tracker or crowd report; Amazon's own offer at or under your cap in that list counts as a sighting (alert, crowd, the buying browser's look), and the alert's link opens the list. (2) When the page with Amazon as the seller shows that offer, the buying browser looks at that page for 2.5 minutes - its check and checkout are unchanged. (3) Fixed: v151's Amazon page timings never reached the diagnostics.",
+ "version": "v153",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v153_update.zip",
+ "sha256": "efce5903e9b508d3637e1197df0d955c83f498c6b2657dcf92ab3d212ccb3c97",
+ "size": 801447,
+ "notes": "v153: the offers-list detector (v152) no longer switches itself off for 6 hours after a short hiccup at Amazon - it rests 10 minutes, longer only while Amazon keeps refusing. New evidence in the diagnostics: how often a product page said 'buyable' while Amazon's offers list held no such offer (the page still showing an offer that is gone).",
  "files": 88
 }
