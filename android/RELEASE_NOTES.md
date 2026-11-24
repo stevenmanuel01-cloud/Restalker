@@ -1,3 +1,8 @@
+# Restalker Mobile 1.1.4 (2026-11-24)
+- The Watch tab's banner is tidy: how many products are watched, and one button that says what it does - "Stop watching" /
+  "Start watching". What Restalker is doing right now, how watching works in the background and the linked-desktop line moved to
+  Settings > "Amazon, buying and this phone".
+
 # Restalker Mobile 1.1.3 (2026-11-24)
 - Watch all / Buy all: every group on the Watch tab has two buttons for the whole group. Buy all asks for the most you'll pay for
   the products that have no cap yet; stopping to watch a whole group asks first.

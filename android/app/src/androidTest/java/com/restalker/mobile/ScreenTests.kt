@@ -954,16 +954,19 @@ class ScreenTests {
         if (cfg.screenWidthDp >= 400 && cfg.fontScale <= 1.01f) assertTrue("the title takes at most 2 lines beside the logo: ${tl.lineCount}", tl.lineCount <= 2)
         // Stop / Start says what it does, and what happens when the app is closed
         compose.onNodeWithTag("list").performScrollToNode(hasTestTag("watching"))
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Start").fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Stopped: nothing is watched or bought until you press Start.").fetchSemanticsNodes().isNotEmpty() }
+        // 1.1.4: the banner holds only how many products are watched and the button, which says what it stops; no explanations there
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Start watching").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("watching").performClick()
         compose.waitUntil(5_000) { s.settings().watching }
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Stop").fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Runs in the background", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Stop watching").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("watch-title", useUnmergedTree = true).assertExists()
+        assertEquals("no explanation in the banner", 0, compose.onAllNodesWithText("Runs in the background", substring = true).fetchSemanticsNodes().size)
+        assertEquals("no status line in the banner", 0, compose.onAllNodesWithTag("status", useUnmergedTree = true).fetchSemanticsNodes().size)
+        assertEquals("no hint in the banner", 0, compose.onAllNodesWithTag("watch-hint", useUnmergedTree = true).fetchSemanticsNodes().size)
         Thread.sleep(400); shot("t40_watch")
         compose.onNodeWithTag("watching").performClick()
         compose.waitUntil(5_000) { !s.settings().watching }
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("Start").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Start watching").fetchSemanticsNodes().isNotEmpty() }
         // the same bar - logo, the tab's name, the version - on Bought, Activity and Settings
         for ((i, name) in listOf(1 to "Bought", 2 to "Activity", 3 to "Settings")) {
             compose.onNodeWithTag("tab$i").performClick(); compose.waitForIdle()
