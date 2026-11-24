@@ -362,6 +362,7 @@ export const WS_IP_RATE = 3000;             // connects per network address per 
 export const WS_CHANNELS = 6;               // link channels one device may carry (its group's line and doorbell; room for a second link)
 export const WS_CATCHUP = 200;              // lines sent at once when a device comes back
 export const WS_SAFETY_S = 6 * 3600;        // with its socket open a device still asks the old way this seldom (a missed line is found then)
+export const WS_ACTIVE_EVERY_MS = 300_000;   // the active count goes to every open connection when it changed, and at least this often
 export const WS_MSG_MAX = 64;               // messages a socket may send in 10 s before it is closed
 export const CROWD_PUSH_GAP_MS = 15_000;    // the same product at the same store is pushed to everyone at most this often
 /** The link channels named in a connect request (comma-separated) -> the valid, different ones, at most WS_CHANNELS. */

@@ -1,8 +1,8 @@
 {
- "version": "v150",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v150_update.zip",
- "sha256": "ee9fb2d631308bd57eeae792f51462220d8a8a5436abc2306205829b50bd25d2",
- "size": 780012,
- "notes": "Restocks are watched closely: for 3 minutes after a tracker's alert or an in-stock reading, the buying browser looks at the listing itself every 4 seconds (the other buying browsers every 10) and checks out the moment it can be bought at or under your cap. Until now it was told of the same listing at most once in 15 seconds, and only after a reader had seen it come back. The checkout itself, your caps and one order per product are unchanged. The diagnostics now list what every close watch saw. Failure messages no longer say 'MANUAL RE-ARM REQUIRED' next to 'it is tried again at once'.",
- "files": 84
+ "version": "v151",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v151_update.zip",
+ "sha256": "9b2fd2531117bdd4c20245ba3eed29b8af31b740a7bb778e140cb44eb779f2fb",
+ "size": 797352,
+ "notes": "v151: (1) One connection to the relay, held open: lines from linked devices, the buy-now doorbell and the crowd's sightings are pushed to this PC the moment the relay has them (until v150: asked for once a minute). Asking stays as the fallback. (2) When a store page does not load, the browser's real reason is recorded and shown (the store cut the connection / refused this browser / did not answer / this PC's internet), and the page is loaded again at once, up to three times (until v150: 15 s on the error page, one reload, no reason). (3) Amazon: an armed listing's look ends as soon as the page itself says 'buyable at or under your cap' instead of waiting for the page's last picture - the checkout starts sooner. (4) Amazon's pages are timed on every load; the diagnostics show where the seconds go.",
+ "files": 89
 }

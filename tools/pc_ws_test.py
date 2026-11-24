@@ -15,7 +15,7 @@ pl.channels = lambda: [CH, CH + "-go"] if state["linked"] else []
 pl.cursors = lambda: [state["rsince"], state["gsince"]]
 def _ws_line(ch, m):
     if not ch.endswith("-go"): return False
-    state["go"].append((time.time(), m)); state["gsince"] = str(m.get("id")); return True
+    state["go"].append((time.time(), m)); return "quiet"
 pl.ws_line = _ws_line
 pl.wake_now = lambda: state.__setitem__("woke", state["woke"] + 1)
 pl.who = lambda: sealed("the pc's sign of life")
@@ -56,7 +56,14 @@ say("2c it is handed out once", relay.sync({CH: r["id"]}).get(CH) == [])
 # 3. the buy-now doorbell: taken on the spot
 t0 = time.time(); http("POST", "/v1/ch/" + CH + "-go", raw=sealed("go: buy now"))
 ok = until(lambda: len(state["go"]) >= 1, 3)
-say("3 the buy-now doorbell reaches the PC at once", ok and state["go"][0][0] - t0 < 0.5, f"{(state['go'][0][0] - t0) * 1000:.0f} ms" if ok else "never")
+woke3 = state["woke"]
+say("3 a phone's heartbeat on the fast channel reaches the PC at once", ok and state["go"][0][0] - t0 < 0.5, f"{(state['go'][0][0] - t0) * 1000:.0f} ms" if ok else "never")
+time.sleep(0.3)
+g3 = relay.sync({CH: r["id"], CH + "-go": ""})
+say("3b ... it starts no extra round, and the next round still gets it (nothing is lost)", state["woke"] == woke3 and len(g3.get(CH + "-go") or []) == 1, f"woke {state['woke'] - woke3}, lines {len(g3.get(CH + '-go') or [])}")
+relay._ws_buf.setdefault(CH, []).extend([{"id": "5", "message": "old"}, {"id": str(int(r["id"]) + 1000), "message": "new"}, {"id": str(int(r["id"]) + 1000), "message": "new again"}])
+g3 = relay.sync({CH: r["id"]})
+say("3c a line at or before the reader's place, or twice, is never handed out", [m["message"] for m in g3[CH]] == ["new"], [m["message"] for m in g3[CH]])
 # 4. a crowd sighting from someone else reaches crowd.py at once
 st = http("GET", "/v1/stats"); prod = (st.get("last") or [{}])[0].get("a") or "B0TESTPC01"
 import wsclient

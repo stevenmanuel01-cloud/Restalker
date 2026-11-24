@@ -66,6 +66,8 @@ jobs:
           for i in $(seq 1 20); do r=$(curl -s -m 15 "$BASE/v1/stats" || true); echo "$r" | grep -q '"ok":true' && break; sleep 6; done
           echo "$BASE/v1/stats -> $r"
           echo "$r" | grep -q '"discord":true'
+      - name: The held-open connection works on the live relay
+        run: node ../tools/relay_live_check.mjs "$BASE"
       - name: Slash commands and the interactions address
         run: python3 discord_setup.py ../mobile/catalog.json src/discord.json "$BASE"
       - name: Live check (the crowd read runs every minute)

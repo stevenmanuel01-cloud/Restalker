@@ -473,6 +473,7 @@ export class Hub {
     const d = new Date(now), today = d.toISOString().slice(0, 10);
     if (d.getUTCHours() * 60 + d.getUTCMinutes() >= 16 * 60 + 7 && this.kvGet("daily") !== today) { this.kvSet("daily", today); out.daily = await this.daily(); }
     this.kvSet("tick_at", now);
+    out.told = this.tellActive(now);
     return out;
   }
 
@@ -541,6 +542,24 @@ export class Hub {
     const live = this.liveSet(now);
     const rows = this.sql.exec("SELECT c, at, w FROM seen WHERE g = ? ORDER BY at DESC LIMIT 40", g).toArray();
     return L.presenceOut(rows.map(r => live.has(r.c) ? { ...r, at: now } : r), c, now);
+  }
+
+  // The active count for every device that holds a connection open: sent when it changed, and at least every 5 minutes - by the relay,
+  // for free (what the relay sends costs nothing; a device ASKING for it would cost a twentieth of a request each time, which for
+  // thousands of devices is the whole free plan). So a connected device never has to ask how many are active.
+  tellActive(now) {
+    const socks = this.state.getWebSockets();
+    if (!socks.length) return 0;
+    const n = this.activeNow(now);
+    this.act = { at: now, n };
+    // (kept in storage, not in memory: between two ticks the relay sleeps and forgets its memory)
+    const [n0, at0] = String(this.kvGet("told_active") || "").split("@").map(Number);
+    if (n0 === n && now - at0 < L.WS_ACTIVE_EVERY_MS) return 0;
+    this.kvSet("told_active", n + "@" + now);
+    const text = JSON.stringify({ t: "a", active: n });
+    let sent = 0;
+    for (const ws of socks) { try { ws.send(text); sent++; } catch (e) { /* it is gone */ } }
+    return sent;
   }
 
   active(now) {
