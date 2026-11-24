@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 1.1.3, the download-page edition only: with "Display over other apps" allowed (your choice, in Settings > Updates) Restalker can
-         open its own screen again after it updated itself. Nothing is ever drawn over other apps. -->
+    <!-- GitHub edition only (1.0.7; the Google Play edition has none of this): the app installs its own updates, and may ask Android
+         directly to be let off battery saving. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 1.7: Android 12+ lets an app that updates ITSELF do so without asking (needs this; no effect on anything else) -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- 1.1.3: with "Display over other apps" allowed (your choice, Settings > Updates) Restalker can open its own screen again after it
+         updated itself. Nothing is ever drawn over other apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <application>
+        <receiver android:name=".UpdateReceiver" android:exported="false" />
+        <!-- Test builds only (never in the app you install): lets the virtual-phone tests hand the updater a local file. -->
+        <receiver android:name=".UpdateTestReceiver" android:exported="true" />
+    </application>
 </manifest>
