@@ -5,6 +5,14 @@ package com.restalker.mobile.core
  *  program's own GitHub releases), its fingerprint (sha256: the downloaded file must match it), and when it may be installed (never while
  *  a purchase is running). Android itself also refuses a file not signed with the app's own key. */
 object UpdatePlan {
+    /** 1.1.3: after an update was installed - what to do about the app's screen, as a word: "open" it again, "notify" (a notification to
+     *  tap: from Android 10 an app may open its own screen from the background only with "Display over other apps" allowed), or
+     *  "nothing" (the screen was not open when the update started, that was long ago, or the setting is off). */
+    fun afterUpdate(notedAt: Long, now: Long, wanted: Boolean, sdk: Int, overlays: Boolean): String = when {
+        notedAt <= 0 || now < notedAt || now - notedAt > 15 * 60_000L || !wanted -> "nothing"
+        sdk < 29 || overlays -> "open"
+        else -> "notify"
+    }
     const val NOTE_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/latest.json"
     /** 2.15 (owner, 2026-11-19: "my linked devices need to be considered the master/beta/administrator versions. When future changes are
      *  made, this should be pushed to my linked devices only ... rolled into a single wider update for all other users"): the owner's

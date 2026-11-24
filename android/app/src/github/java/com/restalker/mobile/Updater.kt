@@ -131,6 +131,7 @@ object Updater {
             s.openWrite("restalker.apk", 0, f.length()).use { out -> f.inputStream().use { it.copyTo(out) }; s.fsync(out) }
             val i = Intent(ctx, UpdateReceiver::class.java).putExtra("version", version).putExtra("code", code)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+            AfterUpdate.note(ctx, com.restalker.mobile.ui.MainActivity.shown)      // 1.1.3: the screen opens again afterwards (see AfterUpdate)
             state = "installing v$version"
             RkApp.store().log("Installing the update to v$version (the app restarts by itself; watching continues).", quiet = true)
             s.commit(PendingIntent.getBroadcast(ctx, 77, i, flags).intentSender)

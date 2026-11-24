@@ -1,3 +1,17 @@
+# Restalker Mobile 1.1.3 (2026-11-24)
+- Watch all / Buy all: every group on the Watch tab has two buttons for the whole group. Buy all asks for the most you'll pay for
+  the products that have no cap yet; stopping to watch a whole group asks first.
+- Getting started folds to one line (and stays folded), says in a few words what each step is for, and links the setup guide.
+  Every step is optional - for example, skip the Amazon sign-in if you want alerts only.
+- Updates: the yellow line says in plain words where an update stands, shows a turning circle while it is fetched and installed,
+  and its button reads "Install now".
+- After an update the app opens again when its screen was open (Settings > Updates > "Open again after an update"). From Android 10
+  Android allows that only with "Display over other apps"; without it you get a notification to tap. Watching continues either way.
+- Fixed: red marks on products right after an update. A page that fails to load once is no longer flagged - only from the third
+  look in a row.
+- A restock line in Activity now says when NO notification could be shown on this device, and why (for example notifications
+  switched off in the device's settings); a yellow line with a Fix button appears on the Watch tab in that case.
+
 # Restalker Mobile 1.1.2 (2026-11-24; "send messages back to them in near zero latency")
 - Faster: while it watches, the app keeps one connection to the Restalker relay open. A restock another Restalker spots, and what your
   linked PC or devices say, now arrive the moment they are sent (measured: under a tenth of a second on the relay's side). Until

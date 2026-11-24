@@ -542,12 +542,16 @@ class MainActivity : ComponentActivity() {
                             !Updater.allowed(this@MainActivity) -> Banner("Update v$v is ready. Let Restalker install its own updates (once) - then you never download again.", "Allow", "update-allow") {
                                 try { startActivity(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
                                 catch (e: Exception) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(apk))) } }
-                            else -> Banner("Updating to v$v by itself: ${Updater.state.ifBlank { "starting" }}", "Update now", "update-now") { Updater.tick(this@MainActivity, force = true, explicit = true) }
+                            else -> UpdateLine(v) { Updater.tick(this@MainActivity, force = true, explicit = true) }
                         }
                     }
                     if (st.signinNeededAt > 0 && now - st.signinNeededAt < 3_600_000L) Banner("Amazon wants you to sign in again. Nothing is bought until you do.", "Sign in", "signin-banner") { openBrowser(BrowserActivity.SIGNIN_URL) }
                     else if (products.any { it.buy } && st.buying && !signed) Banner("Products are set to Buy, but Amazon is not signed in.", "Sign in", "signin-banner") { openBrowser(BrowserActivity.SIGNIN_URL) }
                     if (!notes) Banner("Notifications are off - you won't hear about restocks or purchases.", "Fix", "notes-banner") { openNotifSettings() }
+                    // 1.1.3: notifications are allowed, but the "Restocks" kind is switched off in the device's settings (nothing would show)
+                    else if (st.nRestock && remember(r) { Notifier.whyNot(this@MainActivity, "restock") } != null)
+                        Banner("Restock notifications are switched off for Restalker in this device's settings - a restock would show nothing.", "Fix", "restock-note-banner") { openNotifSettings() }
+                    AllDialogs()
                     if (svc != null && !svc.web.available) Banner("This phone's \"Android System WebView\" is too old - update it in the Play Store.", "Update", "webview-banner") {
                         try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.google.android.webview"))) } catch (e: Exception) { } }
                     if (st.cooldownUntil > now) Banner("Resting: Amazon showed a robot check. Open the browser and finish it yourself; it looks again at ${hm(st.cooldownUntil)}.", "Browser", "rest-banner") { openBrowser(null) }
@@ -618,10 +622,14 @@ class MainActivity : ComponentActivity() {
                 val yKey = "y:$year"
                 stickyHeader(key = yKey) { GroupHeader(year, inYear.size, inYear.count { it.hot(now) && !it.purchased }, yKey in folded, "grp-$year", sub = groupWords(inYear)) { fold(yKey) } }
                 if (yKey in folded) continue
-                for ((set, inSet) in inYear.groupBy { Groups.of(it).second }.toList().sortedBy { it.first.lowercase() }) {
+                val sets = inYear.groupBy { Groups.of(it).second }.toList().sortedBy { it.first.lowercase() }
+                // 1.1.3 (owner, 2026-11-24: "the ability to watch all and buy all within each category"): one tap for the whole group
+                if (inYear.size > 1) item(key = "all:$yKey") { AllRow(inYear, "all-$year") }
+                for ((set, inSet) in sets) {
                     val sKey = "s:$year|$set"
                     if (inYear.size > 1 || set != year) item(key = sKey) { SetHeader(set, inSet.size, sKey in folded, "set-$set") { fold(sKey) } }
                     if (sKey in folded) continue
+                    if (inSet.size > 1 && sets.size > 1) item(key = "all:$sKey") { AllRow(inSet, "allset-$set") }
                     items(inSet, key = { it.id }) { p -> ProductCard(p, deskBuys, bought = boughtN(p)) { onOpen(p) } }
                 }
             }
@@ -703,13 +711,30 @@ class MainActivity : ComponentActivity() {
         val notes = remember(r) { notesOk() }; val signed = remember(r) { signedIn() }; val batt = remember(r) { battOk() }
         val practiced = products.any { it.practiceOkAt > 0 } || DeskLink.get().linked()
         if (notes && signed && batt && products.isNotEmpty() && practiced) return
+        // 1.1.3 (owner, 2026-11-24: "should be a collapsible menu so that the user can minimize it if they dont intend to complete one of
+        // the steps" and "a very brief set of instructions ... then point them to the settings menu or provide a link to a more detailed
+        // explanation of setup and troubleshooting"): the card folds to one line (and stays folded), each open step says in a few words
+        // what it is for, and the guide is one tap away
+        var folded by remember { mutableStateOf(RkApp.store().settings().setupFolded) }
+        val done = listOf(notes, signed, batt, products.isNotEmpty(), practiced).count { it }
         Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(Color.White, Look.card).padding(16.dp).testTag("setup")) {
-            Text("Getting started", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            Step(notes, "Allow notifications", "Allow") { openNotifSettings() }
-            Step(signed, "Sign in to Amazon in the app", "Sign in") { openBrowser(BrowserActivity.SIGNIN_URL) }
-            Step(batt, "Let it keep running in the background (battery)", "Allow") { openBattery() }
-            Step(products.isNotEmpty(), "Add a product, or link the desktop", "Add") { onAdd() }
-            Step(practiced, "Run one Practice checkout (Settings, Amazon, buying and this phone)", null) {}
+            Row(Modifier.fillMaxWidth().clickable { folded = !folded; RkApp.store().setSettings { it.copy(setupFolded = folded) } }.heightIn(min = 32.dp).testTag("setup-fold"),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("Getting started", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Text("$done of 5 done", fontSize = 12.sp, color = Look.Muted, maxLines = 1, modifier = Modifier.padding(end = 6.dp).testTag("setup-count"))
+                Icon(if (folded) Icons.Filled.KeyboardArrowRight else Icons.Filled.KeyboardArrowDown, contentDescription = if (folded) "Show the steps" else "Hide the steps",
+                    tint = Look.Ink, modifier = Modifier.size(22.dp))
+            }
+            if (folded) return@Column
+            Text("Do the steps you want - you can skip any of them. Tap the arrow to tuck this away.", fontSize = 12.sp, lineHeight = 16.sp, color = Look.Muted,
+                modifier = Modifier.padding(bottom = 2.dp).testTag("setup-how"))
+            Step(notes, "Allow notifications", "Allow", "So you hear about restocks and purchases.") { openNotifSettings() }
+            Step(signed, "Sign in to Amazon in the app", "Sign in", "Only if Restalker should buy for you. Skip it to get alerts and check out yourself.") { openBrowser(BrowserActivity.SIGNIN_URL) }
+            Step(batt, "Let it keep running in the background (battery)", "Allow", "So it keeps watching with the screen off.") { openBattery() }
+            Step(products.isNotEmpty(), "Add a product, or link the desktop", "Add", "Pick from the list or paste an Amazon link. Then set Watch, and Buy with the most you'll pay.") { onAdd() }
+            Step(practiced, "Run one Practice checkout", "Settings", "A trial run that buys nothing: Settings, then \"Amazon, buying and this phone\".") { onSettings() }
+            TextButton(onClick = { openOutside(GUIDE_URL) }, contentPadding = PaddingValues(horizontal = 0.dp), modifier = Modifier.testTag("setup-guide")) {
+                Text("Setup guide and troubleshooting", color = Look.Navy, fontSize = 13.sp) }
             if (!batt && BuildConfig.PLAY) Text(BATTERY_HOW, fontSize = 12.sp, color = Look.Muted, modifier = Modifier.testTag("battery-how"))
             if (!batt) Text("Samsung / Xiaomi / OnePlus: also set Restalker to \"Unrestricted\" in the phone's battery settings.", fontSize = 12.sp, color = Look.Muted)
         }
@@ -731,10 +756,13 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun Step(done: Boolean, text: String, button: String?, onClick: () -> Unit) {
+    fun Step(done: Boolean, text: String, button: String?, how: String? = null, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp)) {
             Text(if (done) "✓" else "•", color = if (done) Look.Good else Look.Muted, fontWeight = FontWeight.Bold, modifier = Modifier.width(20.dp))
-            Text(text, fontSize = 14.sp, modifier = Modifier.weight(1f), color = if (done) Look.Muted else Look.Ink)
+            Column(Modifier.weight(1f)) {
+                Text(text, fontSize = 14.sp, color = if (done) Look.Muted else Look.Ink)
+                if (!done && how != null) Text(how, fontSize = 12.sp, lineHeight = 15.sp, color = Look.Muted)       // (1.1.3: what the step is for)
+            }
             if (!done && button != null) TextButton(onClick = onClick) { Text(button) }
         }
     }
@@ -1020,6 +1048,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /** 2.2: another store's own product page, in your browser (you buy it there yourself). */
+    private val GUIDE_URL = "https://github.com/stevenmanuel01-cloud/Restalker/blob/main/GUIDE.md"
     private fun openOutside(u: String) = try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u))) } catch (e: Exception) { }
 
     @Composable
@@ -1063,6 +1092,89 @@ class MainActivity : ComponentActivity() {
             Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (on) Look.Ink else Look.GreyText, maxLines = 1)
         }
     }
+    // ---- 1.1.3: Watch all / Buy all for one group of the Watch tab
+    private data class AllAsk(val what: String, val ps: List<Product>)
+    private val allAsk = mutableStateOf<AllAsk?>(null)
+    private fun nowOf(p: Product) = RkApp.store().product(p.id) ?: p
+    private fun allWatchOn(ps: List<Product>) = ps.map { nowOf(it) }.filter { !it.watch }.forEach { quickWatch(it, true) }
+    private fun allBuyOff(ps: List<Product>) = ps.map { nowOf(it) }.filter { it.buy }.forEach { quickBuy(it, false) }
+    /** Buy on for all of them: those with a cap at once; for the others the caps are asked for (Buy needs the most you'll pay). */
+    private fun allBuyOn(ps: List<Product>) {
+        allWatchOn(ps)
+        val cur = ps.map { nowOf(it) }.filter { !it.buy }
+        cur.filter { it.cap > 0 }.forEach { quickBuy(it, true) }
+        val need = cur.filter { it.cap <= 0 }
+        if (need.isNotEmpty()) allAsk.value = AllAsk("caps", need)
+    }
+
+    @Composable
+    fun AllRow(ps: List<Product>, tag: String) {
+        val allW = ps.all { it.watch }; val allB = ps.all { it.buy }
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp).testTag(tag), verticalAlignment = Alignment.CenterVertically) {
+            Text("All ${ps.size} here:", fontSize = 12.sp, color = Look.Muted, maxLines = 1, modifier = Modifier.weight(1f))
+            QuickToggle("Watch all", allW, "$tag-watch") { if (allW) allAsk.value = AllAsk("unwatch", ps) else allWatchOn(ps) }
+            Spacer(Modifier.width(8.dp))
+            QuickToggle("Buy all", allB, "$tag-buy") { if (allB) allBuyOff(ps) else allBuyOn(ps) }
+        }
+    }
+
+    @Composable
+    fun AllDialogs() {
+        val a = allAsk.value ?: return
+        if (a.what == "unwatch") {
+            AlertDialog(onDismissRequest = { allAsk.value = null }, title = { Text("Stop watching all ${a.ps.size}?") },
+                text = { Text("Buy is switched off for them too. Their caps are kept.") },
+                confirmButton = { Button(colors = Look.btn(), onClick = { a.ps.map { nowOf(it) }.filter { it.watch }.forEach { quickWatch(it, false) }; allAsk.value = null },
+                    modifier = Modifier.testTag("all-unwatch-yes")) { Text("Stop watching") } },
+                dismissButton = { TextButton(onClick = { allAsk.value = null }) { Text("Cancel") } })
+            return
+        }
+        val caps = remember(a) { mutableStateMapOf<String, String>() }
+        AlertDialog(onDismissRequest = { allAsk.value = null }, title = { Text("The most you'll pay") }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Buy needs the most you'll pay for each product (in dollars). Fill in the ones you want bought - the others stay on Watch only.", fontSize = 13.sp, lineHeight = 17.sp)
+                for (p in a.ps) OutlinedTextField(caps[p.id] ?: "", { v -> caps[p.id] = v.filter { c -> c.isDigit() || c == '.' }.take(8) },
+                    label = { Text(p.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }, placeholder = { Text("0.00") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag("allcap-${p.asin}"))
+            }
+        }, confirmButton = { Button(colors = Look.btn(), onClick = {
+                for (p in a.ps) {
+                    val c = caps[p.id]?.toDoubleOrNull() ?: continue
+                    if (c <= 0) continue
+                    RkApp.store().update(p.id) { it.copy(cap = c) }
+                    RkApp.store().log("${p.label}: cap \$${Engine.money(c)}.")
+                    quickBuy(nowOf(p), true)
+                }
+                allAsk.value = null }, modifier = Modifier.testTag("allcap-save")) { Text("Turn Buy on") } },
+            dismissButton = { TextButton(onClick = { allAsk.value = null }) { Text("Not now") } })
+    }
+
+    /** 1.1.3 (owner, 2026-11-24: "the language on the button seems confusing ... it would be helpful to have the rotating animation to
+     *  tell the user the app is processing something. This is another instance where it appears frozen"): the update line says in plain
+     *  words where the update stands; while it is being fetched or installed a turning circle shows instead of the button. */
+    @Composable
+    fun UpdateLine(v: String, onNow: () -> Unit) {
+        var tappedAt by remember { mutableLongStateOf(0L) }
+        val state by produceState(Updater.state, v) { while (true) { value = Updater.state; kotlinx.coroutines.delay(400) } }
+        val tick by produceState(0L) { while (true) { value = System.currentTimeMillis(); kotlinx.coroutines.delay(400) } }
+        val working = state.startsWith("downloading") || state.startsWith("installing") || (tappedAt > 0 && tick - tappedAt < 20_000)
+        val text = when {
+            state.startsWith("installing") -> "Installing version $v. The app closes for a moment - watching goes on."
+            state.startsWith("downloading") || working -> "Getting version $v ..."
+            state.contains("waits until the purchase") -> "Version $v installs as soon as the purchase is over."
+            state.contains("failed") -> "Version $v could not be installed. Try again."
+            else -> "Version $v is ready. It installs by itself - or install it now."
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp).background(Look.AmberSoft, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 10.dp).testTag("update-line"),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(text, color = Look.AmberText, fontSize = 13.sp, lineHeight = 17.sp, modifier = Modifier.weight(1f).testTag("update-text"))
+            if (working) Spinner("update-busy")
+            else Button(onClick = { tappedAt = System.currentTimeMillis(); onNow() }, colors = ButtonDefaults.buttonColors(containerColor = Look.Amber),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp), modifier = Modifier.padding(start = 8.dp).heightIn(min = 40.dp).testTag("update-now")) {
+                Text("Install now", fontSize = 13.sp, maxLines = 1) }
+        }
+    }
+
     private fun quickWatch(p: Product, on: Boolean) {
         val s = RkApp.store()
         s.update(p.id) { it.copy(watch = on, buy = if (on) it.buy else false) }
@@ -1757,6 +1869,18 @@ class MainActivity : ComponentActivity() {
                     } else
                     SwitchRow("Update by itself", (Updater.modeText(Updater.mode(this@MainActivity)) + " " + Updater.state).trim(), st.autoUpdate, "autoupdate") { on ->
                         store.setSettings { it.copy(autoUpdate = on) }; store.log("Updating by itself switched ${if (on) "ON" else "OFF"}."); if (on) Updater.tick(this@MainActivity, force = true, explicit = true) }
+                    if (!BuildConfig.PLAY) {
+                        // 1.1.3 (owner: "When the app is updated, it does not launch automatically. This should be a default setting and
+                        // changeable in the app settings")
+                        val canOpen = Build.VERSION.SDK_INT < 29 || AndroidSettings.canDrawOverlays(this@MainActivity)
+                        SwitchRow("Open again after an update",
+                            if (canOpen) "When an update installs while this screen is open, Restalker opens again by itself."
+                            else "After an update you get a notification - tap it to open Restalker again. Android lets an app open itself only when \"Display over other apps\" is allowed for it.",
+                            st.reopenAfterUpdate, "reopen") { on -> store.setSettings { it.copy(reopenAfterUpdate = on) } }
+                        if (!canOpen && st.reopenAfterUpdate) TextButton(onClick = {
+                            try { startActivity(Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) } catch (e: Exception) { } },
+                            modifier = Modifier.padding(start = 8.dp).testTag("reopen-allow")) { Text("Let it open by itself", color = Look.Navy) }
+                    }
                     HorizontalDivider(color = Look.Line)
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                         // 1.0.4 (owner: "I'm not sure I understand "watching all day""): said in plain words - this is the phone's battery
@@ -1939,7 +2063,10 @@ class MainActivity : ComponentActivity() {
     }
     /** A product that needs you: a checkout that did not finish, an unclear order, a page that does not open. */
     private fun attnStatus(p: Product): Boolean = p.status.startsWith("NOT BOUGHT") || p.status.startsWith("STOPPED") ||
-        p.status.startsWith("ORDER MAY HAVE BEEN PLACED") || p.status == "the page did not load" || p.status == "the page did not answer"
+        p.status.startsWith("ORDER MAY HAVE BEEN PLACED") ||
+        // 1.1.3: a page that could not be read counts only from the third look in a row (right after an update a page may fail once)
+        ((p.status == "the page did not load" || p.status == "the page did not answer") &&
+            (try { WatchService.instance?.engine?.failedInARow(p.id) ?: 0 } catch (e: Throwable) { 0 }) >= 3)
     private val attnTick = mutableIntStateOf(0)
     private fun attnShowing(): List<com.restalker.mobile.core.Attention.Item> {
         attnTick.intValue
