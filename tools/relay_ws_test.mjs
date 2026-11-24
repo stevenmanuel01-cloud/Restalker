@@ -60,6 +60,13 @@ const st = await (await fetch(`${base}/v1/stats`)).json();
 say("7c the relay counts the open sockets and the devices are active", st.sockets >= 3 && st.active >= 3, `sockets ${st.sockets}, active ${st.active}`);
 const sy = await (await fetch(`${base}/v1/sync`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ c: B, g: G, r: {} }) })).json();
 say("7d a linked device sees its peer as heard just now", (sy.peers || []).some(p => p.c === A && Date.now() - p.at < 5000), JSON.stringify(sy.peers || []).slice(0, 120));
+// 7e. "I am here" over the socket: the count and the linked devices come back; the sign of life is kept for the others
+a2.ws.send(JSON.stringify({ t: "h", w: sealed("i am the pc") })); const okh = await until(() => a2.got.some(m => m.t === "here"));
+const here = a2.got.find(m => m.t === "here") || {};
+b2.ws.send(JSON.stringify({ t: "h" })); await until(() => b2.got.some(m => m.t === "here"));
+const hb = b2.got.find(m => m.t === "here") || {};
+say("7e 'I am here' over the socket brings the count and the linked devices with their signs of life", okh && here.active >= 3 && (here.peers || []).some(p => p.c === B) &&
+  (hb.peers || []).some(p => p.c === A && p.w === sealed("i am the pc")), JSON.stringify(hb.peers || []).slice(0, 100));
 // 8. refused connects
 const bad = await fetch(`${base}/v1/ws?c=nothex`); const plain = await fetch(`${base}/v1/ws?c=${A}`);
 say("8 a connect without a device code or without a socket is refused", bad.status === 400 || bad.status === 426, `${bad.status}/${plain.status}`);

@@ -295,6 +295,13 @@ export class Hub {
         if (this.memHit("ch:" + m.ch, L.CH_RATE)) { ws.send(JSON.stringify({ t: "no", why: "too many" })); return; }
         const id = this.chStore(m.ch, m.m, now, ws);
         ws.send(JSON.stringify({ t: "ok", ch: m.ch, id: String(id) }));
+      } else if (m.kind === "here") {
+        // the device's sign of life for its linked devices: kept only when it changed (nothing is written for "still here")
+        if (a.g && m.w) {
+          const row = this.sql.exec("SELECT w FROM seen WHERE c = ?", a.c).toArray()[0];
+          if (row && row.w !== m.w) this.sql.exec("UPDATE seen SET w = ? WHERE c = ?", m.w, a.c);
+        }
+        ws.send(JSON.stringify({ t: "here", active: this.active(now), ...(a.g ? { peers: this.peers(a.g, a.c, now) } : {}) }));
       } else if (m.kind === "sight") {
         await this.ensureAlarm();
         const r = await this.ingest(m.list.map(x => ({ ...x, c: a.c })), now, "ws");

@@ -374,13 +374,15 @@ export function wsChannels(text) {
 export const wsLine = (ch, row) => JSON.stringify({ t: "m", ch, ...line(row) });
 /** The newest line a device says it has (connect: s=<id>) -> a number, or null (then it gets the usual look back). */
 export const wsSince = v => { const n = Number(v); return v != null && v !== "" && Number.isInteger(n) && n >= 0 ? n : null; };
-/** What a device sent over its socket -> {kind:"post", ch, m} | {kind:"sight", list} | {kind:"here"} | null (not understood: ignored). */
+/** What a device sent over its socket -> {kind:"post", ch, m} | {kind:"sight", list} | {kind:"here", w} | null (not understood: ignored). */
 export function wsIn(text, channels) {
   if (typeof text !== "string" || text.length > CH_MAX_BYTES + 200) return null;
-  if (text === "here") return { kind: "here" };
+  if (text === "here") return { kind: "here", w: null };
   let o; try { o = JSON.parse(text); } catch (e) { return null; }
   if (!o || typeof o !== "object") return null;
   if (o.t === "p" && typeof o.ch === "string" && CH_LINK.test(o.ch) && (channels || []).includes(o.ch) && typeof o.m === "string" && SEALED.test(o.m)) return { kind: "post", ch: o.ch, m: o.m };
+  // "I am here" with this device's sealed sign of life for its linked devices (every 10 minutes: 1/20 of a request)
+  if (o.t === "h") return { kind: "here", w: typeof o.w === "string" && WHO.test(o.w) ? o.w : null };
   if (o.t === "s") { const list = Array.isArray(o.l) ? o.l.slice(0, 20) : [o.l]; return list.every(x => x && typeof x === "object") ? { kind: "sight", list } : null; }
   return null;
 }

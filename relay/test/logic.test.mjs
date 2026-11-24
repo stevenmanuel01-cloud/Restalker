@@ -241,7 +241,9 @@ test("held-open connections: channels, what a socket may send, capacity", () => 
   assert.equal(L.wsIn(JSON.stringify({ t: "s", l: [{ a: "B0TEST0001", s: "Amazon" }] }), []).kind, "sight");
   assert.equal(L.wsIn(JSON.stringify({ t: "s", l: Array(50).fill({ a: "x" }) }), []).list.length, 20);
   assert.equal(L.wsIn(JSON.stringify({ t: "s", l: [1, 2] }), []), null);
-  assert.deepEqual(L.wsIn("here", []), { kind: "here" });
+  assert.deepEqual(L.wsIn("here", []), { kind: "here", w: null });
+  assert.deepEqual(L.wsIn(JSON.stringify({ t: "h", w: sealed }), []), { kind: "here", w: sealed });
+  assert.deepEqual(L.wsIn(JSON.stringify({ t: "h", w: "not sealed" }), []), { kind: "here", w: null });
   const ln = JSON.parse(L.wsLine("crowd", { id: 7, at: 1795000000123, m: "hello" }));
   assert.deepEqual(ln, { t: "m", ch: "crowd", id: "7", time: 1795000000.1, event: "message", message: "hello" });
   // what the free plan carries: a phone that reconnects 20 times a day and sends 40 messages -> 4,545 devices; polling carried ~60
