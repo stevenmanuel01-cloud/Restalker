@@ -1,8 +1,8 @@
 {
- "version": "v146",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v146_update.zip",
- "sha256": "b865eb7764ea40137dce3847fd79f720be2245bfc38eec8bc97d82161f0b09c0",
- "size": 768619,
- "notes": "Under the title: \"3 stalkers active now\" (was \"3 Restalker devices active now\") - everyone running Restalker and sharing is a stalker, hunting restocks together. The number is counted in one place and is the same on every device, whatever version it runs; older versions are now counted too, without updating.",
+ "version": "v149",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v149_update.zip",
+ "sha256": "c42ec2f290dcd1991a58372271cb800d5c32031339911c2275ba9d7adb9786c4",
+ "size": 777333,
+ "notes": "Fixed: 'Buy again' / re-arm was refused on the PC for every product you added by link once it had been bought (\"Custom ASIN metadata must be verified before Buy Again\") - the Nauctis Secret Lair Bundle, for one. The product is now checked against its Amazon page when it is added, and one added before this version is checked on the spot when you press Buy again. The safety check itself stays: if Amazon's page names another product, Buy again is still refused, with the reason.",
  "files": 84
 }
