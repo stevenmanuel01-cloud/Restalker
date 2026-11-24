@@ -57,9 +57,11 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
   console.log('ROWS ' + JSON.stringify(rows.slice(0, 6)));
   const dps = reqs.filter(r => r.doc && r.p === '/dp'), posts = reqs.filter(r => r.m === 'POST');
   const pressAfter = posts.map(p => { const d = dps.filter(x => x.t <= p.t).pop(); return d ? p.t - d.t : null; }).filter(x => x !== null);
-  say('1 product pages are timed: the Buy Now button, price, seller and title are noted', prod.length >= 1 && prod.every(r => ['buyNow', 'price', 'seller', 'title', 'idle', 'dom'].every(k => k in r.marks)), JSON.stringify(prod[0] && prod[0].marks));
-  say('2 the measurement shows the wait: the button was in the page about ' + SLOW + ' ms before the engine started', prod.length >= 1 && prod.every(r => r.marks.idle - r.marks.buyNow >= SLOW - 250 && r.marks.idle - r.marks.buyNow <= SLOW + 900), prod.map(r => r.marks.idle - r.marks.buyNow).join(', ') + ' ms');
-  say('3 ... and the engine really pressed only then (the stand-in store saw the press that long after the page)', pressAfter.length >= 1 && pressAfter.every(x => x >= SLOW - 100), 'press after page request: ' + pressAfter.join(', ') + ' ms');
+  say('1 product pages are timed: the Buy Now button, price, seller and title are noted', prod.length >= 1 && prod.every(r => ['buyNow', 'price', 'seller', 'title'].every(k => k in r.marks) && ('idle' in r.marks || 'beginEarly' in r.marks)), JSON.stringify(prod[0] && prod[0].marks));
+  // v155: the engine no longer waits for the page to be read to its end (until v154 these two checks measured that wait: about SLOW ms)
+  const earlyRows = prod.filter(r => 'beginEarly' in r.marks);
+  say('2 the measurement shows it: Buy Now was pressed right after the button was in the page (until v154: about ' + SLOW + ' ms later)', earlyRows.length >= 2 && earlyRows.every(r => r.marks.beginEarly - r.marks.buyNow >= -80 && r.marks.beginEarly - r.marks.buyNow < 400), earlyRows.map(r => r.marks.beginEarly - r.marks.buyNow).join(', ') + ' ms');
+  say('3 ... and the stand-in store saw the press that soon after the page request (the first one is the look that checks the listing when it is armed)', pressAfter.length >= 3 && pressAfter.slice(1).every(x => x < 500), 'press after page request: ' + pressAfter.join(', ') + ' ms');
   say('4 checkout pages are timed: Amazon\'s "unavailable" is noted, and when the engine started', chk.length >= 1 && chk.every(r => 'unavailable' in r.marks && 'idle' in r.marks && r.marks.idle - r.marks.unavailable >= SLOW - 400), JSON.stringify(chk[0] && chk[0].marks));
   say('5 nothing personal is in a row (kind, listing, path, times only)', rows.every(r => Object.keys(r).sort().join() === 'asin,at,first,got,kind,marks,path'), Object.keys(rows[0] || {}).join());
   const fs2 = require('fs'); fs2.writeFileSync('/tmp/timing_rows.json', JSON.stringify(rows));

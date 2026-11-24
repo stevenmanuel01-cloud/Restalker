@@ -56,7 +56,7 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
   const pressAfter = posts.map(p => { const d = dps.filter(x => x.t <= p.t).pop(); return d ? p.t - d.t : null; }).filter(x => x !== null);
   const verdicts = posts.map(p => p.t), gaps = verdicts.slice(1).map((t, i) => t - verdicts[i]);
   sw = ctx.serviceWorkers()[0] || sw;
-  const early = await sw.evaluate(() => globalThis.RK_EARLY ? { yes: RK_EARLY.yes, looks: RK_EARLY.looks } : null);
+  const early = await sw.evaluate(() => globalThis.RK_EARLY ? { yes: RK_EARLY.yes + (RK_EARLY.pre || 0), looks: RK_EARLY.looks } : null);
   s = await state(pid);
   console.log('MEASURED tries ' + posts.length + ' | Buy Now pressed after the page request (ms): ' + pressAfter.join(', '));
   console.log('MEASURED time between tries (ms): ' + gaps.join(', '));
@@ -70,7 +70,7 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
     // sold out now: a look must wait for the whole page as before, and change nothing
     stock = false; reqs = [];
     const arm = await send({ type: 'ARM_PRODUCT', productId: pid }); await dash.waitForTimeout(9000);
-    const e2 = await (ctx.serviceWorkers()[0] || sw).evaluate(() => ({ yes: RK_EARLY.yes, looks: RK_EARLY.looks }));
+    const e2 = await (ctx.serviceWorkers()[0] || sw).evaluate(() => ({ yes: RK_EARLY.yes + (RK_EARLY.pre || 0), looks: RK_EARLY.looks }));
     s = await state(pid);
     say('5 a sold-out page never ends a look early (it waits for the whole page as before) and starts no checkout', e2.yes === early.yes && e2.looks > early.looks && reqs.filter(r => r.m === 'POST').length === 0 && !s.inProgress, JSON.stringify(e2) + ' status=' + String(s.status).slice(0, 70));
   }

@@ -1,8 +1,8 @@
 {
- "version": "v154",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v154_update.zip",
- "sha256": "ad55852f54b7b2726a1df50aab374f386863b3958c3e5a635f958817f7011c8b",
- "size": 804557,
- "notes": "v154: (1) Amazon's purchase limit is recognised. When Amazon answers 'you've reached the purchase limit for this item' Restalker says so (one phone message), stops sending checkouts for that product for 6 hours instead of every minute, and keeps it set to Buy - nothing is locked; choosing Buy again ends the rest at once. (2) A turning circle with words shows while Restalker is working on something you asked for, e.g. preparing the diagnostics. (3) The yellow '--no-sandbox' line: it was Chrome's own note in the 'Hidden Chrome' buying browser only; that browser is now started with Chrome's sandbox on.",
+ "version": "v155",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v155_update.zip",
+ "sha256": "fe9c11cf39f365f333e8a4f30137805906e9eab81dd062f1d9a68a60345924ef",
+ "size": 813224,
+ "notes": "v155: (1) Amazon's purchase limit is kept PER SELLER: only the seller Amazon refused is left alone for 6 hours; an offer from another seller at or under your cap is still bought (nothing is locked; Buy again ends it). (2) A purchase starts the moment the buy box has been read - the engine no longer waits for the page to be read to its end (about 1 second sooner on your PC's measurements); the other buying browsers look at the page as it arrives, without fixed pauses. (3) The store-reading browsers start with Chrome's sandbox too. (4) Amazon's offers list is read about twice as often.",
  "files": 88
 }

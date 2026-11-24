@@ -184,6 +184,7 @@ Fair play: Restalker buys each product at most 3 times, counting every linked de
 | --- | --- |
 | A red notice that some files are OLD | Copy ALL files of the newest update into the folder, close the black window, open start_app.bat again |
 | Problems shows a number | Open Problems and press the button next to each one |
+| "Amazon's purchase limit reached (seller ...)" | Amazon decides how many of an item one account may buy from one seller. Restalker leaves that seller's offer alone for 6 hours and still buys an offer from another seller at or under your cap. Nothing is locked. To try that seller sooner, choose Buy again for the product. |
 | A red "stalled" dot next to a store | Wait a few minutes (it keeps trying by itself). If it stays red, press Stop, then start_app.bat again; if it still stays, Download diagnostics and send the file |
 | A store column says *NOT signed in* | Press Sign in above that store's column, or save its sign-in under Sign-ins |
 | No phone messages | Press Send a test; check the ntfy app is subscribed to exactly the name shown under Phone |
