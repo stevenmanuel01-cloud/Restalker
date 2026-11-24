@@ -348,6 +348,45 @@ export function nextPoll(linked, perDay) {
   const f = perDay > SYNC_BUDGET_DAY ? perDay / SYNC_BUDGET_DAY : 1;
   return Math.min(SYNC_MAX, Math.ceil(base * f / 5) * 5);
 }
+// ---- held-open connections (2026-11-24, the owner: "prepare everything for a full scale launch ... the capacity to receive thousands
+// of users as well as send messages back to them in near zero latency") ----------------------------------------------------------------
+// A device keeps ONE WebSocket open to the relay (GET /v1/ws?c=<device>&g=<group>&ch=<its channels>&s=<newest line it has>). The relay
+// sleeps while nothing happens (Cloudflare "hibernation": an idle connection costs nothing) and pushes every new line - a crowd
+// sighting, a linked device's sealed post, the buy-now doorbell - to the sockets that carry its channel the moment it arrives.
+// What the free plan counts is REQUESTS (100,000 a day): opening a socket is one; a message a device sends over its open socket
+// counts as 1/20; what the relay sends is free. So a device costs its connects of the day (a phone on a mobile network: tens), not
+// 1,440 polls. "I am here" is the open socket itself - nothing is written for it (the plan also counts rows written: 100,000 a day).
+export const WS_MAX = 30000;                // sockets on the one hub (Cloudflare allows 32,768 per object)
+export const WS_RATE = 40;                  // connects per device per 10 minutes
+export const WS_IP_RATE = 3000;             // connects per network address per 10 minutes (a phone company puts thousands of phones behind one address)
+export const WS_CHANNELS = 6;               // link channels one device may carry (its group's line and doorbell; room for a second link)
+export const WS_CATCHUP = 200;              // lines sent at once when a device comes back
+export const WS_SAFETY_S = 6 * 3600;        // with its socket open a device still asks the old way this seldom (a missed line is found then)
+export const WS_MSG_MAX = 64;               // messages a socket may send in 10 s before it is closed
+export const CROWD_PUSH_GAP_MS = 15_000;    // the same product at the same store is pushed to everyone at most this often
+/** The link channels named in a connect request (comma-separated) -> the valid, different ones, at most WS_CHANNELS. */
+export function wsChannels(text) {
+  const out = [];
+  for (const c of String(text || "").split(",")) if (CH_LINK.test(c) && !out.includes(c) && out.length < WS_CHANNELS) out.push(c);
+  return out;
+}
+/** A line as a socket carries it. */
+export const wsLine = (ch, row) => JSON.stringify({ t: "m", ch, ...line(row) });
+/** The newest line a device says it has (connect: s=<id>) -> a number, or null (then it gets the usual look back). */
+export const wsSince = v => { const n = Number(v); return v != null && v !== "" && Number.isInteger(n) && n >= 0 ? n : null; };
+/** What a device sent over its socket -> {kind:"post", ch, m} | {kind:"sight", list} | {kind:"here"} | null (not understood: ignored). */
+export function wsIn(text, channels) {
+  if (typeof text !== "string" || text.length > CH_MAX_BYTES + 200) return null;
+  if (text === "here") return { kind: "here" };
+  let o; try { o = JSON.parse(text); } catch (e) { return null; }
+  if (!o || typeof o !== "object") return null;
+  if (o.t === "p" && typeof o.ch === "string" && CH_LINK.test(o.ch) && (channels || []).includes(o.ch) && typeof o.m === "string" && SEALED.test(o.m)) return { kind: "post", ch: o.ch, m: o.m };
+  if (o.t === "s") { const list = Array.isArray(o.l) ? o.l.slice(0, 20) : [o.l]; return list.every(x => x && typeof x === "object") ? { kind: "sight", list } : null; }
+  return null;
+}
+/** How many devices the free plan carries: each costs its connects of a day (+ 1/20 per message it sends). */
+export const wsCapacity = (connectsPerDay, sendsPerDay, budget = 100_000) => Math.floor(budget / (connectsPerDay + sendsPerDay / 20));
+
 /** A sighting as the crowd line carries it (the devices' own message shape), and its key (one line per device, product, store, time). */
 export const crowdMsg = s => JSON.stringify({ v: 1, c: s.c, k: "s", a: s.a, s: s.s, st: "in", t: Math.round(s.t / 100) / 10, ...(s.p != null ? { p: s.p } : {}) });
 export const crowdKey = s => `${s.c}|${s.a}|${s.s}|${Math.round(s.t / 1000)}`;

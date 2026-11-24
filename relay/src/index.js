@@ -56,6 +56,9 @@ export class Hub {
     this.sql.exec(`CREATE INDEX IF NOT EXISTS msgs_ch ON msgs(ch, id)`);
     this.sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS msgs_k ON msgs(ch, k) WHERE k IS NOT NULL`);
     this.mem = new Map(); this.win = { t0: Date.now(), n: 0, perDay: 0 };
+    this.pushed = new Map(); this.live = null;
+    // (a device's "ping" is answered by Cloudflare itself - the relay is not woken and nothing is counted)
+    try { this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong")); } catch (e) { /* older runtime */ }
   }
 
   kvGet(k) { const r = this.sql.exec("SELECT v FROM kv WHERE k = ?", k).toArray(); return r.length ? r[0].v : null; }
@@ -98,6 +101,7 @@ export class Hub {
       const mch = u.pathname.match(/^\/v1\/ch\/([a-z0-9-]{1,40})$/);
       if (mch && req.method === "POST") return await this.chPost(mch[1], req);
       if (u.pathname === "/v1/sync" && req.method === "POST") return await this.sync(req);
+      if (u.pathname === "/v1/ws") return this.wsOpen(req, u);
       if (u.pathname === "/v1/s" && req.method === "POST") {
         // a device posts its own sighting(s) here directly (the apps move to this later; today they post to the crowd channel)
         const ip = req.headers.get("cf-connecting-ip") || "?";
@@ -127,7 +131,7 @@ export class Hub {
           this.sql.exec(`INSERT INTO seen(c, at, first, sightings, g, w, hb) VALUES(?, ?, ?, 0, ?, ?, ?)
             ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, w = excluded.w, hb = excluded.hb`, c, now, now, g, w, now);
           const out = { ok: true, active: this.active(now) };
-          if (g) out.peers = L.presenceOut(this.sql.exec("SELECT c, at, w FROM seen WHERE g = ? ORDER BY at DESC LIMIT 40", g).toArray(), c, now);
+          if (g) out.peers = this.peers(g, c, now);
           return json(out);
         }
         if (u.pathname === "/v1/lock" || u.pathname === "/v1/release") {
@@ -208,12 +212,103 @@ export class Hub {
     const m = await req.text();
     if (m.length > L.CH_MAX_BYTES) return json({ ok: false, error: "too long" }, 413);
     if (!L.SEALED.test(m)) return json({ ok: false, error: "not sealed" }, 400);
-    const now = Date.now(), keep = L.keepOf(ch);
+    const now = Date.now();
+    const id = this.chStore(ch, m, now);
+    return json({ ok: true, id: String(id), time: Math.round(now / 100) / 10 });
+  }
+
+  /** A sealed post of a linked group: kept, and pushed at once to the group's devices that hold a socket open. */
+  chStore(ch, m, now, except) {
+    const keep = L.keepOf(ch);
     const id = this.sql.exec("INSERT INTO msgs(ch, at, m) VALUES(?, ?, ?) RETURNING id", ch, now, m).one().id;
     this.sql.exec(`DELETE FROM msgs WHERE ch = ? AND (at < ? OR id <= COALESCE((SELECT id FROM msgs WHERE ch = ? ORDER BY id DESC LIMIT 1 OFFSET ?), 0))`,
       ch, now - keep.ms, ch, keep.n);
-    return json({ ok: true, id: String(id), time: Math.round(now / 100) / 10 });
+    this.push(ch, { id, at: now, m }, except);
+    return id;
   }
+
+  // ------------------------------------------------------------------------------------------------ held-open connections (logic.js)
+  push(ch, row, except) {
+    let n = 0;
+    const text = L.wsLine(ch, row);
+    for (const ws of this.state.getWebSockets(ch)) { if (ws === except) continue; try { ws.send(text); n++; } catch (e) { /* it is gone */ } }
+    return n;
+  }
+
+  /** The devices that hold a socket open right now (read at most every 20 s): Set of device codes. */
+  liveSet(now) {
+    if (this.live && now - this.live.at < 20_000) return this.live.set;
+    const set = new Set();
+    for (const ws of this.state.getWebSockets()) { try { const a = ws.deserializeAttachment(); if (a && a.c) set.add(a.c); } catch (e) { /* closing */ } }
+    this.live = { at: now, set };
+    return set;
+  }
+
+  wsOpen(req, u) {
+    if ((req.headers.get("upgrade") || "").toLowerCase() !== "websocket") return json({ ok: false, error: "websocket" }, 426);
+    const c = u.searchParams.get("c") || "";
+    if (!/^[0-9a-f]{12}$/.test(c)) return json({ ok: false, error: "device code" }, 400);
+    const ip = req.headers.get("cf-connecting-ip") || "?";
+    if (this.memHit("wsip:" + ip, L.WS_IP_RATE) || this.memHit("ws:" + c, L.WS_RATE)) return json({ ok: false, error: "too many", next: 120 }, 429);
+    const now = Date.now();
+    const { g } = L.presenceIn({ g: u.searchParams.get("g") || undefined });
+    const chs = L.wsChannels(u.searchParams.get("ch"));
+    for (const old of this.state.getWebSockets("c:" + c)) { try { old.close(4000, "a newer connection of this device"); } catch (e) { /* gone */ } }
+    if (this.state.getWebSockets().length >= L.WS_MAX) return json({ ok: false, error: "full", next: 300 }, 503);
+    const pair = new WebSocketPair();
+    const client = pair[0], server = pair[1];
+    this.state.acceptWebSocket(server, ["c:" + c, L.CH_CROWD, ...chs]);
+    server.serializeAttachment({ c, g, chs, at: now, n: 0, w0: now });
+    // "I am here": written once per connect (not every 8 minutes as the polling devices do) - the open socket says the rest
+    const row = this.sql.exec("SELECT at, g, hb FROM seen WHERE c = ?", c).toArray()[0];
+    if (!row || row.hb == null || now - row.at >= L.SEEN_WRITE_MS || (row.g || null) !== g) {
+      this.sql.exec(`INSERT INTO seen(c, at, first, sightings, g, hb) VALUES(?, ?, ?, 0, ?, ?)
+        ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, hb = excluded.hb`, c, now, now, g, now);
+    }
+    if (this.live) this.live.set.add(c);
+    this.act = null;
+    // what it missed while it was away, then "hello" (so a device knows it has everything up to now)
+    const since = L.wsSince(u.searchParams.get("s"));
+    const top = this.sql.exec("SELECT COALESCE(MAX(id), 0) AS n FROM msgs").one().n;
+    for (const ch of [L.CH_CROWD, ...chs]) {
+      const rows = since != null && since <= top
+        ? this.sql.exec("SELECT id, at, m FROM msgs WHERE ch = ? AND id > ? ORDER BY id LIMIT ?", ch, since, L.WS_CATCHUP).toArray()
+        : this.sql.exec("SELECT id, at, m FROM msgs WHERE ch = ? AND at > ? ORDER BY id LIMIT ?", ch, now - L.firstBackMs(ch), L.WS_CATCHUP).toArray();
+      for (const r of rows) server.send(L.wsLine(ch, r));
+    }
+    server.send(JSON.stringify({ t: "hello", active: this.active(now), top: String(top), next: L.WS_SAFETY_S }));
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** What a device sends over its open socket (1/20 of a request each): its sealed posts and its sightings. */
+  async webSocketMessage(ws, msg) {
+    const now = Date.now();
+    let a; try { a = ws.deserializeAttachment() || {}; } catch (e) { a = {}; }
+    if (now - (a.w0 || 0) > 10_000) { a.w0 = now; a.n = 0; }
+    a.n = (a.n || 0) + 1;
+    try { ws.serializeAttachment(a); } catch (e) { /* closing */ }
+    if (a.n > L.WS_MSG_MAX) { try { ws.close(4008, "too many messages"); } catch (e) { /* gone */ } return; }
+    const m = L.wsIn(typeof msg === "string" ? msg : "", a.chs);
+    if (!m) return;
+    try {
+      if (m.kind === "post") {
+        if (this.memHit("ch:" + m.ch, L.CH_RATE)) { ws.send(JSON.stringify({ t: "no", why: "too many" })); return; }
+        const id = this.chStore(m.ch, m.m, now, ws);
+        ws.send(JSON.stringify({ t: "ok", ch: m.ch, id: String(id) }));
+      } else if (m.kind === "sight") {
+        await this.ensureAlarm();
+        const r = await this.ingest(m.list.map(x => ({ ...x, c: a.c })), now, "ws");
+        ws.send(JSON.stringify({ t: "ok", took: r.took }));
+      }
+    } catch (e) { try { ws.send(JSON.stringify({ t: "no", why: "error" })); } catch (e2) { /* gone */ } }
+  }
+
+  async webSocketClose(ws, code) {
+    this.live = null; this.act = null;          // (counted anew at the next look: a newer socket of the same device may be open)
+    try { ws.close(code === 1005 || code === 1006 ? 1000 : code, "bye"); } catch (e) { /* already closed */ }
+  }
+
+  async webSocketError(ws) { try { ws.close(1011, "error"); } catch (e) { /* already closed */ } }
 
   /** A device's whole round in one request: "I am here" (the active count, its linked devices) and what is new on its channels. */
   async sync(req) {
@@ -230,7 +325,7 @@ export class Hub {
         ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, w = excluded.w, hb = excluded.hb`, c, now, now, g, w, now);
     }
     const out = { ok: true, active: this.active(now), m: {} };
-    if (g) out.peers = L.presenceOut(this.sql.exec("SELECT c, at, w FROM seen WHERE g = ? ORDER BY at DESC LIMIT 40", g).toArray(), c, now);
+    if (g) out.peers = this.peers(g, c, now);
     const top = this.sql.exec("SELECT COALESCE(MAX(id), 0) AS n FROM msgs").one().n;
     let linked = false;
     for (const [ch, since0] of L.syncReads(b.r)) {
@@ -286,7 +381,15 @@ export class Hub {
       if (this.rateHit("dev:" + s.c, L.RATE_DEVICE)) { dropped++; continue; }
       this.sql.exec("UPDATE seen SET sightings = sightings + 1 WHERE c = ?", s.c);
       // the crowd's line for the devices that read it here (one line per device, product, store and second - whichever way it came)
-      this.sql.exec("INSERT OR IGNORE INTO msgs(ch, at, m, k) VALUES(?, ?, ?, ?)", L.CH_CROWD, now, L.crowdMsg(s), L.crowdKey(s));
+      const made = this.sql.exec("INSERT OR IGNORE INTO msgs(ch, at, m, k) VALUES(?, ?, ?, ?) RETURNING id", L.CH_CROWD, now, L.crowdMsg(s), L.crowdKey(s)).toArray()[0];
+      if (made) {
+        const pk = s.a + "|" + s.s, last = this.pushed.get(pk) || 0;
+        if (now - last >= L.CROWD_PUSH_GAP_MS) {
+          this.pushed.set(pk, now);
+          if (this.pushed.size > 5000) this.pushed.clear();
+          this.push(L.CH_CROWD, { id: made.id, at: now, m: L.crowdMsg(s) });
+        }
+      }
       const open = this.sql.exec(`SELECT * FROM events WHERE a = ? AND s = ? AND last_at >= ? ORDER BY id DESC LIMIT 3`,
         s.a, s.s, s.t - L.MERGE_MS).toArray().map(r => ({ ...r, devs: JSON.parse(r.devs || "[]") }));
       const r = L.merge(open, s);
@@ -426,7 +529,29 @@ export class Hub {
     return out;
   }
 
-  active(now) { return this.sql.exec(L.ACTIVE_SQL, ...L.activeArgs(now)).one().n; }
+  /** The other devices of a group; one that holds a socket open was "heard" just now. */
+  peers(g, c, now) {
+    const live = this.liveSet(now);
+    const rows = this.sql.exec("SELECT c, at, w FROM seen WHERE g = ? ORDER BY at DESC LIMIT 40", g).toArray();
+    return L.presenceOut(rows.map(r => live.has(r.c) ? { ...r, at: now } : r), c, now);
+  }
+
+  active(now) {
+    if (this.act && now - this.act.at < 20_000) return this.act.n;
+    const n = this.activeNow(now);
+    this.act = { at: now, n };
+    return n;
+  }
+
+  activeNow(now) {
+    const live = this.liveSet(now);
+    if (!live.size) return this.sql.exec(L.ACTIVE_SQL, ...L.activeArgs(now)).one().n;
+    // (devices with an open socket write nothing while it is open: they are counted by the socket, the others by when they were heard)
+    const heard = this.sql.exec(L.ACTIVE_SQL.replace("COUNT(*) AS n", "c"), ...L.activeArgs(now)).toArray();
+    let n = live.size;
+    for (const r of heard) if (!live.has(r.c)) n++;
+    return n;
+  }
 
   async daily() {
     const ch = CFG.channels || {};
@@ -463,6 +588,7 @@ export class Hub {
       active: this.active(now),                      // (heard in the last 30 minutes: "active now")
       devices12h: one("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 12 * 3600_000),
       devicesAll: one("SELECT COUNT(*) AS n FROM seen"),
+      sockets: this.state.getWebSockets().length,                                      // devices holding a connection open right now
       lines: one("SELECT COUNT(*) AS n FROM msgs"), syncPerDay: Math.max(this.win.perDay, this.demand(now)), syncNext: L.nextPoll(true, Math.max(this.win.perDay, this.demand(now))),
       // (2026-11-21: counted from what is stored - "syncPerDay" lives in memory and is 0 again whenever the relay has slept)
       linkLines: one("SELECT COUNT(*) AS n FROM msgs WHERE ch LIKE 'rkl-%'"),          // sealed posts of linked devices held right now

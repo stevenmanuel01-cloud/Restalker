@@ -224,3 +224,26 @@ test("the devices' own lines: channel names, marks, what a round may read, when 
   assert.equal(L.crowdKey(sg), L.crowdKey({ ...sg, t: sg.t + 100, p: 1 })); assert.notEqual(L.crowdKey(sg), L.crowdKey({ ...sg, t: sg.t + 2000 }));
   assert.notEqual(L.crowdKey(sg), L.crowdKey({ ...sg, c: "bbbbbbbbbbbb" }));
 });
+
+test("held-open connections: channels, what a socket may send, capacity", () => {
+  const a = "rkl-" + "a".repeat(24), b = "rkl-" + "b".repeat(24);
+  assert.deepEqual(L.wsChannels(`${a},${a}-go,${a},nope,crowd,${b}`), [a, a + "-go", b]);
+  assert.equal(L.wsChannels(Array.from({ length: 20 }, (_, i) => "rkl-" + String(i).padStart(24, "c")).join(",")).length, L.WS_CHANNELS);
+  assert.deepEqual(L.wsChannels(null), []);
+  assert.equal(L.wsSince("17"), 17); assert.equal(L.wsSince("0"), 0); assert.equal(L.wsSince(""), null); assert.equal(L.wsSince(null), null);
+  assert.equal(L.wsSince("-3"), null); assert.equal(L.wsSince("1.5"), null); assert.equal(L.wsSince("x"), null);
+  const sealed = "rk1:" + "A".repeat(60);
+  assert.deepEqual(L.wsIn(JSON.stringify({ t: "p", ch: a, m: sealed }), [a]), { kind: "post", ch: a, m: sealed });
+  assert.equal(L.wsIn(JSON.stringify({ t: "p", ch: b, m: sealed }), [a]), null);              // not a channel this socket carries
+  assert.equal(L.wsIn(JSON.stringify({ t: "p", ch: a, m: "plain words" }), [a]), null);       // not sealed: never kept
+  assert.equal(L.wsIn(JSON.stringify({ t: "p", ch: "crowd", m: sealed }), ["crowd"]), null);   // the crowd's line takes sightings only
+  assert.equal(L.wsIn("{not json", [a]), null); assert.equal(L.wsIn(42, [a]), null); assert.equal(L.wsIn("[1]", [a]), null);
+  assert.equal(L.wsIn(JSON.stringify({ t: "s", l: [{ a: "B0TEST0001", s: "Amazon" }] }), []).kind, "sight");
+  assert.equal(L.wsIn(JSON.stringify({ t: "s", l: Array(50).fill({ a: "x" }) }), []).list.length, 20);
+  assert.equal(L.wsIn(JSON.stringify({ t: "s", l: [1, 2] }), []), null);
+  assert.deepEqual(L.wsIn("here", []), { kind: "here" });
+  const ln = JSON.parse(L.wsLine("crowd", { id: 7, at: 1795000000123, m: "hello" }));
+  assert.deepEqual(ln, { t: "m", ch: "crowd", id: "7", time: 1795000000.1, event: "message", message: "hello" });
+  // what the free plan carries: a phone that reconnects 20 times a day and sends 40 messages -> 4,545 devices; polling carried ~60
+  assert.equal(L.wsCapacity(20, 40), 4545); assert.equal(L.wsCapacity(5, 20), 16666); assert.ok(L.wsCapacity(50, 100) >= 1800);
+});
