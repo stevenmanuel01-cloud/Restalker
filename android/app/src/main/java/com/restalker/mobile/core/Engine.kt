@@ -270,6 +270,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
 
     // ------------------------------------------------------------------ looking at a product
     private var lastReply: Map<String, Any?>? = null
+    /** 1.1.7: when Buy Now is pressed - the fastest way first, a slower way only on proof, and back by itself (see PressLadder). */
+    private val ladder = PressLadder({ now() }, try { store.readFile("press_ladder.json") } catch (e: Exception) { null })
+    private var lastEarly = false
+    private fun ladderSave() { try { store.writeFile("press_ladder.json", ladder.save()) } catch (e: Exception) { } }
+    fun pressLadderText(): String = ladder.text()
 
     /** Opens the product's page and reads it (the desktop's REVALIDATE_QUEUED check). Updates the product. false = could not read it. */
     private fun openAndRead(p: Product): Boolean {
@@ -288,11 +293,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
         while (true) {
             r = page.ask(mapOf("bb" to "eligible", "product" to p.forPage()), 12_000)
             val ready = r?.get("ready").asStr()
-            // 1.1.6: "buyable" counts once the page has been READ (its text is all there) - not while it is still arriving. On the PC,
-            // Amazon answered some purchases that began while the page was still arriving with pages without the product (the PC's
-            // v157 measures whether that is the cause); until that is settled the app presses when the page has been read. It still
-            // does not wait for pictures and scripts to finish loading, or a fixed pause, as it did until 1.1.4.
-            if (r == null || r["limited"] == true || (r["eligible"] == true && (EARLY_PRESS || ready != "loading"))) break
+            // 1.1.7 (owner, 2026-11-25: the fastest option is the default; a slower one only after being PROVEN, and back by itself):
+            // "buyable" ends the look the moment the buy box is complete, while the page is still arriving. 1.1.6 waited for the page
+            // to be read on a suspicion (pages without the product on the PC after early presses); now that is measured and decided
+            // by the numbers - see PressLadder. It never waits for pictures and scripts, or a fixed pause, as it did until 1.1.4.
+            if (r == null || r["limited"] == true || (r["eligible"] == true && (ready != "loading" || ladder.early()))) { lastEarly = r?.get("eligible") == true && ready == "loading"; break }
             if (ready == null) break                                   // (a page part that does not say how far the page is: one look, as before)
             val read = ready == "interactive" || ready == "complete"
             if (read && (r["reason"].asStr() ?: "") == "price above cap") break
@@ -321,7 +326,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 (price?.let { " (\$${money(it)})" } ?: "") + "; an offer of another seller is bought"
             reason == "price above cap" -> "for sale over your cap" + (price?.let { " (\$${money(it)})" } ?: "")
             // 1.1.6: Amazon answered with a page that has no product at all (not this listing's fault, not "sold out"): looked at again
-            reason.contains("page without the product") -> reason
+            reason.contains("page without the product") -> { ladder.junk(); ladderSave(); reason }
             Regex("identity|not the product", RegexOption.IGNORE_CASE).containsMatchIn(reason) -> "NOT THIS PRODUCT - the page shows something else ($reason)"
             reason.contains("purchase control") -> "out of stock" + (price?.let { " (\$${money(it)} shown)" } ?: "")
             else -> reason.ifBlank { "not buyable" }
@@ -352,13 +357,19 @@ class Engine(private val store: Store, private val page: Page, private val alert
         }
     }
 
+    private var restEnded: String? = null
     private fun setSeen(p: Product, text: String, price: Double?, buyable: Boolean) {
         val t = now()
         store.update(p.id) {
             val newEp = buyable && !it.buyable
+            // 1.1.7: new evidence ends the wait after failed checkouts at once - a new restock, or another price on a standing offer
+            val newPrice = buyable && it.buyable && price != null && it.price != null && Math.abs(price - (it.price ?: price)) >= 0.01
+            val endRest = (newEp || newPrice) && it.lockedUntil > t
+            if (endRest) restEnded = if (newEp) "a new restock" else "another price"
             it.copy(status = text, price = price ?: if (buyable) it.price else price, lastCheck = t, buyable = buyable,
-                episodeStart = if (newEp) t else it.episodeStart)
+                episodeStart = if (newEp) t else it.episodeStart, lockedUntil = if (endRest) 0 else it.lockedUntil)
         }
+        restEnded?.let { log("${p.label}: $it - the wait after failed checkouts ends now."); restEnded = null }
         if (buyable && !p.buyable && !quietLook) { detail("${p.label}: $text"); freshId = p.id }
     }
 
@@ -476,6 +487,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         var practiceFees: Map<String, Any?>? = null
         var submitted = false
         try {
+            ladder.press(lastEarly); ladderSave()
             val b = page.ask(mapOf("bb" to "begin", "product" to p.forPage(), "price" to price, "hit" to now()), 10_000)
             if (b != null && b["ok"] == false && b["reason"] is String) { why = b["reason"] as String; return }
             var seen = 0L
@@ -635,14 +647,20 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 val ep = p.episodeStart
                 val fails = if (p.failEpisode == ep) p.fails + 1 else 1
                 val lock = fails >= LOCK_AFTER
+                // 1.1.7 (owner, 2026-11-25: a 10-minute wait "seems too late"; "what am I sacrificing ... who is being harmed"): the wait
+                // spares Amazon the same failing checkout again and again - but while it lasts this device does not buy, so it is as
+                // short as it can be: 30 s, then 1, 2 and at most 5 minutes while the failures go on, and a NEW restock or another
+                // price ends it at once (setSeen). Until 1.1.6: 10 minutes after 3 tries, whatever happened meanwhile.
+                val restMs = if (lock) REST_STEPS[minOf(fails - LOCK_AFTER, REST_STEPS.size - 1)] else 0L
+                val restWord = if (restMs < 120_000L) "${restMs / 1000} s" else "${restMs / 60_000} min"
                 store.update(p.id) {
                     it.copy(inProgress = false, attempted = it.attempted && !why.startsWith("ORDER NOT PLACED"),     // (Amazon said no order: may be tried again)
-                        fails = fails, failEpisode = ep, lockedUntil = if (lock) now() + LOCK_MS else it.lockedUntil,
+                        fails = fails, failEpisode = ep, lockedUntil = if (lock) now() + restMs else it.lockedUntil,
                         status = (if (end == End.FAILED) "NOT BOUGHT - " else "STOPPED - ") + why.take(160))
                 }
-                log("${p.label}: ${if (end == End.FAILED) "not bought" else "stopped"} - $why" + if (lock) " (stopped trying for ${LOCK_MS / 60_000} min after $fails tries)" else "")
+                log("${p.label}: ${if (end == End.FAILED) "not bought" else "stopped"} - $why" + if (lock) " (the same offer waits $restWord after $fails tries; a new restock or another price ends the wait at once)" else "")
                 alerts.problem("${p.label}: ${if (end == End.FAILED) "not bought" else "stopped"} - $why")
-                if (lock) alerts.needYou("Stopped trying", "${p.label}: $fails checkouts in a row did not finish (last: ${why.take(120)}). Trying again in ${LOCK_MS / 60_000} min.", p)
+                if (fails == LOCK_AFTER) alerts.needYou("Checkout is not finishing", "${p.label}: $fails checkouts in a row did not finish (last: ${why.take(120)}). The same offer is tried again in $restWord (then at longer waits, at most 5 min); a new restock or another price is tried at once.", p)
             }
         }
     }
@@ -751,9 +769,10 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val ORDERS_EVERY = 30 * 60_000L
         const val CHECKOUT_MS = 150_000L
         const val LOCK_AFTER = 3
-        const val LOCK_MS = 10 * 60_000L
+        const val LOCK_MS = 300_000L             // (1.1.7: the longest wait after failed checkouts - see REST_STEPS)
         const val LIMIT_MS = 6 * 3_600_000L       // 1.1.5: how long a seller Amazon's purchase limit was reached for is left alone (as on the desktop)
-        const val EARLY_PRESS = false             // 1.1.6: see openAndRead
+        /** 1.1.7: the waits after checkouts in a row that did not finish - short first, longer only while they go on (see buy's end). */
+        val REST_STEPS = longArrayOf(30_000L, 60_000L, 120_000L, 300_000L)
         const val LOOK_MS = 15_000L               // 1.1.5: the longest one look at a page that is still arriving may take
         val VERIFY_LOOKS = longArrayOf(5_000, 15_000, 40_000, 120_000)
         /** 2.0: the id of a practice item (Settings -> Practice checkout with any item): never shared, removed after the practice. */

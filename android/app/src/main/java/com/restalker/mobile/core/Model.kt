@@ -5,7 +5,7 @@ package com.restalker.mobile.core
  *  counting up, and updates go by the code alone (UpdatePlan), so every device still sees 1.0.0 as the newer one.
  *  THREE parts on purpose (1.0.0, 1.0.1, ...): the first versions of 2026-11-16/17 were 1.0 - 1.8 and their releases (mobile-v1.0 ...
  *  mobile-v1.8) are still on GitHub; a two-part 1.x name would meet its old release and never be published. */
-const val APP_VERSION = "1.1.6"
+const val APP_VERSION = "1.1.7"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -183,7 +183,11 @@ data class Settings(
     // default, and switched off once on every device that had it on (noticeV) - it can be switched back on in Settings
     val runIcon: Boolean = false,
     val autoUpdate: Boolean = true,       // 1.7: new versions install by themselves
-    val buyMode: String = "pc",           // linked - who buys on Amazon here: "pc" (this device only watches) | "both" | "phone" (instead of the PC)
+    // 1.1.7 (owner, 2026-11-25, a hard rule: "Every source available should be immediately working to actively checkout, not waiting in
+    // succession ... This includes the PC and mobile versions that are linked"): the default is "both" - this device checks out at the
+    // same moment as the PC and the other devices; one order only (the shared lock right before Place your order). Until 1.1.6 the
+    // default was "pc" (this device only watched). A device on which "pc" or "phone" was CHOSEN keeps its choice.
+    val buyMode: String = "both",         // linked - who buys on Amazon here: "both" (all together) | "pc" (this device only watches) | "phone" (instead of the PC)
     val buyModeAt: Long = 0,              //   (2.3: each device its own choice - changed here or from another linked device; the newest change wins)
     val failover: Boolean = true,         // 2.3: "pc": this device takes over when the PC stops
     val deviceName: String = "",          // 2.3: the name the other linked devices show (empty = the phone's model)
@@ -239,7 +243,9 @@ data class Settings(
                 ((m["intervalSec"].asLong() ?: 90).toInt()).coerceAtLeast(MIN_INTERVAL), m["snoozeUntil"].asLong() ?: 0, m["wifiOnly"].asBool(), m["signinNeededAt"].asLong() ?: 0, m["reportTopic"].asStr() ?: "", m["autoReport"] != false, m["reportAt"].asLong() ?: 0, m["cooldownUntil"].asLong() ?: 0,
                 (m["cooldownStreak"].asLong() ?: 0).toInt(), m["needYouAt"].asLong() ?: 0, m["ordersReadAt"].asLong() ?: 0,
                 (m["ordersKnown"].asMap() ?: emptyMap()).mapValues { (_, v) -> v.asList().mapNotNull { it.asStr() } }, (m["noticeV"].asLong() ?: 0) >= 1 && m["runIcon"] == true, m["autoUpdate"] != false,
-                (m["buyMode"].asStr() ?: "pc").takeIf { it in BUY_MODES } ?: "pc", m["buyModeAt"].asLong() ?: 0, m["failover"] != false,
+                // (1.1.7: "pc" that was never chosen - no time of a choice - was only the old default: it becomes "both")
+                (m["buyMode"].asStr() ?: "both").takeIf { it in BUY_MODES }?.let { bm -> if (bm == "pc" && (m["buyModeAt"].asLong() ?: 0) == 0L) "both" else bm } ?: "both",
+                m["buyModeAt"].asLong() ?: 0, m["failover"] != false,
                 (m["deviceName"].asStr() ?: "").take(40), m["crowd"] != false, (m["masterCode"].asStr() ?: "").take(40),
                 (m["alertTopic"].asStr() ?: "").takeIf { NtfyAlerts.ok(it) } ?: "", m["alertsOn"] == true,
                 nRestock = m["nRestock"] != false, nDrop = m["nDrop"] == true, nBuy = m["nBuy"] != false, nNeed = m["nNeed"] != false,

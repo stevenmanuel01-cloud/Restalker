@@ -360,6 +360,8 @@ class PhoneTests {
         val (ch, sec) = com.restalker.mobile.core.LinkCrypto.parse(code)!!
         RkApp.store().add(Product(id = "mine", asin = "B0TEST0002", name = "Phone Product", cap = 50.0, watch = true, buy = false))
         assertEquals(null, DeskLink.get().connect(code))
+        // 1.1.7: the default is that every linked device buys together - this test is about a device on which "PC only" was CHOSEN
+        RkApp.store().setSettings { it.copy(buyMode = "pc", buyModeAt = System.currentTimeMillis()) }
         fun desk(amz: Boolean, bye: Boolean = false) {
             val now = System.currentTimeMillis() / 1000.0
             val o = linkedMapOf<String, Any?>("v" to 1, "d" to "d-test", "r" to "desktop", "at" to now, "amz" to amz, "bye" to bye, "items" to listOf(

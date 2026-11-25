@@ -1,3 +1,15 @@
+# Restalker Mobile 1.1.7 (2026-11-25)
+- Every linked device buys together (a hard rule): the default for "Who buys" is now "Both buy" - this device starts its checkout at the
+  same moment as the PC and your other devices, and the first one at Place your order orders (never two orders). A device on which
+  you chose "PC only" or "Instead of PC" keeps your choice. Until 1.1.6 the default was "PC only" (this device only watched).
+- The fastest way is the default again: Buy Now is pressed as soon as the buy box has been read, while the page is still arriving.
+  1.1.6 waited for the page to be read on a suspicion. Now the slower way is only TRIED when pages without the product follow early
+  presses, kept only when the numbers prove it better (30 minutes, at most 8 hours), and the fastest way comes back by itself.
+- The wait after checkouts that did not finish is short and never late for news: 30 seconds after three in a row, then 1, 2 and at
+  most 5 minutes while they go on - and a new restock or another price ends the wait at once. Until 1.1.6: 10 minutes, whatever
+  happened meanwhile. One message, not one per try.
+- The diagnostics say how Buy Now is pressed now and why, and who buys.
+
 # Restalker Mobile 1.1.6 (2026-11-24)
 - A purchase starts when the product page has been read (its text is all there) - not while it is still arriving, as 1.1.5 did. On the
   PC, Amazon answered some purchases that began that early with pages without the product; the PC now measures whether that is the
