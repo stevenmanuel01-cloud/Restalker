@@ -83,6 +83,11 @@ Nothing is sold. Nothing is shared for advertising. All of it travels over encry
 
 - **Internet / network state** - to look at store pages and reach the relay.
 - **Notifications** - to alert you.
+- **Notification access (optional, off until you switch it on)** - "Trackers on this phone": if you allow it in Android's own
+  "Notification access" screen AND choose which apps are your restock trackers, Restalker reads the alerts of those apps only, to
+  see whether one is about a product you watch (then it looks at that product at once). The words of an alert are never stored and
+  never sent anywhere. If you share with the Restalker crowd, only the product and the tracker app's name are sent (to measure how
+  fast each tracker is). Alerts of apps you did not choose are not read. Switch it off any time in the same Android screen.
 - **Running in the background (foreground service), start after restart, keep awake** - so watching continues while the app is
   not on screen. It runs only after you tap Start, always shows a notice while it runs, and stops when you tap Stop.
 

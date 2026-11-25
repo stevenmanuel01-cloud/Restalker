@@ -246,6 +246,32 @@ class PhoneTests {
     }
 
     /** 1.1.5: Amazon's checkout says "purchase limit" - kept for the seller of that offer; that seller's offer is then looked at, not bought. */
+    /** 1.1.8: an alert of a tracker app the user chose is matched to a watched product (an app that was not chosen is not read); a
+     *  notice from Restalker is shown once. */
+    @Test fun t8g_trackerAlert_and_notice() {
+        val s = RkApp.store()
+        val crowd = s.settings().crowd
+        s.setSettings { it.copy(crowd = false) }                       // (nothing of this test goes to the real relay)
+        s.add(Product(id = "trk1", asin = "B0TRACK001", name = "Final Fantasy Collector Booster Box", cap = 50.0, watch = true, buy = false))
+        val words = "Amazon restock https://www.amazon.com/dp/B0TRACK001 in stock"
+        assertTrue("an app that was not chosen is not read", Trackers.heard(ctx, "com.example.tracker", "Example Tracker", words).isEmpty())
+        Trackers.choose("com.example.tracker", "Example Tracker", true)
+        assertEquals(listOf("B0TRACK001"), Trackers.heard(ctx, "com.example.tracker", "Example Tracker", words))
+        assertTrue("the same product is not looked at twice within 20 s", Trackers.heard(ctx, "com.example.tracker", "Example Tracker", words).isEmpty())
+        assertTrue("another store's alert is not an Amazon restock", Trackers.heard(ctx, "com.example.tracker", "Example Tracker", "Walmart: Final Fantasy Collector Booster Box", System.currentTimeMillis() + 60_000).isEmpty())
+        assertTrue("it is in Activity", s.log().any { it.contains("Tracker alert (Example Tracker)") })
+        assertTrue("the chosen app is kept", Trackers.chosenApps().containsKey("com.example.tracker"))
+        Trackers.choose("com.example.tracker", "Example Tracker", false); s.remove("trk1")
+        val id = System.currentTimeMillis()
+        Relay.takeNotice(mapOf("id" to id, "title" to "Test notice", "text" to "Shown once."))
+        val n = s.log().count { it.contains("Notice from Restalker: Test notice") }
+        assertEquals("the notice is in Activity", 1, n)
+        Relay.takeNotice(mapOf("id" to id, "title" to "Test notice", "text" to "Shown once."))
+        Relay.takeNotice(mapOf("id" to id - 5, "title" to "Older notice", "text" to "Never shown."))
+        assertEquals("the same notice is not shown twice, an older one never", 1, s.log().count { it.contains("Notice from Restalker:") && (it.contains("Test notice") || it.contains("Older notice")) })
+        s.setSettings { it.copy(crowd = crowd) }
+    }
+
     @Test fun t8f_purchaseLimit_isKeptForTheSeller() {
         site.limitAtCheckout = true
         start(false, true, Product(id = "tr", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))

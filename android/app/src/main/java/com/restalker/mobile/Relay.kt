@@ -67,6 +67,7 @@ object Relay {
             } catch (e: Exception) { }
             val r = call("POST", "/v1/h", body)
             r?.get("active").asLong()?.let { active = it.toInt(); activeAt = System.currentTimeMillis() }
+            try { takeNotice(r?.get("notice").asMap()) } catch (e: Exception) { }
             try {
                 val peers = r?.get("peers").asList().mapNotNull { x ->
                     val m = x.asMap() ?: return@mapNotNull null
@@ -260,7 +261,9 @@ object Relay {
         val now = System.currentTimeMillis()
         when (o["t"].asStr()) {
             "m" -> wsLine(o)
+            "notice" -> try { takeNotice(o["notice"].asMap()) } catch (e: Exception) { }
             "hello" -> { wsHello = now; wsSafetyS = (o["next"].asLong() ?: 21_600L).toInt().coerceIn(600, 86_400)
+                         try { takeNotice(o["notice"].asMap()) } catch (e: Exception) { }
                          o["active"].asLong()?.let { active = it.toInt(); activeAt = now }
                          wsHttpAt = 0L                                  // (one full round the old way follows: nothing sent meanwhile is missed)
                          try { if (DeskLink.get().linked()) wsRound() else Thread({ try { sync(emptyMap()) } catch (e: Exception) { } }, "relay-round").start() } catch (e: Exception) { }
@@ -349,6 +352,28 @@ object Relay {
         val r = call("POST", "/v1/lock", mapOf("c" to device(), "g" to g, "a" to asin), timeoutMs = 4_000) ?: return null
         if (r["ok"] != true) return null
         return r["granted"].asBool()
+    }
+
+    /** 1.1.8: a tracker app the user chose alerted for a watched product - which tracker, which product (nothing else; Trackers.heard). */
+    fun tracker(asin: String, name: String) {
+        if (!enabled) return
+        Thread({ try { call("POST", "/v1/tracker", mapOf("c" to device(), "a" to asin, "src" to name)) } catch (e: Exception) { } }, "relay-tracker").start()
+    }
+
+    /** 1.1.8 (owner, 2026-11-25: "the ability to push system wide notifications to all users"): a notice from Restalker to every device
+     *  - shown once (its number is kept), as a notification and in Activity. Plain words only; it cannot do or open anything. */
+    @Synchronized fun takeNotice(n: Map<String, Any?>?) {
+        if (n == null) return
+        val id = n["id"].asLong() ?: return
+        val title = (n["title"].asStr() ?: return).take(80); val text = (n["text"].asStr() ?: "").take(600)
+        val s = RkApp.store()
+        val seen = s.readFile("notice_seen.txt")?.trim()?.toLongOrNull() ?: 0L
+        if (!com.restalker.mobile.core.Notices.isNew(id, seen, title)) return
+        s.writeFile("notice_seen.txt", id.toString())
+        s.writeFile("notice_last.txt", MiniJson.write(mapOf("id" to id, "title" to title, "text" to text, "at" to System.currentTimeMillis())))
+        s.log("Notice from Restalker: $title - $text")
+        try { Notifier.notice(RkApp.app, id, title, text) } catch (e: Exception) { }
+        try { RkApp.changed() } catch (e: Exception) { }
     }
 
     fun release(asin: String, result: String) {

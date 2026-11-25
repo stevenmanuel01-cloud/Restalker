@@ -25,6 +25,8 @@ object CoreTests {
         private fun push(m: Map<String, Any?>): Long { n++; msgs.add(m + ("n" to n)); return n }
         override fun goto(url: String, timeoutMs: Long): Boolean { this.url = url; gotoCount++; clock.sleep(800); return !loadFails }
         override fun images(on: Boolean) {}
+        var stops = 0
+        override fun stop() { stops++ }
         val seen = ArrayList<String>()
         override fun visited(): List<String> { val l = seen.toList(); seen.clear(); return l }
         private fun asinHere() = Regex("/dp/([A-Z0-9]{10})").find(url)?.groupValues?.get(1)
@@ -2081,6 +2083,50 @@ object CoreTests {
             val chosenPc = Settings.fromMap(mapOf("buyMode" to "pc", "buyModeAt" to 1_700_000_000_000L)).buyMode == "pc"
             val chosenPhone = Settings.fromMap(mapOf("buyMode" to "phone")).buyMode == "phone"
             fresh && oldDefault && chosenPc && chosenPhone && Settings.fromMap(mapOf("buyMode" to "everyone")).buyMode == "both"
+        }
+        t("227_a_tracker_alert_is_matched_to_a_watched_product_by_its_address_or_number") {
+            val ps = listOf(Product(id = "a", asin = "B0TEST0001", name = "Magic: The Gathering Final Fantasy Collector Booster Box", tokens = Tokens.fromTitle("Final Fantasy Collector Booster Box"), watch = true),
+                Product(id = "b", asin = "B0TEST0002", name = "Magic: The Gathering Edge of Eternities Bundle", tokens = Tokens.fromTitle("Edge of Eternities Bundle"), watch = true))
+            val link = TrackerMatch.match("RESTOCK! https://www.amazon.com/Magic-Gathering-Final/dp/B0TEST0001?tag=x in stock $119", ps)
+            val bare = TrackerMatch.match("In stock now: B0TEST0002 (MSRP)", ps)
+            val gp = TrackerMatch.match("amazon.com/gp/product/b0test0001 back", ps)
+            val other = TrackerMatch.match("Restock https://www.amazon.com/dp/B0OTHER999 Final Fantasy Collector Booster Box", ps)       // another Amazon product: not guessed at by name
+            val inWord = TrackerMatch.match("code XB0TEST0001Z", ps)
+            link.single().product.id == "a" && link.single().amazon && bare.single().product.id == "b" && gp.single().product.id == "a" && other.isEmpty() && inWord.isEmpty()
+        }
+        t("228_a_tracker_alert_is_matched_by_the_product_name_and_another_store_is_not_amazon") {
+            val ps = listOf(Product(id = "a", asin = "B0TEST0001", name = "Final Fantasy Collector Booster Box", tokens = Tokens.fromTitle("Final Fantasy Collector Booster Box"), watch = true),
+                Product(id = "c", asin = "B0TEST0003", name = "Final Fantasy Collector Booster", tokens = Tokens.fromTitle("Final Fantasy Collector Booster"), watch = true),
+                Product(id = "b", asin = "B0TEST0002", name = "Edge of Eternities Bundle", tokens = Tokens.fromTitle("Edge of Eternities Bundle"), watch = true),
+                Product(id = "d", asin = "B0TEST0004", name = "Collector Booster", tokens = listOf("collector", "booster"), watch = true))
+            val box = TrackerMatch.match("Amazon restock: MTG FINAL FANTASY Collector Booster Box - $479.99", ps)
+            val nostore = TrackerMatch.match("Edge of Eternities Bundle is back in stock!", ps)
+            val walmart = TrackerMatch.match("Walmart restock: Final Fantasy Collector Booster Box", ps)
+            val both = TrackerMatch.match("Target and Amazon: Edge of Eternities Bundle", ps)
+            val partial = TrackerMatch.match("Amazon: Final Fantasy Commander Deck", ps)
+            // the box, not also the single booster (the longer name wins); the product named only by common words is never matched by name
+            box.map { it.product.id } == listOf("a") && box[0].amazon && nostore.single().product.id == "b" && !nostore[0].amazon && walmart.isEmpty() &&
+                both.single().product.id == "b" && both[0].amazon && partial.isEmpty() && TrackerMatch.match("", ps).isEmpty() &&
+                TrackerMatch.cleanName("TYPA <Restocks>! \u2728") == "TYPA Restocks" && TrackerMatch.cleanName("x".repeat(90)).length == 40
+        }
+        t("229_the_pcs_buttons_are_taken_only_as_a_ticket_or_an_https_address_at_most_three") {
+            val l = PcButtons.take(listOf(mapOf("l" to "Approve $6.99 shipping", "b" to "rk1 AbCdEfGhIjKlMnOpQrStUv"), mapOf("l" to "Do not buy", "b" to "rk1 ZZZZZZZZZZZZZZZZZZZZZZZZ"),
+                mapOf("l" to "Bad", "b" to "rm -rf"), mapOf("l" to "Js", "u" to "javascript:alert(1)"), mapOf("l" to "", "b" to "rk1 AbCdEfGhIjKlMnOpQrStUv"),
+                mapOf("l" to "Your orders", "u" to "https://www.amazon.com/gp/css/order-history"), mapOf("l" to "Fourth", "u" to "https://example.com/")))
+            l.size == 3 && l[0].ticket == "rk1 AbCdEfGhIjKlMnOpQrStUv" && l[0].label.startsWith("Approve") && l[1].ticket != null && l[2].url == "https://www.amazon.com/gp/css/order-history" &&
+                PcButtons.take(null).isEmpty()
+        }
+        t("230_a_notice_is_shown_once_and_never_an_older_one_again") {
+            Notices.isNew(5, 4, "Update") && !Notices.isNew(5, 5, "Update") && !Notices.isNew(4, 5, "Update") && !Notices.isNew(0, 0, "Update") && !Notices.isNew(6, 5, "  ")
+        }
+        t("231_a_look_stops_the_page_when_it_has_its_answer_unless_the_product_is_about_to_be_bought") {
+            val w = World(); w.add("B0TEST0001", 120.0, false)                       // watched only, in stock: answered -> stopped
+            w.check("B0TEST0001"); val watchOnly = w.amz.stops == 1 && w.amz.places == 0
+            val w2 = World(); w2.add("B0TEST0001", 120.0, true); w2.amz.items["B0TEST0001"]!!.stock = false
+            w2.check("B0TEST0001"); val soldOut = w2.amz.stops == 1                  // set to Buy, sold out: answered -> stopped
+            val w3 = World(); w3.add("B0TEST0001", 120.0, true)
+            w3.check("B0TEST0001")                                                   // set to Buy and buyable: the page is needed whole - bought
+            watchOnly && soldOut && w3.amz.stops == 0 && w3.amz.places == 1
         }
         t("209_ws_base64_is_right") {
             fun ok(sx: String) = Ws.b64(sx.toByteArray()) == java.util.Base64.getEncoder().encodeToString(sx.toByteArray())
