@@ -83,8 +83,13 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
     console.log(`MEASURED (engine before v155) buy box complete at ${D1} ms, page end at ${D1 + D2} ms -> Buy Now pressed ${a.press} ms after the page request`);
     await ctx.close(); server.close(); process.exit(0);
   }
+  // v157: the engine starts in the way of v151-v154 (Buy Now when the page has been read) until its own count clears early pressing
+  let a = await run('boxfirst', 0, 12000);
+  const ab0 = await SW().evaluate(() => ({ mode: RK_AB.mode, off: !!RK_EARLY.off, read: RK_AB.read.presses, early: RK_AB.early.presses }));
+  say('0b as delivered, Buy Now is pressed when the page has been read (v157), and the press is counted that way', a.press !== null && a.press >= D1 + D2 && ab0.mode === 'read' && ab0.off === true && ab0.read >= 1 && ab0.early === 0, a.press + ' ms; ' + JSON.stringify(ab0));
+  await SW().evaluate(() => { RK_AB.mode = 'early'; RK_EARLY.off = false; });          // (the early way, for the checks below)
   // 1. Amazon's own order: buy box first, then title and price, then the long rest of the page
-  let a = await run('boxfirst', 1);
+  a = await run('boxfirst', 1);
   console.log(`MEASURED buy box complete at ${D1} ms, page end at ${D1 + D2} ms -> Buy Now pressed ${a.press} ms after the page request`);
   say('1 Buy Now is pressed as soon as the buy box, title and price are in the page - long before the page has been read to its end', a.press !== null && a.press >= D1 && a.press < D1 + 700, a.press + ' ms (the page ended at ' + (D1 + D2) + ' ms)');
   say('2 the form was complete when it was pressed (its last field went to Amazon)', /offerListingID=LASTFIELD/.test(a.body) && /merchantID=ATVPDKIKX0DER/.test(a.body) && /submit\.buy-now/.test(a.body), a.body.slice(0, 120));

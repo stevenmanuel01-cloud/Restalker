@@ -48,6 +48,7 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
   let s = await state(pid);
   say('0 the listing is added, capped and armed', set.ok && arm.ok && s.armed === true && s.monitor === true, JSON.stringify(arm) + ' status=' + s.status);
   sw = ctx.serviceWorkers()[0] || sw;
+  await sw.evaluate(() => { if (globalThis.RK_AB) { RK_AB.mode = 'early'; RK_EARLY.off = false; } });      // (v157: these checks measure the early way; the engine starts in the 'read' way)
   const signal = (n) => sw.evaluate(async ({ asin, n }) => { try { await buyerDetectorBridge.onRestock({ type: 'restock', store: 'amazon', amazonAsin: asin,
     eventId: 'bw-' + asin + '-' + Date.now() + '-' + n, detectedAt: new Date().toISOString(), source: 'watching closely' }); return 'ok'; } catch (e) { return 'ERR ' + (e && e.message || e); } }, { asin: A, n });
   await dash.waitForTimeout(14000);
