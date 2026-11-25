@@ -278,3 +278,15 @@ test("a report is handed on without the device's code", () => {
   assert.equal(o.who, "1a2b3c4d"); assert.equal("c" in o, false); assert.equal(JSON.stringify(o).includes("abcdef012345"), false);
   assert.deepEqual([...L.b64uToBytes("AQID-_8")], [1, 2, 3, 251, 255]); assert.equal(L.bytesToB64(new Uint8Array([1, 2, 3])), "AQID");
 });
+
+test("a tracker heard on a phone: what is taken, and its distance to our own first sighting", () => {
+  assert.deepEqual(L.trackerIn({ a: "b0test0001", src: "  TYPA <b>Restocks</b>! " }), { a: "B0TEST0001", src: "TYPA bRestocksb" });
+  assert.equal(L.trackerIn({ a: "nope", src: "Discord" }), null); assert.equal(L.trackerIn({ a: "B0TEST0001", src: "!" }), null);
+  assert.equal(L.trackerIn({ a: "B0TEST0001", src: "x".repeat(200) }).src.length, 40);
+  assert.equal(L.trackerLag(1_000_000, 960_000), 40_000); assert.equal(L.trackerLag(1_000_000, 1_020_000), -20_000);
+  assert.equal(L.trackerLag(10_000_000, 1), null); assert.equal(L.trackerLag(1_000_000, NaN), null);
+  const d = L.trackerDigest([{ src: "TYPA", lag: 40_000 }, { src: "TYPA", lag: 60_000 }, { src: "TYPA", lag: null }, { src: "Discord", lag: -5_000 }, { src: "X", lag: null }]);
+  assert.ok(d.includes("5 alert(s) from 3 tracker(s)")); assert.ok(d.includes("TYPA: 3 alert(s) - 2 near a sighting of ours, middle 60 s AFTER"));
+  assert.ok(d.includes("Discord: 1 alert(s) - 1 near a sighting of ours, middle 5 s BEFORE")); assert.ok(d.includes("X: 1 alert(s) - none near"));
+  assert.equal(L.trackerDigest([]), null);
+});

@@ -44,6 +44,7 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rate(k TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS locks(g TEXT, a TEXT, owner TEXT, state TEXT, since INTEGER, until INTEGER, PRIMARY KEY(g, a))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS tracker_hits(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, a TEXT, src TEXT, lag INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS notices(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, until INTEGER, title TEXT, text TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, c TEXT, app TEXT, ver TEXT,
       title TEXT, note TEXT, text TEXT)`);
@@ -148,7 +149,7 @@ export class Hub {
       if (u.pathname === "/v1/notice") return json({ ok: true, notice: this.notice(Date.now()) });
       if (u.pathname === "/v1/stats") return json({ ok: true, ...(await this.stats(u.searchParams.has("log"))) });
       if (u.pathname === "/v1/links") return json({ ok: true, discord: CFG.invite || null });
-      if (req.method === "POST" && ["/v1/h", "/v1/lock", "/v1/release", "/v1/report", "/v1/suggest", "/v1/linkcode"].includes(u.pathname)) {
+      if (req.method === "POST" && ["/v1/h", "/v1/lock", "/v1/release", "/v1/report", "/v1/suggest", "/v1/linkcode", "/v1/tracker"].includes(u.pathname)) {
         const ip = req.headers.get("cf-connecting-ip") || "?";
         if (this.rateHit("ipw:" + ip, 300)) return json({ ok: false, error: "too many" }, 429);
         const b = await req.json().catch(() => null) || {};
@@ -182,6 +183,15 @@ export class Hub {
           if (after === null) this.sql.exec("DELETE FROM locks WHERE g = ? AND a = ?", g, a);
           else this.sql.exec("UPDATE locks SET state = ?, until = ? WHERE g = ? AND a = ?", after.state, after.until, g, a);
           return json({ ok: true, released: true, state: after ? after.state : "free" });
+        }
+        if (u.pathname === "/v1/tracker") {    // a phone heard an alert of a tracker app its owner chose (logic.js: trackers heard on the phones)
+          const t = L.trackerIn(b);
+          if (!t) return json({ ok: false, error: "product / tracker" }, 400);
+          if (this.rateHit("trk:" + c, 120)) return json({ ok: false, error: "too many" }, 429);
+          const ev = this.sql.exec("SELECT first_at FROM events WHERE a = ? AND first_at > ? ORDER BY ABS(first_at - ?) LIMIT 1", t.a, now - L.TRACKER_LAG_MS, now).toArray()[0];
+          const lag = L.trackerLag(now, ev ? Number(ev.first_at) : NaN);
+          this.sql.exec("INSERT INTO tracker_hits(at, a, src, lag) VALUES(?, ?, ?, ?)", now, t.a, t.src, lag);
+          return json({ ok: true, lag });
         }
         if (u.pathname === "/v1/report") {     // (owner: reports from everyone go to Discord, compiled once a day)
           if (this.rateHit("rep:" + c, 6 * 24)) return json({ ok: false, error: "too many" }, 429);
@@ -663,6 +673,14 @@ export class Hub {
     const sg = this.sql.exec("SELECT c, a, name FROM suggest WHERE at > ?", now - 24 * 3600_000).toArray();
     const sd = L.suggestionDigest(sg, new Set((await this.products()).map(p => p.a)));
     if (sd) await this.say(ch.staff_suggestions, sd);
+    // (a sighting of ours that came AFTER a tracker's alert: the alert's distance to it is filled in now)
+    for (const h of this.sql.exec("SELECT id, at, a FROM tracker_hits WHERE lag IS NULL AND at > ?", now - 25 * 3600_000).toArray()) {
+      const ev = this.sql.exec("SELECT first_at FROM events WHERE a = ? AND first_at BETWEEN ? AND ? ORDER BY ABS(first_at - ?) LIMIT 1", h.a, h.at - L.TRACKER_LAG_MS, h.at + L.TRACKER_LAG_MS, h.at).toArray()[0];
+      if (ev) this.sql.exec("UPDATE tracker_hits SET lag = ? WHERE id = ?", L.trackerLag(h.at, Number(ev.first_at)), h.id);
+    }
+    const td = L.trackerDigest(this.sql.exec("SELECT src, lag FROM tracker_hits WHERE at > ?", now - 24 * 3600_000).toArray());
+    if (td) await this.say(ch.staff_reports, td);
+    this.sql.exec("DELETE FROM tracker_hits WHERE at < ?", now - 90 * 86400_000);
     this.sql.exec("DELETE FROM reports WHERE at < ?", now - 30 * 86400_000);
     this.sql.exec("DELETE FROM suggest WHERE at < ?", now - 90 * 86400_000);
     return { restocks: evs.length, devices: devs, movers: !!mv, reports: reps.length, suggestions: sg.length };
@@ -676,6 +694,7 @@ export class Hub {
       .map(e => ({ ...e, name: (prods.find(p => p.a === e.a) || {}).n || e.a }));
     const out = {
       active: this.active(now),                      // (heard in the last 30 minutes: "active now")
+      trackers24h: this.sql.exec("SELECT src, COUNT(*) AS n FROM tracker_hits WHERE at > ? GROUP BY src ORDER BY n DESC LIMIT 20", now - 24 * 3600_000).toArray(),
       devices12h: one("SELECT COUNT(*) AS n FROM seen WHERE at > ?", now - 12 * 3600_000),
       devicesAll: one("SELECT COUNT(*) AS n FROM seen"),
       sockets: this.state.getWebSockets().length,                                      // devices holding a connection open right now

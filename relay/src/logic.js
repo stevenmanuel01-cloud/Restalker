@@ -436,3 +436,37 @@ export const noticeOut = (row, now) => (row && row.until > now) ? { id: Number(r
 export function reportOut(row, who) {
   return { id: row.id, at: row.at, who, app: row.app, ver: row.ver, title: row.title, note: row.note, text: row.text };
 }
+
+// ------------------------------------------------------------------------------------------------ trackers heard on the phones
+// (owner, 2026-11-24: trackers on the phone "should allow user to add/link additional trackers they might already be using which will
+// report to discord and feed our data".) A phone that hears an alert of a tracker app its owner chose says so here: which product,
+// which tracker (the app's name as the phone shows it), when. Nothing of the alert's text and nothing about the device is kept.
+// The phone then looks itself; if it sees stock, that is an ordinary sighting (and goes to Discord as always). What is kept here
+// answers the question the project started with: how far behind the real restock is each tracker?
+export const TRACKER_LAG_MS = 30 * 60_000;
+export function trackerIn(b) {
+  const a = String(b && b.a || "").toUpperCase();
+  const src = String(b && b.src || "").replace(/[^A-Za-z0-9 ._+&'-]/g, "").trim().slice(0, 40);
+  if (!/^B[0-9A-Z]{9}$/.test(a) || src.length < 2) return null;
+  return { a, src };
+}
+/** The tracker's alert against the crowd's own first sighting of that product: ms AFTER it (negative: the tracker was first), or null
+ *  when no sighting within half an hour either way is known (yet). */
+export function trackerLag(at, firstAt) {
+  if (!Number.isFinite(firstAt) || firstAt <= 0) return null;
+  const d = at - firstAt;
+  return Math.abs(d) <= TRACKER_LAG_MS ? d : null;
+}
+/** The day's trackers for the staff channel -> text or null. rows: [{src, lag}] */
+export function trackerDigest(rows) {
+  if (!rows.length) return null;
+  const by = {};
+  for (const r of rows) (by[r.src] = by[r.src] || []).push(r.lag);
+  const mid = l => { const x = l.filter(v => v !== null && v !== undefined).sort((p, q) => p - q); return x.length ? x[Math.floor(x.length / 2)] : null; };
+  const lines = Object.entries(by).sort((x, y) => y[1].length - x[1].length).slice(0, 15).map(([k, l]) => {
+    const m = mid(l), n = l.filter(v => v !== null && v !== undefined).length;
+    return `• ${k}: ${l.length} alert(s)` + (m === null ? " - none near a sighting of ours" :
+      ` - ${n} near a sighting of ours, middle ${Math.abs(Math.round(m / 1000))} s ${m >= 0 ? "AFTER" : "BEFORE"} our first sighting`);
+  });
+  return `**Trackers heard on the phones (24 h)** - ${rows.length} alert(s) from ${Object.keys(by).length} tracker(s)\n` + lines.join("\n");
+}
