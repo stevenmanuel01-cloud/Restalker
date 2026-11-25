@@ -2,9 +2,9 @@
 
 Every version that was released to everyone, newest first, and what changed in it. (Test versions that only the owner's devices ran are not listed on their own: their changes are under the version that first brought them to everyone.)
 
-## Restalker for Windows (PC) - v159
+## Restalker for Windows (PC) - v160
 
-v159: the fastest way first, a slower way only on proof, and back by itself. Buy Now is pressed as soon as the buy box is read again (v157/v158 waited on a suspicion); the slower way is only tried when pages without the product follow early presses, kept only when the numbers prove it, and ends by itself. The rest after 10 failed checkouts is 30 s (then 1, 2, at most 5 min) and a new restock, a tracker's alert or another price ends it at once (it was 5 minutes, whatever happened). The linked phone is told at every new try. Target: its data address is asked the way Target's own page asks, and a slowed reading pace must prove itself or it speeds up again (it was stuck at one request per 2 minutes).
+v160: price-drop alerts on the PC (a watched product for sale that gets at least 5 % and $5 cheaper - one message, nothing is bought by it; the page's 'Price drops' box switches it). The buttons of the PC's messages (Approve shipping / Do not buy / Buy one more) now also work on the Restalker app's own notifications. Notices: Restalker can tell every device something important, shown once. Everything of v159 is in it (fastest way first; rests end at new evidence; Target asked the way its own page asks).
 
 The PC program updates itself; its title bar shows the version that is running.
 
