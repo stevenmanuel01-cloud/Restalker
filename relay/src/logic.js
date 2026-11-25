@@ -247,6 +247,14 @@ export function presenceOut(rows, me, now) {
 // ------------------------------------------------------------------------------------------------ reports and suggestions
 // (owner, 2026-11-19: "all issues should be reported to discord, which can be sorted, compiled, and sent to me/you for review ...
 // addressed no more than once per day") - the daily digest of everyone's reports.
+// Two texts compared without giving away, by how long it takes, where they differ (for the owner's secret).
+export function sameText(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  let d = a.length ^ b.length;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) d |= (a.charCodeAt(i % (a.length || 1)) || 0) ^ (b.charCodeAt(i % (b.length || 1)) || 0);
+  return d === 0 && a.length > 0;
+}
+
 export function reportDigest(reports, now) {
   if (!reports.length) return null;
   const devs = new Set(reports.map(r => r.c)).size;

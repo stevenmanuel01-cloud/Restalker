@@ -115,6 +115,21 @@ export class Hub {
         const rows = this.sql.exec(`SELECT id, a, s, first_at, last_at, p, n FROM events WHERE id > ? ORDER BY id LIMIT 100`, since).toArray();
         return json({ ok: true, events: rows, confirm: L.CONFIRM_DEVICES });
       }
+      if (u.pathname === "/v1/owner/reports" && req.method === "GET") {
+        // The owner's way to READ the reports people send (2026-11-25, owner: "the whole point is that you can accumulate the issues and
+        // resolve accordingly"). Until now a report could only be read in the once-a-day digest. Asked with the owner's secret (the one
+        // the digest channel is named after - it is known only to this relay and to the project's own build job); wrong tries from one
+        // address are cut off. The build job hands the answer on encrypted, so it is never readable in a public place.
+        const ip = req.headers.get("cf-connecting-ip") || "?";
+        const key = String(this.env.DIGEST_TOPIC || ""), got = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+        if (key.length < 16 || !L.sameText(got, key)) {
+          if (this.rateHit("own:" + ip, 20)) return json({ ok: false, error: "too many" }, 429);
+          return json({ ok: false, error: "not allowed" }, 403);
+        }
+        const since = Number(u.searchParams.get("since") || 0) || (Date.now() - 72 * 3600_000);
+        const rows = this.sql.exec("SELECT id, at, c, app, ver, title, note, text FROM reports WHERE at > ? ORDER BY id DESC LIMIT 60", since).toArray();
+        return json({ ok: true, now: Date.now(), reports: rows });
+      }
       if (u.pathname === "/v1/stats") return json({ ok: true, ...(await this.stats(u.searchParams.has("log"))) });
       if (u.pathname === "/v1/links") return json({ ok: true, discord: CFG.invite || null });
       if (req.method === "POST" && ["/v1/h", "/v1/lock", "/v1/release", "/v1/report", "/v1/suggest", "/v1/linkcode"].includes(u.pathname)) {

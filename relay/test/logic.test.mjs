@@ -249,3 +249,11 @@ test("held-open connections: channels, what a socket may send, capacity", () => 
   // what the free plan carries: a phone that reconnects 20 times a day and sends 40 messages -> 4,545 devices; polling carried ~60
   assert.equal(L.wsCapacity(20, 40), 4545); assert.equal(L.wsCapacity(5, 20), 16666); assert.ok(L.wsCapacity(50, 100) >= 1800);
 });
+
+test("the owner's secret is compared exactly, whatever the lengths", () => {
+  assert.equal(L.sameText("abcdefghijklmnop", "abcdefghijklmnop"), true);
+  assert.equal(L.sameText("abcdefghijklmnop", "abcdefghijklmnoq"), false);
+  assert.equal(L.sameText("abcdefghijklmnop", "abcdefghijklmno"), false);
+  assert.equal(L.sameText("abc", "abcabc"), false);        // (a repeat of the shorter one is not the same)
+  assert.equal(L.sameText("", ""), false); assert.equal(L.sameText("", "x"), false); assert.equal(L.sameText(undefined, "undefined"), false);
+});

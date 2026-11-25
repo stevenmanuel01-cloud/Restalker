@@ -1,0 +1,49 @@
+name: Reports to the owner
+# Reads the reports people sent (from the relay, with the owner's secret) and hands them on ENCRYPTED: only the holder of the private
+# key that belongs to tools/owner_reports_pub.pem can read the file this makes. Nothing of a report is ever printed here.
+on:
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "how many hours back"
+        default: "72"
+permissions:
+  contents: read
+jobs:
+  reports:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DIGEST_TOPIC: ${{ secrets.CLAUDE_DIGEST_TOPIC }}
+      HOURS: ${{ github.event.inputs.hours }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read and encrypt
+        run: |
+          set -e
+          umask 077; mkdir -p out work
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          A, T = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip(), os.environ["CLOUDFLARE_API_TOKEN"].strip()
+          req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/accounts/{A}/workers/subdomain", headers={"Authorization": "Bearer " + T})
+          sub = json.load(urllib.request.urlopen(req, timeout=30))["result"]["subdomain"]
+          hours = float(os.environ.get("HOURS") or 72)
+          since = int((time.time() - hours * 3600) * 1000)
+          r = urllib.request.Request(f"https://restalker-relay.{sub}.workers.dev/v1/owner/reports?since={since}",
+                                     headers={"Authorization": "Bearer " + os.environ["DIGEST_TOPIC"].strip(), "User-Agent": "restalker-owner"})
+          body = urllib.request.urlopen(r, timeout=60).read()
+          d = json.loads(body)
+          open("work/reports.json", "wb").write(body)
+          print("reports read:", len(d.get("reports") or []), "- sizes:", [len(x.get("text") or "") for x in (d.get("reports") or [])][:20])
+          PY
+          openssl rand -hex 32 > work/k
+          openssl enc -aes-256-cbc -pbkdf2 -pass file:work/k -in work/reports.json -out out/reports.enc
+          openssl pkeyutl -encrypt -pubin -inkey tools/owner_reports_pub.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in work/k -out out/key.enc
+          rm -rf work
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owner-reports
+          path: out/
+          retention-days: 1
