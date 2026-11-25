@@ -1,0 +1,64 @@
+name: Notice to every device
+# Sends one short notice to every Restalker app and PC program (through the relay): shown once on each device. The notice is signed by
+# the owner's side (inputs t and s; the signature covers the title and the text, counts for 10 minutes) - or, when the owner has set the
+# repository secret CLAUDE_DIGEST_TOPIC, the owner can run this by hand with only a title and a text.
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "title (3 to 80 letters)"
+        required: true
+      text:
+        description: "text (plain words, up to 600 letters)"
+        required: true
+      days:
+        description: "shown to devices that come online within this many days"
+        default: "3"
+      t:
+        description: "when it was signed (leave empty when you run it by hand)"
+        default: ""
+      s:
+        description: "the owner's signature (leave empty when you run it by hand)"
+        default: ""
+permissions:
+  contents: read
+jobs:
+  notice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      DIGEST_TOPIC: ${{ secrets.CLAUDE_DIGEST_TOPIC }}
+      N_TITLE: ${{ github.event.inputs.title }}
+      N_TEXT: ${{ github.event.inputs.text }}
+      N_DAYS: ${{ github.event.inputs.days }}
+      T: ${{ github.event.inputs.t }}
+      S: ${{ github.event.inputs.s }}
+    steps:
+      - name: Send
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request, urllib.error
+          A, T = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip(), os.environ["CLOUDFLARE_API_TOKEN"].strip()
+          req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/accounts/{A}/workers/subdomain", headers={"Authorization": "Bearer " + T})
+          sub = json.load(urllib.request.urlopen(req, timeout=30))["result"]["subdomain"]
+          t, s, key = os.environ.get("T", "").strip(), os.environ.get("S", "").strip(), os.environ.get("DIGEST_TOPIC", "").strip()
+          q, h = "", {"Content-Type": "application/json", "User-Agent": "restalker-owner"}
+          if re.fullmatch(r"\d{1,16}", t) and re.fullmatch(r"[A-Za-z0-9_-]{100,800}", s):
+              q = f"?t={t}&s={s}"
+          elif len(key) >= 16:
+              h["Authorization"] = "Bearer " + key
+          else:
+              print("NOT SENT - no signature was given and the owner's secret is not set"); raise SystemExit(0)
+          try:
+              days = float(os.environ.get("N_DAYS") or 3)
+          except ValueError:
+              days = 3
+          body = json.dumps({"title": os.environ["N_TITLE"], "text": os.environ["N_TEXT"], "days": days, "clear": True}).encode()
+          try:
+              d = json.loads(urllib.request.urlopen(urllib.request.Request(f"https://restalker-relay.{sub}.workers.dev/v1/owner/notice{q}", data=body, headers=h), timeout=60).read())
+              print("SENT - notice number", (d.get("notice") or {}).get("id"), "- pushed at once to", d.get("pushed"), "device(s); the others get it with their next check-in")
+          except urllib.error.HTTPError as e:
+              print("NOT SENT - the relay refused:", e.code, e.read()[:120])
+          PY

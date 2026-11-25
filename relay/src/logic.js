@@ -401,3 +401,38 @@ export const wsCapacity = (connectsPerDay, sendsPerDay, budget = 100_000) => Mat
 /** A sighting as the crowd line carries it (the devices' own message shape), and its key (one line per device, product, store, time). */
 export const crowdMsg = s => JSON.stringify({ v: 1, c: s.c, k: "s", a: s.a, s: s.s, st: "in", t: Math.round(s.t / 100) / 10, ...(s.p != null ? { p: s.p } : {}) });
 export const crowdKey = s => `${s.c}|${s.a}|${s.s}|${Math.round(s.t / 1000)}`;
+
+// ------------------------------------------------------------------------------------------------ the owner's signed requests, notices
+// (owner, 2026-11-25: "you will need a way to read and compile all reports that are sent ... I recommend these remain anonymous";
+// "We may need the ability to push system wide notifications to all users".) An owner's request carries the time it was made and a
+// signature over what it asks; the relay checks the signature with the owner's public key. Nothing secret is stored here or in the
+// project's build job for it. A request older or newer than OWNER_WINDOW_MS is refused.
+export const OWNER_WINDOW_MS = 10 * 60_000;
+export const ownerFresh = (t, now) => Number.isFinite(Number(t)) && Math.abs(now - Number(t)) <= OWNER_WINDOW_MS;
+/** The words that are signed: what is asked, when, and the thing itself (for a notice: its text - nobody can swap it). */
+export const ownerWords = (what, t, extra) => `restalker-owner:${what}:${Number(t)}:${extra == null ? "" : String(extra)}`;
+export function b64uToBytes(s) {
+  try {
+    const b = atob(String(s || "").replace(/-/g, "+").replace(/_/g, "/"));
+    const a = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+    return a;
+  } catch (e) { return null; }
+}
+export function bytesToB64(a) { let s = ""; const u = new Uint8Array(a); for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return btoa(s); }
+
+/** A notice to everyone, as the owner sent it -> { title, text, until } or null (not sendable). Plain text only; short. */
+export const NOTICE_TITLE = 80, NOTICE_TEXT = 600, NOTICE_DAYS = 3, NOTICE_DAYS_MAX = 30;
+export function noticeIn(b, now) {
+  const clean = (x, n) => String(x == null ? "" : x).replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").replace(/[<>]/g, "").trim().slice(0, n);
+  const title = clean(b && b.title, NOTICE_TITLE), text = clean(b && b.text, NOTICE_TEXT);
+  if (title.length < 3 || text.length < 3) return null;
+  const days = Math.max(0.01, Math.min(NOTICE_DAYS_MAX, Number(b && b.days) || NOTICE_DAYS));
+  return { title, text, until: now + Math.round(days * 86400_000) };
+}
+/** What a device gets: the newest notice that has not run out (or null). */
+export const noticeOut = (row, now) => (row && row.until > now) ? { id: Number(row.id), at: Number(row.at), title: String(row.title), text: String(row.text) } : null;
+
+/** A report as it is handed on: without the device's code. "who" tells two senders apart, and nothing else. */
+export function reportOut(row, who) {
+  return { id: row.id, at: row.at, who, app: row.app, ver: row.ver, title: row.title, note: row.note, text: row.text };
+}

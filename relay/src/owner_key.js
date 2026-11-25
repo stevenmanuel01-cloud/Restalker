@@ -1,0 +1,4 @@
+// The owner's PUBLIC key (tools/owner_reports_pub.pem). The relay checks with it that an owner's request (read the reports, send a
+// notice to everyone) was signed by the owner's side, and seals the reports with it so that only the owner's side can read them.
+// A public key is not a secret: it can only CHECK a signature and SEAL, never sign or open.
+export const OWNER_SPKI_B64 = "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAsTMvKZQrxah9RvdmUY/zTmPfgy4u83MzcPPG2r9WplpJkWwuumLwN3+foc29+AZh4RpJLswUIvZkT6dEQ9pwHGVX+nQB6qecqtUFz8Yi9FAJICR2c7OoTZYvXyfBc23gGQyOrPBLKoeZIWZ8Zmw1FahlIN6bQB9usSroSTIo2emNBtoDZejgRGiS5X/+ZiRivUoPtG/RR3lMRFV6CJFWBn6Y5drlX7LH7uNvhxocoQOIwKryDO63gLn0ck7zVMwdIJJx+oKuu+YZ8LH2vhQKRGus3+xiuDSW3g6AI+JdN9X8EqgT2r7OBH7WWMN//r6ZLVmkZQfcJPqPhyrhtwYD63RtvspcUSUZVc5SC++vKcW8vtSclpymKW32Lq1D3fRuxZRpE3jATtCE69mt+xYTGFYi6a46JWgNCqKrFZmKRXUCGPE2ApLilXIseCoHDpLGmKAKX/ZtVMULdkronSDbNDU80Aa3gjcMaiOhBeO/Jzfg0CNqyUdSXYBe60rQHDujAgMBAAE=";

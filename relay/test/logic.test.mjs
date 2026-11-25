@@ -257,3 +257,24 @@ test("the owner's secret is compared exactly, whatever the lengths", () => {
   assert.equal(L.sameText("abc", "abcabc"), false);        // (a repeat of the shorter one is not the same)
   assert.equal(L.sameText("", ""), false); assert.equal(L.sameText("", "x"), false); assert.equal(L.sameText(undefined, "undefined"), false);
 });
+
+test("an owner's request: what is signed, how long it counts, and a notice's text", () => {
+  const now = 1_800_000_000_000;
+  assert.equal(L.ownerWords("reports", now, "123"), "restalker-owner:reports:1800000000000:123");
+  assert.notEqual(L.ownerWords("notice", now, "a"), L.ownerWords("notice", now, "b"));           // (another text is another signature)
+  assert.equal(L.ownerFresh(now - 9 * 60_000, now), true); assert.equal(L.ownerFresh(now + 9 * 60_000, now), true);
+  assert.equal(L.ownerFresh(now - 11 * 60_000, now), false); assert.equal(L.ownerFresh("x", now), false); assert.equal(L.ownerFresh(0, now), false);
+  const n = L.noticeIn({ title: "  Update <script>now</script> ", text: "Line one\nline two\u0007", days: 2 }, now);
+  assert.equal(n.title, "Update scriptnow/script"); assert.equal(n.text, "Line one\nline two"); assert.equal(n.until, now + 2 * 86400_000);
+  assert.equal(L.noticeIn({ title: "x", text: "long enough" }, now), null); assert.equal(L.noticeIn({ title: "long enough" }, now), null);
+  assert.equal(L.noticeIn({ title: "t".repeat(300), text: "x".repeat(5000), days: 999 }, now).until, now + 30 * 86400_000);
+  assert.equal(L.noticeIn({ title: "t".repeat(300), text: "x".repeat(5000) }, now).text.length, L.NOTICE_TEXT);
+  assert.deepEqual(L.noticeOut({ id: 4, at: 5, until: now + 1, title: "a", text: "b" }, now), { id: 4, at: 5, title: "a", text: "b" });
+  assert.equal(L.noticeOut({ id: 4, at: 5, until: now, title: "a", text: "b" }, now), null); assert.equal(L.noticeOut(null, now), null);
+});
+
+test("a report is handed on without the device's code", () => {
+  const o = L.reportOut({ id: 9, at: 7, c: "abcdef012345", app: "phone", ver: "1.1.7", title: "t", note: "n", text: "x" }, "1a2b3c4d");
+  assert.equal(o.who, "1a2b3c4d"); assert.equal("c" in o, false); assert.equal(JSON.stringify(o).includes("abcdef012345"), false);
+  assert.deepEqual([...L.b64uToBytes("AQID-_8")], [1, 2, 3, 251, 255]); assert.equal(L.bytesToB64(new Uint8Array([1, 2, 3])), "AQID");
+});

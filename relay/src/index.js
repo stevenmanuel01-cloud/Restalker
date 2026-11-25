@@ -8,6 +8,7 @@
 // Nothing here can buy anything: a sighting only ever makes a device look for itself.
 import * as L from "./logic.js";
 import CFG from "./discord.json";
+import { OWNER_SPKI_B64 } from "./owner_key.js";
 
 const CROWD = "restalker-crowd-5e1f0c7a92b4";
 const RAW = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/";
@@ -43,6 +44,7 @@ export class Hub {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS rate(k TEXT, at INTEGER)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS locks(g TEXT, a TEXT, owner TEXT, state TEXT, since INTEGER, until INTEGER, PRIMARY KEY(g, a))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS notices(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, until INTEGER, title TEXT, text TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, c TEXT, app TEXT, ver TEXT,
       title TEXT, note TEXT, text TEXT)`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS suggest(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, c TEXT, a TEXT, name TEXT)`);
@@ -117,19 +119,33 @@ export class Hub {
       }
       if (u.pathname === "/v1/owner/reports" && req.method === "GET") {
         // The owner's way to READ the reports people send (2026-11-25, owner: "the whole point is that you can accumulate the issues and
-        // resolve accordingly"). Until now a report could only be read in the once-a-day digest. Asked with the owner's secret (the one
-        // the digest channel is named after - it is known only to this relay and to the project's own build job); wrong tries from one
-        // address are cut off. The build job hands the answer on encrypted, so it is never readable in a public place.
-        const ip = req.headers.get("cf-connecting-ip") || "?";
-        const key = String(this.env.DIGEST_TOPIC || ""), got = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-        if (key.length < 16 || !L.sameText(got, key)) {
-          if (this.rateHit("own:" + ip, 20)) return json({ ok: false, error: "too many" }, 429);
-          return json({ ok: false, error: "not allowed" }, 403);
-        }
+        // resolve accordingly"; "I recommend these remain anonymous"). Asked with the owner's signature (or the owner's secret, when
+        // one is set); handed on WITHOUT the devices' codes and sealed with the owner's public key - only the owner's side can open it,
+        // wherever the answer passes through.
         const since = Number(u.searchParams.get("since") || 0) || (Date.now() - 72 * 3600_000);
-        const rows = this.sql.exec("SELECT id, at, c, app, ver, title, note, text FROM reports WHERE at > ? ORDER BY id DESC LIMIT 60", since).toArray();
-        return json({ ok: true, now: Date.now(), reports: rows });
+        const no = await this.ownerNo(req, u, "reports", String(since));
+        if (no) return no;
+        const rows = this.sql.exec("SELECT id, at, c, app, ver, title, note, text FROM reports WHERE at > ? ORDER BY id DESC LIMIT 200", since).toArray();
+        const out = [];
+        for (const r of rows) out.push(L.reportOut(r, (await this.sha(`rk-report:${r.c}`)).slice(0, 8)));
+        return json({ ok: true, now: Date.now(), n: out.length, enc: await this.seal(JSON.stringify({ now: Date.now(), reports: out })) });
       }
+      if (u.pathname === "/v1/owner/notice" && req.method === "POST") {
+        // A notice to EVERY device (owner, 2026-11-25): kept until it runs out, pushed at once to every device that holds its
+        // connection open, and given to the others with their next check-in. Plain text; signed by the owner (its text is signed too).
+        const b = await req.json().catch(() => null) || {};
+        const now = Date.now(), n = L.noticeIn(b, now);
+        if (!n) return json({ ok: false, error: "title / text" }, 400);
+        const no = await this.ownerNo(req, u, "notice", await this.sha(n.title + "\n" + n.text));
+        if (no) return no;
+        if (b.clear) this.sql.exec("UPDATE notices SET until = ? WHERE until > ?", now, now);
+        this.sql.exec("INSERT INTO notices(at, until, title, text) VALUES(?, ?, ?, ?)", now, n.until, n.title, n.text);
+        const nt = this.notice(now);
+        let pushed = 0;
+        for (const ws of this.state.getWebSockets()) { try { ws.send(JSON.stringify({ t: "notice", notice: nt })); pushed++; } catch (e) { /* gone */ } }
+        return json({ ok: true, notice: nt, pushed });
+      }
+      if (u.pathname === "/v1/notice") return json({ ok: true, notice: this.notice(Date.now()) });
       if (u.pathname === "/v1/stats") return json({ ok: true, ...(await this.stats(u.searchParams.has("log"))) });
       if (u.pathname === "/v1/links") return json({ ok: true, discord: CFG.invite || null });
       if (req.method === "POST" && ["/v1/h", "/v1/lock", "/v1/release", "/v1/report", "/v1/suggest", "/v1/linkcode"].includes(u.pathname)) {
@@ -146,6 +162,7 @@ export class Hub {
           this.sql.exec(`INSERT INTO seen(c, at, first, sightings, g, w, hb) VALUES(?, ?, ?, 0, ?, ?, ?)
             ON CONFLICT(c) DO UPDATE SET at = MAX(at, excluded.at), g = excluded.g, w = excluded.w, hb = excluded.hb`, c, now, now, g, w, now);
           const out = { ok: true, active: this.active(now) };
+          const nt = this.notice(now); if (nt) out.notice = nt;
           if (g) out.peers = this.peers(g, c, now);
           return json(out);
         }
@@ -242,6 +259,38 @@ export class Hub {
     return id;
   }
 
+  // ------------------------------------------------------------------------------------------------ the owner's requests (logic.js)
+  notice(now) {
+    return L.noticeOut(this.sql.exec("SELECT id, at, until, title, text FROM notices WHERE until > ? ORDER BY id DESC LIMIT 1", now).toArray()[0] || null, now);
+  }
+  async sha(text) {
+    const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
+    return [...new Uint8Array(d)].map(x => x.toString(16).padStart(2, "0")).join("");
+  }
+  /** -> null when the request is the owner's (signed with the owner's key, or carrying the owner's secret); else the refusal. */
+  async ownerNo(req, u, what, extra) {
+    const ip = req.headers.get("cf-connecting-ip") || "?";
+    const key = String(this.env.DIGEST_TOPIC || ""), got = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    if (key.length >= 16 && L.sameText(got, key)) return null;
+    const t = Number(u.searchParams.get("t") || 0), sig = L.b64uToBytes(u.searchParams.get("s") || "");
+    try {
+      if (sig && sig.length >= 128 && L.ownerFresh(t, Date.now())) {
+        const k = await crypto.subtle.importKey("spki", L.b64uToBytes(OWNER_SPKI_B64), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+        if (await crypto.subtle.verify("RSASSA-PKCS1-v1_5", k, sig, new TextEncoder().encode(L.ownerWords(what, t, extra)))) return null;
+      }
+    } catch (e) { /* not a signature */ }
+    if (this.rateHit("own:" + ip, 20)) return json({ ok: false, error: "too many" }, 429);
+    return json({ ok: false, error: "not allowed" }, 403);
+  }
+  /** Seals text with the owner's public key (a fresh AES-256-GCM key, itself sealed with RSA-OAEP): only the owner's side opens it. */
+  async seal(text) {
+    const pub = await crypto.subtle.importKey("spki", L.b64uToBytes(OWNER_SPKI_B64), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+    const raw = crypto.getRandomValues(new Uint8Array(32)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const aes = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt"]);
+    const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aes, new TextEncoder().encode(text));
+    return { k: L.bytesToB64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, raw)), iv: L.bytesToB64(iv), data: L.bytesToB64(data) };
+  }
+
   // ------------------------------------------------------------------------------------------------ held-open connections (logic.js)
   push(ch, row, except) {
     let n = 0;
@@ -291,7 +340,7 @@ export class Hub {
         : this.sql.exec("SELECT id, at, m FROM msgs WHERE ch = ? AND at > ? ORDER BY id LIMIT ?", ch, now - L.firstBackMs(ch), L.WS_CATCHUP).toArray();
       for (const r of rows) server.send(L.wsLine(ch, r));
     }
-    server.send(JSON.stringify({ t: "hello", active: this.active(now), top: String(top), next: L.WS_SAFETY_S }));
+    server.send(JSON.stringify({ t: "hello", active: this.active(now), top: String(top), next: L.WS_SAFETY_S, notice: this.notice(now) || undefined }));
     return new Response(null, { status: 101, webSocket: client });
   }
 

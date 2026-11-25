@@ -1,12 +1,19 @@
 name: Reports to the owner
-# Reads the reports people sent (from the relay, with the owner's secret) and hands them on ENCRYPTED: only the holder of the private
-# key that belongs to tools/owner_reports_pub.pem can read the file this makes. Nothing of a report is ever printed here.
+# Asks the relay for the reports people sent and hands its answer on. The request is signed by the owner's side (inputs t and s: a
+# signature that counts for 10 minutes and for this one request only); the relay's answer is SEALED with the owner's public key and
+# carries no device codes - only the holder of the private key can read it. Nothing of a report is ever readable or printed here.
 on:
   workflow_dispatch:
     inputs:
-      hours:
-        description: "how many hours back"
-        default: "72"
+      since:
+        description: "reports newer than this (milliseconds)"
+        required: true
+      t:
+        description: "when the request was signed (milliseconds)"
+        required: true
+      s:
+        description: "the owner's signature"
+        required: true
 permissions:
   contents: read
 jobs:
@@ -16,38 +23,31 @@ jobs:
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      DIGEST_TOPIC: ${{ secrets.CLAUDE_DIGEST_TOPIC }}
-      HOURS: ${{ github.event.inputs.hours }}
+      SINCE: ${{ github.event.inputs.since }}
+      T: ${{ github.event.inputs.t }}
+      S: ${{ github.event.inputs.s }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Read and encrypt
+      - name: Ask the relay
         run: |
-          set -e
-          umask 077; mkdir -p out work
+          umask 077; mkdir -p out
           python3 - <<'PY'
-          import json, os, time, urllib.request, urllib.error
+          import json, os, re, urllib.request, urllib.error
           A, T = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip(), os.environ["CLOUDFLARE_API_TOKEN"].strip()
           req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/accounts/{A}/workers/subdomain", headers={"Authorization": "Bearer " + T})
           sub = json.load(urllib.request.urlopen(req, timeout=30))["result"]["subdomain"]
-          hours = float(os.environ.get("HOURS") or 72)
-          since = int((time.time() - hours * 3600) * 1000)
-          r = urllib.request.Request(f"https://restalker-relay.{sub}.workers.dev/v1/owner/reports?since={since}",
-                                     headers={"Authorization": "Bearer " + os.environ["DIGEST_TOPIC"].strip(), "User-Agent": "restalker-owner"})
+          since, t, s = os.environ["SINCE"].strip(), os.environ["T"].strip(), os.environ["S"].strip()
+          if not (re.fullmatch(r"\d{1,16}", since) and re.fullmatch(r"\d{1,16}", t) and re.fullmatch(r"[A-Za-z0-9_-]{100,800}", s)):
+              print("NOT READ - the inputs are not a signed request"); open("out/not_read.txt", "w").write("inputs"); raise SystemExit(0)
+          r = urllib.request.Request(f"https://restalker-relay.{sub}.workers.dev/v1/owner/reports?since={since}&t={t}&s={s}", headers={"User-Agent": "restalker-owner"})
           try:
               body = urllib.request.urlopen(r, timeout=60).read()
           except urllib.error.HTTPError as e:
               # (the run ends as finished, not failed: GitHub e-mails the owner for every failed run)
-              print("NOT READ - the relay refused: %s %s (the secret here has %d letters)" % (e.code, e.read()[:80], len(os.environ["DIGEST_TOPIC"].strip())))
-              raise SystemExit(0)
+              print("NOT READ - the relay refused:", e.code); open("out/not_read.txt", "w").write(str(e.code)); raise SystemExit(0)
           d = json.loads(body)
-          open("work/reports.json", "wb").write(body)
-          print("reports read:", len(d.get("reports") or []), "- sizes:", [len(x.get("text") or "") for x in (d.get("reports") or [])][:20])
+          open("out/reports.sealed.json", "wb").write(body)
+          print("reports handed on (sealed):", d.get("n"))
           PY
-          if [ ! -f work/reports.json ]; then echo "nothing to hand on"; echo "not read" > out/not_read.txt; exit 0; fi
-          openssl rand -hex 32 > work/k
-          openssl enc -aes-256-cbc -pbkdf2 -pass file:work/k -in work/reports.json -out out/reports.enc
-          openssl pkeyutl -encrypt -pubin -inkey tools/owner_reports_pub.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in work/k -out out/key.enc
-          rm -rf work
       - uses: actions/upload-artifact@v4
         with:
           name: owner-reports
