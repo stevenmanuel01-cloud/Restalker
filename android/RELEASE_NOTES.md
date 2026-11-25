@@ -5,7 +5,8 @@
   stock" and tried again.)
 - Faster: the app looks at a product page while it is arriving and starts the purchase the moment the buy box has been read. Until
   1.1.4 it waited for the whole page (every picture and script), then a fixed quarter second.
-- The checkout is the desktop's own, as of Restalker v155.
+- The checkout is the desktop's own, as of Restalker v156 (Amazon's limit note is understood the same way whether it appears at once
+  or a moment later on the checkout page).
 
 # Restalker Mobile 1.1.4 (2026-11-24)
 - The Watch tab's banner is tidy: how many products are watched, and one button that says what it does - "Stop watching" /
