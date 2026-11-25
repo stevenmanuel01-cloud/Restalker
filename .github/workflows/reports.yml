@@ -14,6 +14,9 @@ on:
       s:
         description: "the owner's signature"
         required: true
+      clear:
+        description: "1 = only remove the branch owner-reports (after the owner's side has read it)"
+        default: ""
 permissions:
   contents: write          # (only to put the SEALED answer on the branch "owner-reports", where the owner's side fetches it)
 jobs:
@@ -27,7 +30,15 @@ jobs:
       T: ${{ github.event.inputs.t }}
       S: ${{ github.event.inputs.s }}
     steps:
+      - name: Remove the handed-on answer
+        if: ${{ github.event.inputs.clear == '1' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init -q x && cd x
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" --delete owner-reports || echo "it was not there"
       - name: Ask the relay
+        if: ${{ github.event.inputs.clear != '1' }}
         run: |
           umask 077; mkdir -p out
           python3 - <<'PY'
@@ -49,6 +60,7 @@ jobs:
           print("reports handed on (sealed):", d.get("n"))
           PY
       - name: Hand the sealed answer on (branch owner-reports, replaced each time - no history is kept)
+        if: ${{ github.event.inputs.clear != '1' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
