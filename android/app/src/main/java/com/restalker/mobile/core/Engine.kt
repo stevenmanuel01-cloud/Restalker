@@ -287,8 +287,12 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val lookEnd = now() + LOOK_MS; var after = 0
         while (true) {
             r = page.ask(mapOf("bb" to "eligible", "product" to p.forPage()), 12_000)
-            if (r == null || r["eligible"] == true || r["limited"] == true) break
-            val ready = r["ready"].asStr()
+            val ready = r?.get("ready").asStr()
+            // 1.1.6: "buyable" counts once the page has been READ (its text is all there) - not while it is still arriving. On the PC,
+            // Amazon answered some purchases that began while the page was still arriving with pages without the product (the PC's
+            // v157 measures whether that is the cause); until that is settled the app presses when the page has been read. It still
+            // does not wait for pictures and scripts to finish loading, or a fixed pause, as it did until 1.1.4.
+            if (r == null || r["limited"] == true || (r["eligible"] == true && (EARLY_PRESS || ready != "loading"))) break
             if (ready == null) break                                   // (a page part that does not say how far the page is: one look, as before)
             val read = ready == "interactive" || ready == "complete"
             if (read && (r["reason"].asStr() ?: "") == "price above cap") break
@@ -316,6 +320,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
             r["limited"] == true -> "seller limit - Amazon's purchase limit holds for " + (r["limitSellerName"].asStr()?.ifBlank { null } ?: "this seller") +
                 (price?.let { " (\$${money(it)})" } ?: "") + "; an offer of another seller is bought"
             reason == "price above cap" -> "for sale over your cap" + (price?.let { " (\$${money(it)})" } ?: "")
+            // 1.1.6: Amazon answered with a page that has no product at all (not this listing's fault, not "sold out"): looked at again
+            reason.contains("page without the product") -> reason
             Regex("identity|not the product", RegexOption.IGNORE_CASE).containsMatchIn(reason) -> "NOT THIS PRODUCT - the page shows something else ($reason)"
             reason.contains("purchase control") -> "out of stock" + (price?.let { " (\$${money(it)} shown)" } ?: "")
             else -> reason.ifBlank { "not buyable" }
@@ -747,6 +753,7 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val LOCK_AFTER = 3
         const val LOCK_MS = 10 * 60_000L
         const val LIMIT_MS = 6 * 3_600_000L       // 1.1.5: how long a seller Amazon's purchase limit was reached for is left alone (as on the desktop)
+        const val EARLY_PRESS = false             // 1.1.6: see openAndRead
         const val LOOK_MS = 15_000L               // 1.1.5: the longest one look at a page that is still arriving may take
         val VERIFY_LOOKS = longArrayOf(5_000, 15_000, 40_000, 120_000)
         /** 2.0: the id of a practice item (Settings -> Practice checkout with any item): never shared, removed after the practice. */
