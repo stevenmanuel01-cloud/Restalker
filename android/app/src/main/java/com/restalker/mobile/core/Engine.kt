@@ -7,6 +7,9 @@ import java.util.concurrent.TimeUnit
 interface Page {
     /** Opens the address and waits until the page has loaded and the Amazon part is in it. */
     fun goto(url: String, timeoutMs: Long = 35_000): Boolean
+    /** 1.1.5: opens the address and comes back as soon as the NEW page exists and the Amazon part is in it - while the page is still
+     *  arriving. The answers of [ask] then say how far the page is ("ready"). A browser that cannot do this waits for the whole page. */
+    fun open(url: String, timeoutMs: Long = 35_000): Boolean = goto(url, timeoutMs)
     /** Asks the Amazon part (amz_part.js) a question; keeps trying while a page is changing. null = no answer in time. */
     fun ask(msg: Map<String, Any?>, timeoutMs: Long = 8_000): Map<String, Any?>?
     fun images(on: Boolean)
@@ -272,10 +275,27 @@ class Engine(private val store: Store, private val page: Page, private val alert
     private fun openAndRead(p: Product): Boolean {
         busyWith = "looking at ${p.label}"
         page.images(false)
-        if (!page.goto(p.url)) { failRun.merge(p.id, 1, Int::plus); setSeen(p, "the page did not load", null, false); loadFailed(); return false }
+        if (!page.open(p.url)) { failRun.merge(p.id, 1, Int::plus); setSeen(p, "the page did not load", null, false); loadFailed(); return false }
         loadFails = 0
         page.ask(mapOf("bb" to "reset"), 10_000)
-        val r = page.ask(mapOf("bb" to "eligible", "product" to p.forPage()), 12_000)
+        // 1.1.5 (owner, 2026-11-24: "as soon as the program detects enough information ... it should move on to the next step" - "a dynamic
+        // number that is based off of when the actual page is read, not an arbitrary number"): until 1.1.4 the app waited for the WHOLE
+        // page (all its pictures and scripts), then a fixed quarter second, then asked once. Now the page is asked while it arrives, again
+        // and again: "buyable" ends the look the moment the buy box is complete (the desktop's own check says so); "not buyable" and "over
+        // the cap" count only once the page has been read to its end (two more looks after that, for a part that fills in late).
+        var r: Map<String, Any?>? = null
+        val lookEnd = now() + LOOK_MS; var after = 0
+        while (true) {
+            r = page.ask(mapOf("bb" to "eligible", "product" to p.forPage()), 12_000)
+            if (r == null || r["eligible"] == true || r["limited"] == true) break
+            val ready = r["ready"].asStr()
+            if (ready == null) break                                   // (a page part that does not say how far the page is: one look, as before)
+            val read = ready == "interactive" || ready == "complete"
+            if (read && (r["reason"].asStr() ?: "") == "price above cap") break
+            if (read && ++after >= 3) break
+            if (now() >= lookEnd) break
+            clock.sleep(60)
+        }
         lastReply = r
         if (r == null) { failRun.merge(p.id, 1, Int::plus); setSeen(p, "the page did not answer", null, false); return false }
         failRun.remove(p.id)
@@ -292,6 +312,9 @@ class Engine(private val store: Store, private val page: Page, private val alert
         val eligible = r["eligible"] == true
         val text = when {
             eligible -> "BUYABLE" + (price?.let { " at \$${money(it)}" } ?: "")
+            // 1.1.5: the seller in the buy box is one Amazon's purchase limit was reached for - looked at, not bought from this seller
+            r["limited"] == true -> "seller limit - Amazon's purchase limit holds for " + (r["limitSellerName"].asStr()?.ifBlank { null } ?: "this seller") +
+                (price?.let { " (\$${money(it)})" } ?: "") + "; an offer of another seller is bought"
             reason == "price above cap" -> "for sale over your cap" + (price?.let { " (\$${money(it)})" } ?: "")
             Regex("identity|not the product", RegexOption.IGNORE_CASE).containsMatchIn(reason) -> "NOT THIS PRODUCT - the page shows something else ($reason)"
             reason.contains("purchase control") -> "out of stock" + (price?.let { " (\$${money(it)} shown)" } ?: "")
@@ -428,7 +451,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
     }
 
     // ------------------------------------------------------------------ buying (the desktop's _try_amazon)
-    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT, RACE_LOST }
+    private enum class End { BOUGHT, PRACTICE_OK, UNCLEAR, FAILED, STOPPED, PC_BOUGHT, RACE_LOST, LIMIT }
+    private var limitSeller = "*"; private var limitName = ""
 
     fun buy(p: Product, price: Double?, forcePractice: Boolean = false) = meter.run("checkouts") { buyNow(p, price, forcePractice) }
 
@@ -512,6 +536,11 @@ class Engine(private val store: Store, private val page: Page, private val alert
                             if ((x["page"].asStr() ?: "").startsWith("/ap/")) {        // (Amazon's sign-in / verification pages)
                                 end = End.STOPPED; why = "Amazon asked to sign in"; actionRequired(p, "sign in required"); return
                             }
+                            if (Regex("purchase limit", RegexOption.IGNORE_CASE).containsMatchIn(reason)) {
+                                // 1.1.5: Amazon's own limit for this account - for the seller whose offer was in the buy box
+                                limitSeller = x["limitSeller"].asStr()?.ifBlank { null } ?: "*"; limitName = x["limitSellerName"].asStr() ?: ""
+                                end = End.LIMIT; why = reason; return
+                            }
                             end = End.FAILED; why = "Amazon checkout: $reason"; return
                         }
                     }
@@ -582,6 +611,19 @@ class Engine(private val store: Store, private val page: Page, private val alert
                 alerts.problem("${p.label}: order unclear - $why")
                 store.addPurchase(Purchase(now(), p.asin, p.label, paid, null, false, "unclear - check Amazon"))
                 alerts.needYou("Check your Amazon orders", "${p.label}: $why. Restalker will not buy it again until you press Re-arm.", p)
+            }
+            End.LIMIT -> {
+                // 1.1.5 (owner, 2026-11-24): kept for THAT seller only, 6 hours; no failed try is counted, nothing is locked, Buy stays on
+                val who = when { limitSeller == "*" -> "a seller that could not be read"; limitName.isNotBlank() -> limitName; limitSeller == "ATVPDKIKX0DER" -> "Amazon.com"; else -> "seller $limitSeller" }
+                val already = (p.limitsAt(now())[limitSeller]?.get("until").asLong() ?: 0) > now() + LIMIT_MS - 15 * 60_000L
+                store.update(p.id) { it.withLimit(limitSeller, limitName, now() + LIMIT_MS, now()).copy(inProgress = false, buyable = false,
+                    status = "SELLER LIMIT - Amazon's purchase limit reached for $who; left alone for 6 hours, another seller's offer is still bought") }
+                log("${p.label}: Amazon's purchase limit reached for $who - that seller's offer is left alone for 6 hours" +
+                    (if (limitSeller == "*") " (the seller could not be read: the whole listing rests)" else "; an offer of another seller at or under your cap is still bought") + ". Nothing is locked.")
+                if (!already) alerts.needYou("Amazon's purchase limit reached", "${p.label}: Amazon's checkout says you have reached its purchase limit for this item" +
+                    (if (limitSeller == "*") ". Restalker does not try this listing for 6 hours, then tries again by itself."
+                     else " from $who. Restalker leaves $who's offer alone for 6 hours; an offer from another seller at or under your cap is still bought.") +
+                    " Buy stays on (nothing is locked) - switch Buy off and on to try sooner.", p)
             }
             End.FAILED, End.STOPPED -> {
                 val ep = p.episodeStart
@@ -704,6 +746,8 @@ class Engine(private val store: Store, private val page: Page, private val alert
         const val CHECKOUT_MS = 150_000L
         const val LOCK_AFTER = 3
         const val LOCK_MS = 10 * 60_000L
+        const val LIMIT_MS = 6 * 3_600_000L       // 1.1.5: how long a seller Amazon's purchase limit was reached for is left alone (as on the desktop)
+        const val LOOK_MS = 15_000L               // 1.1.5: the longest one look at a page that is still arriving may take
         val VERIFY_LOOKS = longArrayOf(5_000, 15_000, 40_000, 120_000)
         /** 2.0: the id of a practice item (Settings -> Practice checkout with any item): never shared, removed after the practice. */
         const val PRACTICE_ID = "practice-"

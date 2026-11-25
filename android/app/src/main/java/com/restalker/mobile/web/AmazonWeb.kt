@@ -43,6 +43,8 @@ class AmazonWeb(private val appCtx: Context) : Page {
     private val pending = ConcurrentHashMap<String, AtomicReference<Map<String, Any?>?>>()
     private val latches = ConcurrentHashMap<String, CountDownLatch>()
     @Volatile private var loadDone = CountDownLatch(1)
+    @Volatile private var commitDone = CountDownLatch(1)      // 1.1.5: the page asked for exists (its first content is in)
+    @Volatile private var committedNav = -1
     @Volatile private var lastFinished = ""
     @Volatile var currentUrl = ""; private set
     @Volatile var available = true; private set
@@ -117,11 +119,20 @@ class AmazonWeb(private val appCtx: Context) : Page {
             synchronized(seen) { seen.add(Uri.parse(url).path ?: ""); while (seen.size > 50) seen.removeAt(0) }
         }
 
+        // 1.1.5 (owner, 2026-11-24: "as soon as the program detects enough information ... it should move on to the next step"): the
+        // Amazon part is put into the page the moment the NEW page exists (its first content is in), not when everything on it has
+        // loaded - so the product page can be asked while it arrives. (Put in again when the page has finished: it does nothing twice.)
+        override fun onPageCommitVisible(view: WebView, url: String) {
+            currentUrl = url
+            if (allowed(Uri.parse(url))) view.evaluateJavascript(script, null)
+            if (startedNav == nav) { committedNav = nav; commitDone.countDown() }
+        }
+
         override fun onPageFinished(view: WebView, url: String) {
             currentUrl = url
             if (allowed(Uri.parse(url))) view.evaluateJavascript(script, null)
             lastFinished = url
-            if (startedNav == nav) loadDone.countDown()       // (only the page asked for - not the end of the one before it)
+            if (startedNav == nav) { commitDone.countDown(); loadDone.countDown() }       // (only the page asked for - not the end of the one before it)
             onPageShown?.invoke(url)
         }
 
@@ -132,7 +143,7 @@ class AmazonWeb(private val appCtx: Context) : Page {
             view.destroy()
             web = newWebView()
             parent?.addView(web)
-            loadDone.countDown()
+            loadDone.countDown(); commitDone.countDown()
             return true
         }
     }
@@ -161,6 +172,17 @@ class AmazonWeb(private val appCtx: Context) : Page {
         return ok
     }
 
+    /** 1.1.5: like [goto], but comes back as soon as the new page exists and the Amazon part is in it (the page is still arriving). */
+    override fun open(url: String, timeoutMs: Long): Boolean {
+        if (!available) return false
+        wake()
+        val c = CountDownLatch(1); val l = CountDownLatch(1)
+        onMain { web.stopLoading(); nav++; commitDone = c; loadDone = l; web.loadUrl(url) }
+        val ok = c.await(timeoutMs, TimeUnit.MILLISECONDS)
+        if (!ok) onMain { web.stopLoading() }
+        return ok
+    }
+
     override fun ask(msg: Map<String, Any?>, timeoutMs: Long): Map<String, Any?>? {
         wake()                                         // (2.0: never ask a resting page - its scripts would not answer)
         val until = System.currentTimeMillis() + timeoutMs
@@ -179,7 +201,7 @@ class AmazonWeb(private val appCtx: Context) : Page {
             pending.remove(id); latches.remove(id)
             val v = ref.get()
             if (v != null && v !== NONE) return v
-            if (v === NONE && !injectedAgain && lastFinished.isNotEmpty()) {      // the page has loaded but has no part: put it in again
+            if (v === NONE && !injectedAgain && (lastFinished.isNotEmpty() || committedNav == nav)) {      // the page is there but has no part: put it in again
                 injectedAgain = true
                 onMain { if (allowed(Uri.parse(web.url ?: ""))) web.evaluateJavascript(script, null) }
             }

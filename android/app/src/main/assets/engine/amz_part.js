@@ -25,7 +25,8 @@
     if (t === 'FLOW_CLEAR') { SS.del('__rkAmzFlow'); return {ok: true}; }
     const keep = {type: t, productId: m.productId, reason: m.reason || m.decision || null, price: m.price ?? null, orderNumber: m.orderNumber || null,
                   fees: m.fees || null, at: Date.now(), page: location.pathname.slice(0, 60),
-                  step: m.page || null, label: m.label || null, headings: m.headings || null, notes: m.notes || null};   // v91
+                  step: m.page || null, label: m.label || null, headings: m.headings || null, notes: m.notes || null,
+                  limitSeller: m.limitSeller || null, limitSellerName: m.limitSellerName || null};   // v91; v155: which seller Amazon's purchase limit is for
     if (t === 'STATUS' || t === 'CHECKOUT_PRICE_EVIDENCE') { if (t === 'CHECKOUT_PRICE_EVIDENCE') push(keep); return {ok: true}; }
     const n = push(keep);
     if (t === 'SUBMITTING') {                 // the ONE-order latch: Restalker answers (ok = this browser presses Place your order)
@@ -52,7 +53,7 @@
       if (m.bb === 'eligible') {
         const r = await content({type: 'REVALIDATE_QUEUED', product: m.product});
         let kind = null; try { kind = (globalThis.__rkAmzEntry && globalThis.__rkAmzEntry()) || null; } catch {}
-        return respond({...(r || {}), kind, title: (document.querySelector('#productTitle') || {}).innerText || document.title});
+        return respond({...(r || {}), kind, ready: document.readyState, title: (document.querySelector('#productTitle') || {}).innerText || document.title});   // (v155 ready: how far the page has been read - every answer says it)
       }
       if (m.bb === 'begin') return respond(await content({type: 'BEGIN_PURCHASE', product: m.product, listingPrice: m.price, hitDetectedAt: m.hit}));
       // v114 (diagnostics 92): every order the product is IN (its own link inside the order), not "the code appears somewhere on the

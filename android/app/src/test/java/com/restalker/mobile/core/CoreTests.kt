@@ -14,6 +14,10 @@ object CoreTests {
         val orders = ArrayList<Pair<String, String>>()      // order number -> ASIN
         var url = ""; var places = 0; var placeFail = 0; var noConfirm = false; var signinOrders = false; var silent = false; var signinCheckout = false; var loadFails = false
         var gotoCount = 0; var begins = 0; var pictureUrl: String? = null
+        // 1.1.5: who sells the offer in the buy box (Amazon's seller number, name), and the sellers Amazon's checkout refuses with "purchase limit"
+        var seller: Pair<String, String> = "ATVPDKIKX0DER" to "Amazon.com"; val refused = HashSet<String>(); var eligibleAsks = 0
+        // 1.1.5: answers of a page that is still arriving, given before the real answer (each: ready, eligible?)
+        val arriving = ArrayList<Map<String, Any?>>()
         var rests = 0
         override fun rest() { rests++ }
         var lockSeenAtReply: Boolean? = null; var store: Store? = null; var replyOk: Boolean? = null
@@ -31,18 +35,30 @@ object CoreTests {
                 "reset" -> { msgs.clear(); waitingAsin = null; return mapOf("ok" to true) }
                 "picture" -> return mapOf("picture" to (pictureUrl ?: "https://m.media-amazon.com/images/I/${asinHere()}._AC_SL1500_.jpg"))
                 "eligible" -> {
+                    eligibleAsks++
+                    if (arriving.isNotEmpty()) return arriving.removeAt(0)
                     val p = msg["product"].asMap()!!; val a = asinHere(); val it = items[a] ?: return mapOf("ok" to true, "eligible" to false, "reason" to "product identity changed", "title" to "Amazon.com")
                     if (it.captcha) return mapOf("ok" to true, "eligible" to false, "reason" to "Amazon challenge/throttle", "title" to "Amazon.com")
                     if (it.wrongPage || p["asin"] != a) return mapOf("ok" to true, "eligible" to false, "reason" to "product identity changed", "title" to it.title)
                     if (!it.stock) return mapOf("ok" to true, "eligible" to false, "price" to null, "reason" to "purchase control no longer available", "title" to it.title)
                     val cap = p["cap"].asDouble() ?: 0.0
                     if (it.price > cap + 0.001) return mapOf("ok" to true, "eligible" to false, "price" to it.price, "reason" to "price above cap", "kind" to "buy_now", "title" to it.title)
+                    // (the desktop's content.js sellerLimited: a seller in the product's own list is not bought from)
+                    val lim = p["limitSellers"].asMap()
+                    val hit = lim?.entries?.firstOrNull { (k, v) -> (k == "*" || k == seller.first) && (v.asMap()?.get("until").asLong() ?: 0) > clock.t }
+                    if (hit != null) return mapOf("ok" to true, "eligible" to false, "limited" to true, "limitSeller" to hit.key, "limitSellerName" to seller.second,
+                        "price" to it.price, "reason" to "purchase limit for this seller (${seller.second})", "title" to it.title)
                     return mapOf("ok" to true, "eligible" to true, "price" to it.price, "reason" to null, "kind" to "buy_now", "title" to it.title)
                 }
                 "begin" -> {
                     begins++; val a = asinHere()!!; val it = items[a]!!
                     if (signinCheckout) { seen.add("/ap/signin"); seen.add("/gp/cart/view.html"); push(mapOf("type" to "FLOW_BLOCKED", "reason" to "Proceed to checkout unavailable", "page" to "/gp/cart/view.html")); return mapOf("ok" to true, "started" to true) }
                     push(mapOf("type" to "CHECKOUT_PRICE_EVIDENCE", "reason" to "MATCHED_EXACT_ITEM"))
+                    if (seller.first in refused || "*" in refused) {
+                        push(mapOf("type" to "FLOW_BLOCKED", "reason" to "Amazon says you have reached its purchase limit for this item" + (if ("*" in refused) "" else " (seller: ${seller.second})"),
+                            "limitSeller" to (if ("*" in refused) "*" else seller.first), "limitSellerName" to (if ("*" in refused) "" else seller.second)))
+                        return mapOf("ok" to true, "started" to true)
+                    }
                     push(mapOf("type" to "SUBMITTING", "fees" to mapOf("base" to it.price, "tax" to it.price * 0.0775, "shipping" to 0.0, "total" to it.price * 1.0775)))
                     waitingAsin = a
                     return mapOf("ok" to true, "started" to true)
@@ -1912,6 +1928,75 @@ object CoreTests {
                 p(0, now, true, 28, true) == "nothing" &&                 // the screen was not open when the update started
                 p(now - 16 * 60_000, now, true, 28, true) == "nothing" && // long ago (not this update)
                 p(now + 5_000, now, true, 28, true) == "nothing" }
+        t("214_amazons_purchase_limit_is_kept_for_that_seller_only") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.refused.add("ATVPDKIKX0DER")
+            w.check("B0TEST0001")
+            val p1 = w.p("B0TEST0001"); val lim = p1.limitsAt(w.clock.t)
+            val kept = lim.keys == setOf("ATVPDKIKX0DER") && lim["ATVPDKIKX0DER"]!!["name"] == "Amazon.com" &&
+                kotlin.math.abs((lim["ATVPDKIKX0DER"]!!["until"].asLong() ?: 0) - w.clock.t - Engine.LIMIT_MS) < 60_000
+            val calm = p1.buy && p1.fails == 0 && p1.lockedUntil == 0L && !p1.attempted && !p1.purchased && !p1.inProgress &&
+                w.said.needYou.count { it.startsWith("Amazon's purchase limit reached") } == 1 && w.said.needYou.last().contains("another seller") && w.said.problems.isEmpty()
+            // the same seller again and again: looked at, never a second checkout, never a second message
+            val b0 = w.amz.begins
+            repeat(4) { w.clock.t += 30_000; w.check("B0TEST0001") }
+            val alone = w.amz.begins == b0 && w.p("B0TEST0001").status.startsWith("seller limit") && !w.p("B0TEST0001").buyable &&
+                w.said.needYou.count { it.startsWith("Amazon's purchase limit reached") } == 1 && w.p("B0TEST0001").fails == 0
+            // another seller takes the buy box: bought
+            w.amz.seller = "A2OTHERSELLER1" to "Other Shop"; w.clock.t += 30_000; w.check("B0TEST0001")
+            kept && calm && alone && w.amz.places == 1 && w.said.bought.size == 1
+        }
+        t("215_the_seller_limit_ends_after_6_hours_and_when_you_choose_buy_again") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.refused.add("ATVPDKIKX0DER"); w.check("B0TEST0001")
+            val b0 = w.amz.begins
+            w.amz.refused.clear(); w.clock.t += 60_000; w.check("B0TEST0001")
+            val still = w.amz.begins == b0                                           // (Amazon would sell now, but the 6 hours are not over)
+            w.store.update("idB0TEST0001") { it.withBuy(false) }; w.store.update("idB0TEST0001") { it.withBuy(true) }     // Buy off and on = try sooner
+            val cleared = w.p("B0TEST0001").limits.isEmpty()
+            w.clock.t += 60_000; w.check("B0TEST0001")
+            val bought = w.amz.places == 1
+            val w2 = World(); w2.add("B0TEST0002", 120.0, true); w2.amz.refused.add("ATVPDKIKX0DER"); w2.check("B0TEST0002"); w2.amz.refused.clear()
+            w2.clock.t += Engine.LIMIT_MS + 60_000; w2.check("B0TEST0002")
+            still && cleared && bought && w2.amz.places == 1
+        }
+        t("216_a_limit_without_a_known_seller_rests_the_whole_listing_and_is_saved") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.refused.add("*"); w.check("B0TEST0001")
+            val p1 = w.p("B0TEST0001"); val b0 = w.amz.begins
+            w.amz.refused.clear(); w.amz.seller = "A2OTHERSELLER1" to "Other Shop"; w.clock.t += 60_000; w.check("B0TEST0001")
+            val rests = p1.limitsAt(w.clock.t).keys == setOf("*") && w.amz.begins == b0 && w.said.needYou.any { it.contains("does not try this listing for 6 hours") }
+            // saved and read back; what the page part is handed
+            val back = Product.fromMap(MiniJson.obj(MiniJson.write(p1.toMap()))!!)!!
+            val page = back.forPage()["limitSellers"].asMap()
+            val none = Product(id = "x", asin = "B0TEST0009").forPage().containsKey("limitSellers")
+            rests && back.limits == p1.limits && page != null && page.containsKey("*") && !none && Product.fromMap(mapOf("id" to "o", "asin" to "B0TEST0003"))!!.limits.isEmpty()
+        }
+        t("217_a_page_that_is_still_arriving_is_asked_again_until_its_buy_box_is_complete") {
+            val w = World(); w.add("B0TEST0001", 120.0, true)
+            repeat(5) { w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "loading", "box" to false, "reason" to "the page is still arriving")) }
+            w.amz.arriving.add(mapOf("ok" to true, "eligible" to true, "ready" to "loading", "box" to true, "early" to true, "price" to 99.99, "kind" to "buy_now", "title" to "Magic: The Gathering Test Product B0TEST0001 Collector Booster Box"))
+            val t0 = w.clock.t; w.check("B0TEST0001")
+            // six looks, the sixth said buyable while the page was still arriving -> bought; nothing waited for after that
+            w.amz.eligibleAsks == 6 && w.amz.places == 1 && w.amz.gotoCount >= 1 && w.clock.t - t0 < 60_000
+        }
+        t("218_not_buyable_counts_only_when_the_page_has_been_read") {
+            val w = World(); w.add("B0TEST0001", 120.0, true, stock = false)
+            repeat(3) { w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "loading", "reason" to "purchase control no longer available")) }
+            repeat(3) { w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "complete", "reason" to "purchase control no longer available", "title" to "Magic: The Gathering Test Product B0TEST0001 Collector Booster Box")) }
+            w.check("B0TEST0001")
+            val sold = w.amz.eligibleAsks == 6 && w.amz.begins == 0 && w.p("B0TEST0001").status.startsWith("out of stock")
+            // over the cap while still arriving is not believed; when the page has been read it is, at once
+            val w2 = World(); w2.add("B0TEST0002", 50.0, true, price = 99.99)
+            w2.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "loading", "price" to 99.99, "reason" to "price above cap"))
+            w2.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "interactive", "price" to 99.99, "reason" to "price above cap", "title" to "Magic: The Gathering Test Product B0TEST0002 Collector Booster Box"))
+            w2.check("B0TEST0002")
+            // a page part that does not say how far the page is (before 1.1.5): one look, as always
+            val w3 = World(); w3.add("B0TEST0003", 120.0, true, stock = false); w3.check("B0TEST0003")
+            // a page that never finishes arriving: the look ends by itself
+            val w4 = World(); w4.add("B0TEST0004", 120.0, true)
+            repeat(400) { w4.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "loading", "reason" to "the page is still arriving")) }
+            val t4 = w4.clock.t; w4.check("B0TEST0004")
+            sold && w2.amz.eligibleAsks == 2 && w2.amz.begins == 0 && w2.p("B0TEST0002").overCap && w3.amz.eligibleAsks == 1 &&
+                w4.amz.begins == 0 && w4.clock.t - t4 < Engine.LOOK_MS + 20_000 && w4.amz.eligibleAsks < 400
+        }
         t("209_ws_base64_is_right") {
             fun ok(sx: String) = Ws.b64(sx.toByteArray()) == java.util.Base64.getEncoder().encodeToString(sx.toByteArray())
             listOf("", "a", "ab", "abc", "abcd", "the sample nonce", "ünïcödé ✓ \u0000\u00ff").all { ok(it) } &&

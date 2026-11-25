@@ -5,7 +5,7 @@ package com.restalker.mobile.core
  *  counting up, and updates go by the code alone (UpdatePlan), so every device still sees 1.0.0 as the newer one.
  *  THREE parts on purpose (1.0.0, 1.0.1, ...): the first versions of 2026-11-16/17 were 1.0 - 1.8 and their releases (mobile-v1.0 ...
  *  mobile-v1.8) are still on GitHub; a two-part 1.x name would meet its old release and never be published. */
-const val APP_VERSION = "1.1.4"
+const val APP_VERSION = "1.1.5"
 const val ENGINE_FROM = "v120"            // the desktop Restalker version the Amazon page scripts were copied from (unchanged)
 
 /** One product the phone watches (Amazon for now). The purchase fields are the one-per-product lock: once a Place order was pressed
@@ -59,6 +59,11 @@ data class Product(
     val dropRef: Double? = null,          // 2.12: the price a price drop is measured from (PriceDrop) and when it was set
     val dropAt: Long = 0,
     val dropSt: String = "",              // 1.0.4: how it was for sale when that mark was set - "in" (at or under the cap) / "over" / ""
+    // 1.1.5 (owner, 2026-11-24: "it is important to distinguish between sellers ... if it is a different seller, then the limit should
+    // not apply and checkout should continue"): the sellers Amazon's purchase limit was reached for at this listing - seller key (Amazon's
+    // own seller number, or "n:<name>", or "*" when the seller could not be read) -> {"until": ms, "name": text}. The page part does not
+    // buy from a seller in this list (the desktop's content.js, sellerLimited); any other seller's offer is bought as always.
+    val limits: Map<String, Map<String, Any?>> = emptyMap(),
 ) {
     val url: String get() = "https://www.amazon.com/dp/$asin"
     val label: String get() = name.ifBlank { "Amazon $asin" }
@@ -67,11 +72,19 @@ data class Product(
      *  automatically switches back to just watching"): Re-arm = the one-order lock is cleared AND Buy is on (it needs a cap). Until 1.0.7
      *  Re-arm cleared the lock but left Buy off - the product stayed "just watching", and a linked PC heard "Buy off". */
     fun rearmed(): Product = copy(purchased = false, attempted = false, inProgress = false, fails = 0, lockedUntil = 0, orderNumber = null,
-        buy = cap > 0, watch = true, status = if (purchased || attempted) "re-armed - it may be bought again" else status)
+        buy = cap > 0, watch = true, limits = emptyMap(), status = if (purchased || attempted) "re-armed - it may be bought again" else status)
 
     /** Buy switched on or off by you. On a product that was bought (or whose order is unclear) switching Buy on is a re-arm: before 1.0.8
      *  Buy came on but the lock stayed, so it was never bought and the linked PC was told "Buy off". (Not while a checkout is running.) */
-    fun withBuy(on: Boolean): Product = if (on && (purchased || attempted) && !inProgress) rearmed() else copy(buy = on, watch = watch || on)
+    fun withBuy(on: Boolean): Product = if (on && (purchased || attempted) && !inProgress) rearmed()
+        else copy(buy = on, watch = watch || on, limits = if (on) emptyMap() else limits)       // (1.1.5: choosing Buy again ends a seller's purchase limit at once)
+
+    /** 1.1.5: the limits that still hold at [now]. */
+    fun limitsAt(now: Long): Map<String, Map<String, Any?>> = limits.filterValues { (it["until"].asLong() ?: 0) > now }
+
+    /** 1.1.5: Amazon's checkout said "purchase limit" for this seller ([key] "*" = the seller could not be read). */
+    fun withLimit(key: String, name: String, until: Long, now: Long): Product =
+        copy(limits = limitsAt(now) + (key.take(80).ifBlank { "*" } to mapOf("until" to until, "name" to name.take(60))))
 
     /** What the desktop's content.js needs to check the page and buy (a "custom" product: everything comes from here). */
     fun forPage(): Map<String, Any?> = linkedMapOf(
@@ -79,7 +92,7 @@ data class Product(
         // stock at any price (nothing is ever bought without a cap: Engine.canAutoBuy needs one)
         "id" to "rkm-$id", "customProduct" to true, "asin" to asin, "url" to url, "cap" to (if (cap > 0) cap else NO_CAP),
         "name" to label, "tokens" to tokens, "forbid" to emptyList<String>(),
-    ).also { if (kind in SHAPES) it["rkShape"] = kind }
+    ).also { if (kind in SHAPES) it["rkShape"] = kind; if (limits.isNotEmpty()) it["limitSellers"] = limits }
 
     fun toMap(): Map<String, Any?> = linkedMapOf(
         "id" to id, "asin" to asin, "name" to name, "cap" to cap, "kind" to kind, "watch" to watch, "buy" to buy, "tokens" to tokens,
@@ -89,7 +102,7 @@ data class Product(
         "lockedUntil" to lockedUntil, "practiceOkAt" to practiceOkAt, "year" to year, "set" to set,
         "image" to image, "qty" to qty, "qtySince" to qtySince, "overCap" to overCap, "dSt" to dSt, "dPr" to dPr, "dAt" to dAt,
         "msrp" to msrp, "tcg" to tcg, "tcgUrl" to tcgUrl, "others" to others, "picTriedAt" to picTriedAt, "dImg" to dImg, "cImg" to cImg,
-        "dropRef" to dropRef, "dropAt" to dropAt, "dropSt" to dropSt,
+        "dropRef" to dropRef, "dropAt" to dropAt, "dropSt" to dropSt, "limits" to limits,
     )
 
     /** What is known now - this phone's own look or the linked desktop's, whichever is newer: (state "in" / "over" / "out" / "", price, when). */
@@ -132,6 +145,8 @@ data class Product(
                 cImg = m["cImg"].asStr()?.takeIf { Pics.validAny(it) } ?: "",
                 dropRef = m["dropRef"].asDouble()?.takeIf { it > 0 && it < 100_000 }, dropAt = m["dropAt"].asLong() ?: 0,
                 dropSt = (m["dropSt"].asStr() ?: "").takeIf { it == "in" || it == "over" } ?: "",
+                limits = (m["limits"].asMap() ?: emptyMap()).entries.take(20).mapNotNull { (k, v) ->
+                    v.asMap()?.let { k.take(80) to mapOf<String, Any?>("until" to (it["until"].asLong() ?: 0L), "name" to (it["name"].asStr() ?: "").take(60)) } }.toMap(),
             )
         }
     }

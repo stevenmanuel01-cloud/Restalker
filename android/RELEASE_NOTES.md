@@ -1,3 +1,12 @@
+# Restalker Mobile 1.1.5 (2026-11-24)
+- Amazon's purchase limit is recognised and kept PER SELLER: when Amazon's checkout says "you've reached the purchase limit for this
+  item", that seller's offer is left alone for 6 hours; an offer from another seller at or under your cap is still bought. One
+  message, no failed try counted, nothing locked - switch Buy off and on to try sooner. (Until 1.1.4 it was reported as "out of
+  stock" and tried again.)
+- Faster: the app looks at a product page while it is arriving and starts the purchase the moment the buy box has been read. Until
+  1.1.4 it waited for the whole page (every picture and script), then a fixed quarter second.
+- The checkout is the desktop's own, as of Restalker v155.
+
 # Restalker Mobile 1.1.4 (2026-11-24)
 - The Watch tab's banner is tidy: how many products are watched, and one button that says what it does - "Stop watching" /
   "Start watching". What Restalker is doing right now, how watching works in the background and the linked-desktop line moved to

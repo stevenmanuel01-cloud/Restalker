@@ -245,6 +245,28 @@ class PhoneTests {
         assertTrue("$name: you are told (${x.status})", told(x))
     }
 
+    /** 1.1.5: Amazon's checkout says "purchase limit" - kept for the seller of that offer; that seller's offer is then looked at, not bought. */
+    @Test fun t8f_purchaseLimit_isKeptForTheSeller() {
+        site.limitAtCheckout = true
+        start(false, true, Product(id = "tr", asin = "B0TEST0001", cap = 120.0, buy = true, watch = true))
+        val ended = waitFor(200_000) { val x = p("B0TEST0001"); !x.inProgress && x.limits.isNotEmpty() }
+        Thread.sleep(2_000)
+        var x = p("B0TEST0001")
+        val checkouts = { site.requests.count { it.contains("/checkout/p/") } }
+        val n0 = checkouts()
+        assertTrue("the checkout ended with the limit kept (${x.status})", ended)
+        assertEquals("never an order", 0, site.places)
+        assertTrue("kept for the seller of that offer (${x.limits})", x.limits["ATVPDKIKX0DER"]?.get("name") == "Amazon.com")
+        assertTrue("no failed try is counted, Buy stays on, nothing is locked (${x.fails} ${x.buy} ${x.lockedUntil})", x.fails == 0 && x.buy && x.lockedUntil == 0L && !x.purchased && !x.attempted)
+        // the next look at the same seller's offer: said so, no second checkout
+        val looked = waitFor(150_000) { p("B0TEST0001").status.startsWith("seller limit") }
+        dumpLog("t8_limit")
+        x = p("B0TEST0001")
+        assertTrue("the next look says the seller is limited (${x.status})", looked && x.status.contains("Amazon.com"))
+        assertEquals("no second checkout for that seller", n0, checkouts())
+        assertEquals("still no order", 0, site.places)
+    }
+
     @Test fun t8a_trap_priceHigherAtCheckout() = trap("price", { it.checkoutPrice = 149.99 }) { it.status.startsWith("NOT BOUGHT") }
     @Test fun t8b_trap_shippingOver20() = trap("shipping", { it.shipping = 25.0 }) { it.status.contains("shipping") }
     @Test fun t8c_trap_soldOutAtCheckout() = trap("soldout", { it.soldOutAtCheckout = true }) { it.status.contains("unavailable", true) || it.status.contains("out of stock", true) }
