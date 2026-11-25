@@ -208,11 +208,11 @@ object CoreTests {
             val p = w.p("B0TEST0001")
             !p.purchased && !p.attempted && p.fails == 1 && p.status.startsWith("NOT BOUGHT") && w.said.bought.isEmpty()
         }
-        t("14 three failed checkouts in one restock: stops trying for 10 min and tells you") {
+        t("14 three failed checkouts in one restock: the same offer waits 30 s (1.1.7; until 1.1.6: 10 min) and tells you once") {
             val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.placeFail = 3
             w.check("B0TEST0001"); w.check("B0TEST0001"); w.check("B0TEST0001"); w.check("B0TEST0001")
             val p = w.p("B0TEST0001")
-            w.amz.begins == 3 && p.lockedUntil > w.clock.t && w.said.needYou.any { it.startsWith("Stopped trying") }
+            w.amz.begins == 3 && p.lockedUntil > w.clock.t && p.lockedUntil - w.clock.t <= 30_000 && w.said.needYou.count { it.startsWith("Checkout is not finishing") } == 1
         }
         t("15 no confirmation, but the order is in your orders: counted as bought") {
             val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.noConfirm = true; w.check("B0TEST0001")
@@ -749,8 +749,8 @@ object CoreTests {
             val d = Settings()
             val old = Settings.fromMap(mapOf("watching" to true, "buying" to false, "practice" to true))
             val missing = Settings.fromMap(mapOf("watching" to true))
-            d.buying && !d.practice && d.buyMode == "pc" && !old.buying && old.practice && missing.buying && !missing.practice &&
-                Settings.fromMap(mapOf("buyMode" to "everyone")).buyMode == "pc" &&
+            d.buying && !d.practice && d.buyMode == "both" && !old.buying && old.practice && missing.buying && !missing.practice &&
+                Settings.fromMap(mapOf("buyMode" to "everyone")).buyMode == "both" &&
                 Settings.fromMap(MiniJson.obj(MiniJson.write(Settings(buyMode = "both", buyModeAt = 5).toMap()))).let { it.buyMode == "both" && it.buyModeAt == 5L } }
         // ---- 2.3 (owner, 2026-11-17): each device its own buying choice; Settings, Linked devices; the price bar's labels
         fun hub(): Pair<LinkNet, ArrayList<String>> {
@@ -804,7 +804,7 @@ object CoreTests {
             wb.clock.t += 10_000
             val ok = lb.setFor(phone!!.id, "pc", false)
             la.cycle()
-            val took = wa.store.settings().buyMode == "pc" && !wa.store.settings().failover && wb.store.settings().buyMode == "pc" &&
+            val took = wa.store.settings().buyMode == "pc" && !wa.store.settings().failover && wb.store.settings().buyMode == "both" &&
                 wa.store.log().any { it.contains("changed on Tablet") }
             // an older change (made before the phone's own newest one) is not taken
             wa.store.setSettings { it.copy(buyMode = "both", buyModeAt = wb.clock.t + 60_000) }; la.touched(); la.cycle()
@@ -825,7 +825,7 @@ object CoreTests {
                 "amz" to true, "items" to emptyList<Any>()))))
             la.cycle()
             val d = la.devices("Phone")
-            handed && !la.pcHanded() && la.desktopBuys() && d.size == 2 && d[0].pc && d[1].me && d[1].mode == "pc" }
+            handed && !la.pcHanded() && la.desktopBuys() && d.size == 2 && d[0].pc && d[1].me && d[1].mode == "both" }
         t("124_price_bar_fixed_prices_above_the_cap_alone_below") {
             val all = listOf(PriceMarks.of(399.99, 380.0, 455.88, 410.0), PriceMarks.of(400.0, 405.0, 400.0, 401.0), PriceMarks.of(5.0, 600.0, 4.0, 6.0),
                 PriceMarks.of(1299.0, 1200.0, 323.88, 1250.0, 2000.0))
@@ -1573,7 +1573,7 @@ object CoreTests {
             }
             w.clock.t += 60_000
             desk(mapOf("d" to "p-someone-else", "bm" to "phone", "fo" to true, "at" to w.clock.t / 1000.0)); l.cycle()
-            val notMine = w.store.settings().buyMode == "pc"
+            val notMine = w.store.settings().buyMode == "both"
             w.clock.t += 60_000
             desk(mapOf("d" to dev, "bm" to "both", "fo" to false, "at" to w.clock.t / 1000.0)); l.cycle()
             val took = w.store.settings().let { it.buyMode == "both" && !it.failover } && w.store.log().any { it.contains("changed on the PC") }
@@ -1972,12 +1972,12 @@ object CoreTests {
         t("217_a_page_that_is_still_arriving_is_asked_again_until_its_buy_box_is_complete") {
             val w = World(); w.add("B0TEST0001", 120.0, true)
             repeat(5) { w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "loading", "box" to false, "reason" to "the page is still arriving")) }
-            // (1.1.6: "buyable" while the page is still arriving is not taken yet - the look goes on until the page has been read)
+            // (1.1.7: "buyable" while the page is still arriving IS taken - the fastest way is the default again; see PressLadder)
             w.amz.arriving.add(mapOf("ok" to true, "eligible" to true, "ready" to "loading", "box" to true, "early" to true, "price" to 99.99, "kind" to "buy_now", "title" to "Magic: The Gathering Test Product B0TEST0001 Collector Booster Box"))
             w.amz.arriving.add(mapOf("ok" to true, "eligible" to true, "ready" to "interactive", "box" to true, "price" to 99.99, "kind" to "buy_now", "title" to "Magic: The Gathering Test Product B0TEST0001 Collector Booster Box"))
             val t0 = w.clock.t; w.check("B0TEST0001")
-            // seven looks: the seventh said buyable with the page read -> bought at once; nothing waited for after that (no fixed pause)
-            w.amz.eligibleAsks == 7 && w.amz.places == 1 && w.amz.gotoCount >= 1 && w.clock.t - t0 < 60_000 && !Engine.EARLY_PRESS
+            // six looks: the sixth said buyable while the page was still arriving -> bought at once; nothing waited for after that
+            w.amz.eligibleAsks == 6 && w.amz.places == 1 && w.amz.gotoCount >= 1 && w.clock.t - t0 < 60_000 && w.engine.pressLadderText().contains("Early presses 1,")
         }
         t("218_not_buyable_counts_only_when_the_page_has_been_read") {
             val w = World(); w.add("B0TEST0001", 120.0, true, stock = false)
@@ -2009,6 +2009,78 @@ object CoreTests {
             val said = p1.status.contains("page without the product") && !p1.buyable && w.amz.begins == 0 && !p1.status.startsWith("out of stock") && !p1.status.startsWith("NOT THIS PRODUCT")
             w.clock.t += 60_000; w.check("B0TEST0001")            // the next look gets the real page: bought
             said && w.amz.places == 1
+        }
+        t("220_the_ladder_starts_with_the_fastest_way_and_tries_the_slower_one_only_on_evidence") {
+            var now = 1_000_000L; val l = PressLadder({ now })
+            val a = l.early() && l.stage == "default"
+            repeat(30) { l.press(true) }; repeat(2) { l.press(true); l.junk() }
+            val b = l.early() && l.trials == 0                       // 2 of 32: nothing changes
+            repeat(8) { l.press(true); l.junk() }
+            val c = !l.early() && l.stage == "trial" && l.trials == 1 && l.until - now == PressLadder.TRIAL_MS
+            a && b && c
+        }
+        t("221_the_slower_way_is_kept_only_when_proven_and_ends_by_itself") {
+            var now = 1_000_000L; val l = PressLadder({ now })
+            repeat(4) { l.press(true); l.junk() }
+            repeat(10) { l.press(false) }                            // the trial: ten presses, no such page
+            val proven = l.stage == "hold" && !l.early() && l.proven == 1 && l.hold == PressLadder.HOLD
+            now += PressLadder.HOLD + 1
+            val back = l.early() && l.stage == "retry"               // 30 minutes later: the fastest way again, by itself
+            repeat(3) { l.press(true); l.junk() }; repeat(10) { l.press(false) }
+            val twice = l.stage == "hold" && l.hold == 2 * PressLadder.HOLD          // proven again: twice as long, not for ever
+            now += 2 * PressLadder.HOLD + 1
+            proven && back && twice && l.early()
+        }
+        t("222_a_slower_way_that_is_not_proven_better_is_dropped_at_once_and_not_tried_again_for_2_hours") {
+            var now = 1_000_000L; val l = PressLadder({ now })
+            repeat(3) { l.press(true); l.junk() }
+            repeat(10) { l.press(false); l.junk() }                  // the trial: such pages follow the slower presses too
+            val cleared = l.early() && l.stage == "cleared" && l.proven == 0 && l.quietUntil - now == PressLadder.QUIET
+            repeat(6) { l.press(true); l.junk() }
+            val quiet = l.early() && l.trials == 1                   // no flip-flopping inside the 2 hours
+            val l2 = PressLadder({ now }); repeat(3) { l2.press(true); l2.junk() }; now += PressLadder.TRIAL_MS + 1; l2.press(false)
+            val few = l2.early() && l2.stage == "cleared"            // a trial with too few presses to tell: not proven
+            repeat(20) { l2.press(true) }
+            cleared && quiet && few && l2.stage == "default" && l2.quiet == 0L
+        }
+        t("223_the_ladder_is_kept_across_a_restart_and_a_page_without_the_product_is_counted_once") {
+            var now = 1_000_000L; val l = PressLadder({ now })
+            repeat(4) { l.press(true); l.junk(); l.junk() }          // (the second word about the same page is not a second page)
+            val l2 = PressLadder({ now }, l.save())
+            val l3 = PressLadder({ now }, "not json")
+            now += 121_000; l2.junk()                                // (a page long after the press is not the press's doing)
+            l.earlyJunk == 4 && l2.stage == "trial" && !l2.early() && l2.earlyJunk == 4 && l2.until == l.until && l3.early() && l3.stage == "default"
+        }
+        t("224_the_wait_after_failed_checkouts_grows_30s_1_2_5_min_and_no_longer") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.placeFail = 99
+            val waits = ArrayList<Long>()
+            repeat(3) { w.check("B0TEST0001") }; waits += w.p("B0TEST0001").lockedUntil - w.clock.t
+            repeat(4) { w.clock.t = w.p("B0TEST0001").lockedUntil + 1; w.check("B0TEST0001"); waits += w.p("B0TEST0001").lockedUntil - w.clock.t }
+            val told = w.said.needYou.count { it.startsWith("Checkout is not finishing") }
+            fun near(a: Long, b: Long) = a in (b - 5_000)..b
+            near(waits[0], 30_000) && near(waits[1], 60_000) && near(waits[2], 120_000) && near(waits[3], 300_000) && near(waits[4], 300_000) && told == 1
+        }
+        t("225_a_new_restock_or_another_price_ends_that_wait_at_once") {
+            val w = World(); w.add("B0TEST0001", 120.0, true); w.amz.placeFail = 3
+            repeat(3) { w.check("B0TEST0001") }
+            val waiting = w.p("B0TEST0001").lockedUntil > w.clock.t
+            val b0 = w.amz.begins; w.clock.t += 2_000; w.check("B0TEST0001")
+            val same = w.amz.begins == b0                                               // the same standing offer: it waits
+            w.amz.items["B0TEST0001"]!!.price = 94.99; w.clock.t += 2_000; w.check("B0TEST0001")
+            val price = w.amz.begins == b0 + 1 && w.p("B0TEST0001").purchased          // another price: tried at once (and bought)
+            val w2 = World(); w2.add("B0TEST0001", 120.0, true); w2.amz.placeFail = 3
+            repeat(3) { w2.check("B0TEST0001") }
+            w2.amz.items["B0TEST0001"]!!.stock = false; w2.clock.t += 2_000; w2.check("B0TEST0001")
+            val still = w2.p("B0TEST0001").lockedUntil > w2.clock.t                     // sold out: nothing new yet
+            w2.amz.items["B0TEST0001"]!!.stock = true; w2.clock.t += 2_000; val b2 = w2.amz.begins; w2.check("B0TEST0001")
+            waiting && same && price && still && w2.amz.begins == b2 + 1 && w2.p("B0TEST0001").purchased
+        }
+        t("226_linked_devices_buy_together_by_default_and_a_chosen_who_buys_is_kept") {
+            val fresh = Settings().buyMode == "both" && Settings.fromMap(emptyMap()).buyMode == "both"
+            val oldDefault = Settings.fromMap(mapOf("buyMode" to "pc")).buyMode == "both"                   // "pc" never chosen: it was only the old default
+            val chosenPc = Settings.fromMap(mapOf("buyMode" to "pc", "buyModeAt" to 1_700_000_000_000L)).buyMode == "pc"
+            val chosenPhone = Settings.fromMap(mapOf("buyMode" to "phone")).buyMode == "phone"
+            fresh && oldDefault && chosenPc && chosenPhone && Settings.fromMap(mapOf("buyMode" to "everyone")).buyMode == "both"
         }
         t("209_ws_base64_is_right") {
             fun ok(sx: String) = Ws.b64(sx.toByteArray()) == java.util.Base64.getEncoder().encodeToString(sx.toByteArray())
