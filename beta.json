@@ -1,8 +1,8 @@
 {
- "version": "v155",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v155_update.zip",
- "sha256": "fe9c11cf39f365f333e8a4f30137805906e9eab81dd062f1d9a68a60345924ef",
- "size": 813224,
- "notes": "v155: (1) Amazon's purchase limit is kept PER SELLER: only the seller Amazon refused is left alone for 6 hours; an offer from another seller at or under your cap is still bought (nothing is locked; Buy again ends it). (2) A purchase starts the moment the buy box has been read - the engine no longer waits for the page to be read to its end (about 1 second sooner on your PC's measurements); the other buying browsers look at the page as it arrives, without fixed pauses. (3) The store-reading browsers start with Chrome's sandbox too. (4) Amazon's offers list is read about twice as often.",
+ "version": "v156",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v156_update.zip",
+ "sha256": "4409d0715cab303c5256af6791ac9173402f2066324376b2fe3ece6268e5b7d8",
+ "size": 813637,
+ "notes": "v156 (v155 with one gap closed): (1) Amazon's purchase limit is kept PER SELLER - only the seller Amazon refused is left alone for 6 hours; an offer from another seller at or under your cap is still bought (nothing is locked; Buy again ends it). v156: also when Amazon's limit note appears late on its checkout page; a product of Buy 2 / 3 keeps its own rule. (2) A purchase starts the moment the buy box has been read, not when the page has been read to its end. (3) The store-reading browsers start with Chrome's sandbox too. (4) Amazon's offers list is read about twice as often.",
  "files": 88
 }

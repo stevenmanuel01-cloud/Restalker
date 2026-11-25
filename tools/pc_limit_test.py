@@ -94,4 +94,21 @@ say("14 the limits are kept across a restart of Restalker", AMZ in ab.limits(A))
 # 15. after its start the buying browser gets the whole list
 eng.sent.clear(); ab.push_limits()
 say("15 a buying browser that starts is told every limit", any(m.get("asin") == A and AMZ in m.get("sellers", {}) for m in eng.sent))
+# 16. Buy 2 / Buy 3 keeps its own rule (v118): the store is left out quietly - no per-seller limit, no message
+ab._settings.update(rest={}, limit={}, limit_at={}); events.clear(); asked = []
+real_q = ab.qty_limit_seen
+ab.qty_limit_seen = lambda u, store, text: (asked.append((u, store, text)) or True)
+r16 = ab.amazon_limit(A, "Amazon says you have reached its purchase limit for this item", None, "Amazon", AMZ, "Amazon.com")
+say("16 a product of Buy 2 / 3: its own rule decides (that store is left out quietly) - no message, no per-seller limit", r16 is False and not events and ab.limits(A) == {} and len(asked) == 1 and "limit" in asked[0][2].lower())
+ab.qty_limit_seen = lambda u, store, text: False
+r16b = ab.amazon_limit(A, "", None, "Amazon", AMZ, "Amazon.com")
+say("16b a product of Buy 1: the per-seller limit as above", r16b is True and AMZ in ab.limits(A) and len(events) == 1)
+ab.qty_limit_seen = real_q
+# 17. the older engine's words ("ACTION REQUIRED - STORE LIMIT ...") still lead to a limit (whole listing: they name no seller)
+ab._settings.update(rest={}, limit={}, limit_at={}); events.clear()
+ab._notice(A, {"status": 'ACTION REQUIRED — STORE LIMIT — Amazon will not sell more of it to this account (Amazon says: "Sorry, you\u2019ve reached the purchase limit for this item.")', "hitAt": 71}, {"status": "CHECKOUT RUNNING", "hitAt": 70, "inProgress": True}, {"id": "amazon_star_trek_bundle"})
+say("17 the words of an engine before v156 are still understood (no seller named: the whole listing rests)", "*" in ab.limits(A) and len(events) == 1)
+# 18. switching a listing to Buy always sends Restalker's list to the buying browser (a limit only the browser kept ends too)
+ab._settings.update(armed=[], rest={}, limit={}, limit_at={}); eng.sent.clear(); ab._want(A, True)
+say("18 switching to Buy sends the (empty) list for it to the buying browser", any(m.get("type") == "limit" and m.get("asin") == A and m.get("sellers") == {} for m in eng.sent), eng.sent)
 bad = out.count(False); print(f"SOME FAILED: {bad} of {len(out)}" if bad else f"ALL PASS ({len(out)})"); sys.exit(1 if bad else 0)

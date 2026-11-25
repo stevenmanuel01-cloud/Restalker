@@ -6,7 +6,7 @@ const { chromium } = require('/opt/npm-tools/node_modules/playwright');
 const fs = require('fs'), os = require('os'), path = require('path');
 const ext = path.resolve(process.argv[2]);
 const A = 'B0TESTSL01';
-let seller = { id: 'A1SELLERAAAAAA', name: 'Card Kingdom Games' }, withId = true, reqs = [], price = '89.99';
+let seller = { id: 'A1SELLERAAAAAA', name: 'Card Kingdom Games' }, withId = true, reqs = [], price = '89.99', lateNote = false;
 const page = () => `<!doctype html><html><head><title>Amazon.com: Nauctis Bundle</title></head><body><div id="dp" class="a-container">
 <span id="productTitle">Magic: The Gathering Nauctis: The Sunken Realm Secret Lair Bundle</span>
 <div id="corePrice_feature_div"><span class="a-price"><span class="a-offscreen">$${price}</span></span></div>
@@ -17,7 +17,7 @@ ${withId ? `<input type="hidden" id="merchantID" name="merchantID" value="${sell
 <span id="submit.add-to-cart"><input id="add-to-cart-button" name="submit.add-to-cart" type="submit" value="Add to Cart"></span>
 <span id="submit.buy-now"><input id="buy-now-button" name="submit.buy-now" type="submit" value="Buy Now"></span></form></div>
 <div id="feature-bullets">the rest of the page</div></body></html>`;
-const limited = new Set(['A1SELLERAAAAAA', 'name:nameonly games']);
+const limited = new Set(['A1SELLERAAAAAA', 'name:nameonly games', 'A3SELLERCCCCCC']);
 const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.log((ok ? 'PASS ' : 'FAIL ') + name + (more ? '  | ' + more : '')); };
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rksl'));
@@ -30,6 +30,8 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
       const body = route.request().postData() || '', mid = (body.match(/merchantID=([A-Z0-9]+)/) || [])[1] || ('name:' + seller.name.toLowerCase());
       reqs.push({ t: Date.now(), m: route.request().method(), p: pth.slice(0, 40), seller: mid });
       const lim = limited.has(mid);
+      // (Amazon's note that appears late: put into the page 1.5 s after it loaded, as Amazon's own checkout builds itself)
+      if (lim && lateNote) return route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><html><head><title>Checkout</title></head><body><div id="checkout-main"><h1>Review your order</h1><div data-asin="${A}"><span>Magic: The Gathering Nauctis: The Sunken Realm Secret Lair Bundle</span><div id="late"></div></div></div><script>setTimeout(()=>{document.getElementById('late').innerHTML='<div class="a-alert-content">There was a problem with some of the items in your order (see below for more information): Sorry, you\u2019ve reached the purchase limit for this item. Please remove the item to continue.</div>'},1500)</script></body></html>` });
       return route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><html><head><title>Checkout</title></head><body><div id="checkout-main"><h1>Review your order</h1><div data-asin="${A}"><span>Magic: The Gathering Nauctis: The Sunken Realm Secret Lair Bundle</span><div class="a-alert-content">${lim ? 'There was a problem with some of the items in your order (see below for more information): Sorry, you’ve reached the purchase limit for this item. Please remove the item to continue.' : 'This item is currently unavailable. It has been removed from your order.'}</div></div></div></body></html>` });
     }
     return route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body><h1>stand-in</h1></body></html>' });
@@ -107,6 +109,14 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
   await rearm(); await signal(70); await dash.waitForTimeout(4500);
   s = await state(pid);
   say('12 a price over the cap is never bought, whoever sells', posts(t0).length === 0 && /OVER CAP/.test(String(s.status)), String(s.status).slice(0, 40));
+  // Amazon's note appears LATE (1.5 s after the checkout page): the older "store limit" rule sees it first - same result, same seller
+  await dash.waitForTimeout(12000);
+  price = '89.99'; seller = { id: 'A3SELLERCCCCCC', name: 'Late Note Shop' }; lateNote = true; t0 = Date.now();
+  await SW().evaluate(() => { globalThis.__told = []; });
+  await rearm(); await signal(80); await dash.waitForTimeout(9000);
+  lim = await SW().evaluate((asin) => rkLimitFor(asin), A); told = await SW().evaluate(() => globalThis.__told.filter(m => m && m.type === 'limit'));
+  s = await state(pid);
+  say('13 the limit note appears late on the checkout page: still kept for that seller, Restalker is told, one checkout only', posts(t0).length === 1 && !!(lim && lim['A3SELLERCCCCCC']) && told.length === 1 && told[0].seller === 'A3SELLERCCCCCC' && /purchase limit/i.test(String(s.status)) && !/^ACTION REQUIRED/.test(String(s.status)), posts(t0).length + ' checkout(s); ' + JSON.stringify(Object.keys(lim || {})) + '; ' + String(s.status).slice(0, 90));
   const bad = out.filter((x) => !x[1]).length;
   console.log(bad ? `SOME FAILED: ${bad} of ${out.length}` : `ALL PASS (${out.length})`);
   await ctx.close(); process.exit(bad ? 1 : 0);
