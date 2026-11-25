@@ -35,6 +35,8 @@ object Diag {
         svc?.dataText()?.takeIf { it.isNotEmpty() }?.let { sb.append("$it\n") }
         svc?.let { s -> try { sb.append(s.engine.meter.text(s.rxSinceStart())).append("\n") } catch (e: Exception) { } }
         svc?.let { s -> try { sb.append("When Buy Now is pressed (1.1.7, the ladder): ").append(s.engine.pressLadderText()).append("\n") } catch (e: Exception) { } }
+        sb.append(try { Trackers.status(ctx) } catch (e: Exception) { "Trackers on this phone: ?" }).append("\n")
+        sb.append("Notice from Restalker (1.1.8): last shown number ${s.readFile("notice_seen.txt")?.trim() ?: "none"}\n")
         sb.append("Who buys on Amazon while linked (1.1.7: the default is all devices together - one order, the first at Place your order): ${st.buyMode}" +
             (if (st.buyModeAt > 0) " (chosen)" else " (the default)") + "\n")
         sb.append("Settings: watching=${st.watching} buying=${st.buying} practice=${st.practice} every=${st.intervalSec}s wifiOnly=${st.wifiOnly}" +

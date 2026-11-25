@@ -22,6 +22,25 @@ class ActionReceiver : BroadcastReceiver() {
                 store.log("Restock messages snoozed for 3 hours (purchases and problems are still sent).")
                 NotificationManagerCompat.from(ctx).cancel(Notifier.idFor("r", id))
             }
+            PC_ACT -> {
+                // 1.1.8: a button of one of the PC's messages - its one-time ticket goes back to the PC (sealed, on the fast channel)
+                val nid = intent.getIntExtra("nid", 0)
+                if (nid != 0) NotificationManagerCompat.from(ctx).cancel(nid)
+                store.log("Your answer is on its way to the PC (it does it and tells you).")
+                Thread({ try { DeskLink.get().postGo(linkedMapOf("act" to id, "at" to System.currentTimeMillis() / 1000.0)) } catch (e: Exception) { store.log("The answer could not be sent to the PC (no internet?) - use the PC's own page.") } }, "pc-act").start()
+            }
+            BUY_MORE -> { store.product(id)?.let { Notifier.confirmMore(ctx, it) } }
+            BUY_MORE_YES -> {
+                NotificationManagerCompat.from(ctx).cancel(Notifier.idFor("b", id))
+                val p = store.product(id) ?: return
+                // (the same as Re-arm on the product's page: Buy on again - unless the 3-purchases limit is reached or it has no cap)
+                val lim = com.restalker.mobile.core.Limit.mayBuy(DeskLink.boughtOf(p), DeskLink.master())
+                store.update(p.id) { it.rearmed().let { q -> if (lim) q else q.copy(buy = false) } }
+                store.log("${p.label}: Buy one more (from the notification) - " + when { !lim -> com.restalker.mobile.core.Limit.WORDS
+                    p.cap <= 0 -> "set a cap to buy it."; else -> "Buy is on (it is bought again at the next restock at or under your cap)." })
+                try { if (lim && p.cap > 0) WatchService.instance?.engine?.send(com.restalker.mobile.core.Engine.Cmd.Go(p.asin)) } catch (e: Exception) { }
+            }
+            DISMISS -> { NotificationManagerCompat.from(ctx).cancel(Notifier.idFor(id.take(1), id.drop(1))) }
             HIDDEN -> {
                 if (!Notifier.hidden) store.log("The watching notice was swiped away - watching goes on, and the notice stays away.", quiet = true)
                 Notifier.hidden = true
@@ -39,8 +58,12 @@ class ActionReceiver : BroadcastReceiver() {
         const val SNOOZE = "com.restalker.mobile.SNOOZE"
         const val STOP = "com.restalker.mobile.STOP"
         const val HIDDEN = "com.restalker.mobile.HIDDEN"
-        fun pending(ctx: Context, action: String, id: String): PendingIntent =
-            PendingIntent.getBroadcast(ctx, (action + id).hashCode(), Intent(ctx, ActionReceiver::class.java).setAction(action).putExtra("id", id),
+        const val PC_ACT = "com.restalker.mobile.PC_ACT"
+        const val BUY_MORE = "com.restalker.mobile.BUY_MORE"
+        const val BUY_MORE_YES = "com.restalker.mobile.BUY_MORE_YES"
+        const val DISMISS = "com.restalker.mobile.DISMISS"
+        fun pending(ctx: Context, action: String, id: String, nid: Int = 0): PendingIntent =
+            PendingIntent.getBroadcast(ctx, (action + id).hashCode(), Intent(ctx, ActionReceiver::class.java).setAction(action).putExtra("id", id).putExtra("nid", nid),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 }

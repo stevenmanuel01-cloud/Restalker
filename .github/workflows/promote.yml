@@ -49,7 +49,8 @@ jobs:
         if: steps.copy.outputs.changed != ''
         run: |
           git config user.name "Restalker release"; git config user.email "release@restalker.invalid"
-          git add ${{ steps.copy.outputs.changed }}
+          python3 tools/whats_new.py || true        # (the public "What's new" page: the versions released to everyone)
+          git add ${{ steps.copy.outputs.changed }} WHATS_NEW.md mobile/public_versions.txt
           git commit -m "Release to everyone: ${{ steps.copy.outputs.changed }} [skip ci]"
           git push
       # 1.0: the phone app's version for everyone is also the one on the download page (.../releases/latest) - until now it is a

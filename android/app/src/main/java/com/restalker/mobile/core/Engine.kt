@@ -13,6 +13,8 @@ interface Page {
     /** Asks the Amazon part (amz_part.js) a question; keeps trying while a page is changing. null = no answer in time. */
     fun ask(msg: Map<String, Any?>, timeoutMs: Long = 8_000): Map<String, Any?>?
     fun images(on: Boolean)
+    /** 1.1.8: the look has its answer - whatever the page would still download is not needed (see Engine.openAndRead). */
+    fun stop() {}
     /** The pages opened since the last call (their paths), then forgotten. Used to see that Amazon showed its sign-in page. */
     fun visited(): List<String> = emptyList()
     /** 2.0 (owner: "The app does seem to use the battery fairly quickly"): nothing to look at for a while - the page is closed and its
@@ -338,6 +340,13 @@ class Engine(private val store: Store, private val page: Page, private val alert
         if (over != (store.product(p.id)?.overCap ?: false)) store.update(p.id) { it.copy(overCap = over) }
         // 1.5: the product's picture (Amazon's own, from this page) - once
         if ((store.product(p.id)?.image ?: "").isBlank()) takePicture(p)
+        // 1.1.8 (a report from an unlinked phone, 2026-11-25: "Data used while watching: 11166 MB (about 634 MB an hour)" - 15,769 looks at
+        // about 723 KB each): a look needs the page only until it has its answer - "buyable" the moment the buy box is in, "not
+        // buyable" when the text has been read. Until 1.1.7 the page then went on downloading everything else Amazon puts on a
+        // product page (scripts, styles, late requests, video) until the NEXT look opened. Now the page is stopped right here - unless
+        // this product is set to Buy and is buyable (then the page is needed whole for the checkout that follows).
+        val cur = store.product(p.id)
+        if (!(eligible && cur != null && cur.buy)) { try { page.stop() } catch (e: Exception) { } }
         return true
     }
 

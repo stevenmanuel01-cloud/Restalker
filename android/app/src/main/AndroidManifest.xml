@@ -55,6 +55,17 @@
                 android:value="Watches the store product pages the user chose for restocks and buys them when the user set them to buy." />
         </service>
 
+        <!-- 1.1.8: hears the alerts of the tracker apps the user chose (the user switches it on in Android's own "Notification access") -->
+        <service
+            android:name=".TrackerListener"
+            android:exported="true"
+            android:label="Restalker: restock alerts of your tracker apps"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver android:name=".ActionReceiver" android:exported="false" />
         <receiver android:name=".StandbyAlarm" android:exported="false" />
 

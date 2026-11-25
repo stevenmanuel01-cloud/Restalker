@@ -3,6 +3,7 @@ package com.restalker.mobile
 import com.restalker.mobile.core.Engine
 import com.restalker.mobile.core.LinkCrypto
 import com.restalker.mobile.core.MiniJson
+import com.restalker.mobile.core.asList
 import com.restalker.mobile.core.asMap
 import com.restalker.mobile.core.asStr
 import java.util.concurrent.ConcurrentHashMap
@@ -106,7 +107,8 @@ object GoListener {
             val ti = (al["ti"].asStr() ?: return@let).take(200)
             if (ti.isBlank()) return@let
             heard++
-            try { Notifier.fromPc(RkApp.app, ti, (al["tx"].asStr() ?: "").take(1500), (al["k"].asStr() ?: "").take(20), al["u"].asStr()) } catch (e: Exception) { }
+            val ac = try { al["ac"].asList().mapNotNull { it.asMap() } } catch (e: Exception) { null }
+            try { Notifier.fromPc(RkApp.app, ti, (al["tx"].asStr() ?: "").take(1500), (al["k"].asStr() ?: "").take(20), al["u"].asStr(), ac) } catch (e: Exception) { }
         }
         o["res"].asMap()?.let { r ->
             val a = r["a"].asStr() ?: return@let

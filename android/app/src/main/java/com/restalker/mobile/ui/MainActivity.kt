@@ -1992,9 +1992,21 @@ class MainActivity : ComponentActivity() {
                     SubHead("Words used")
                     Glossary()
                     // 1.1.1 (owner: "i want to be able to save and reload all my data when i download the new app from the play store")
+                    // 1.1.8 (owner: "trackers on the phone")
+                    SubHead("Trackers on this phone")
+                    TrackerRows()
                     SubHead("Your data")
                     DataMoveRows()
                     SubHead("About")
+                    // 1.1.8 (owner, 2026-11-25: "a link in the app to the github which can show all of the revisions and update notes")
+                    Row(Modifier.fillMaxWidth().clickable { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(VERSIONS_URL))) } catch (e: Exception) { } }
+                        .padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 24.dp).testTag("versions"), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("What's new - all versions", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Text("Every released version and what changed in it (you have v$APP_VERSION)", fontSize = 13.sp, color = Look.Muted)
+                        }
+                        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null, tint = Look.Muted)
+                    }
                     Row(Modifier.fillMaxWidth().clickable { try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL))) } catch (e: Exception) { } }
                         .padding(horizontal = 16.dp, vertical = 14.dp).heightIn(min = 24.dp).testTag("privacy"), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -2348,6 +2360,7 @@ class MainActivity : ComponentActivity() {
         val SHARE_URL = if (BuildConfig.PLAY) "https://play.google.com/store/apps/details?id=com.restalker.mobile" else "https://github.com/stevenmanuel01-cloud/Restalker/releases/latest"
         /** 1.0.7: what is sent, to whom, and what stays on the device - also asked for by Google Play. */
         const val PRIVACY_URL = "https://github.com/stevenmanuel01-cloud/Restalker/blob/main/PRIVACY.md"
+        const val VERSIONS_URL = "https://github.com/stevenmanuel01-cloud/Restalker/blob/main/WHATS_NEW.md"
         const val BATTERY_HOW = "In the list that opens: choose \"All apps\" at the top, tap Restalker, then \"Don't optimize\" (or \"Unrestricted\")."
         const val REPORT_WHAT = "the app's log, your product list and what this app bought (no order numbers), and the phone's model - no name, address, password or card"
         const val UPDATE_URL = "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/mobile/latest.json"

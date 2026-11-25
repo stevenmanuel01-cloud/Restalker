@@ -44,7 +44,9 @@ class Notifier(private val ctx: Context) : Alerts {
         val title = if (verified) "BOUGHT: ${p.label}" else "BOUGHT? Check Amazon: ${p.label}"
         val text = (price?.let { "\$${Engine.money(it)}" } ?: "") + (order?.let { " - order $it" } ?: "") +
             if (verified) " - found in your Amazon orders." else " - Amazon showed the order but it is not in your order list yet. Check Amazon."
-        if (wants("bought")) post(idFor("b", p.id), base(CH_BUY, title, text.trim()).addAction(0, "Your orders", openBrowser(Engine.ORDERS_URL, 7)).build())
+        // 1.1.8 (owner: "approve/buy more buttons on app notifications"): Buy one more - asked once more before it is armed again
+        if (wants("bought")) post(idFor("b", p.id), base(CH_BUY, title, text.trim()).addAction(0, "Your orders", openBrowser(Engine.ORDERS_URL, 7))
+            .addAction(0, "Buy one more", ActionReceiver.pending(ctx, ActionReceiver.BUY_MORE, p.id)).build())
         NtfyOut.send("bought", title, text.trim() + " (${DeskLink.name()})", Engine.ORDERS_URL)
     }
 
@@ -148,7 +150,25 @@ class Notifier(private val ctx: Context) : Alerts {
          *  of the linked PC (a purchase there, something that needs you there) - it comes sealed over the relay with this device's
          *  round and is shown as this app's own notification. Not shown when ntfy already shows it on this phone (the PC has ntfy
          *  alerts set up AND the ntfy app is installed here) - nothing arrives twice. The kinds you switched off in Settings stay off. */
-        fun fromPc(ctx: Context, title: String, text: String, kind: String, url: String?) {
+        /** 1.1.8: "Buy one more?" - the second step (a tap on a notification must not buy by accident). */
+        fun confirmMore(ctx: Context, p: Product) {
+            val b = NotificationCompat.Builder(ctx, CH_BUY).setSmallIcon(R.drawable.ic_note).setContentTitle("Buy ONE MORE? ${p.label}")
+                .setContentText("It is set to Buy again and bought at the next restock at or under your cap" + (if (p.cap > 0) " (\$${Engine.money(p.cap)})." else "."))
+                .setAutoCancel(true).setPriority(NotificationCompat.PRIORITY_HIGH).setContentIntent(openMain(ctx))
+                .addAction(0, "Yes, buy one more", ActionReceiver.pending(ctx, ActionReceiver.BUY_MORE_YES, p.id))
+                .addAction(0, "No", ActionReceiver.pending(ctx, ActionReceiver.DISMISS, "b" + p.id))
+            try { NotificationManagerCompat.from(ctx).notify(idFor("b", p.id), b.build()) } catch (e: SecurityException) { }
+        }
+
+        /** 1.1.8: a notice from Restalker to every device (Relay.takeNotice). */
+        fun notice(ctx: Context, id: Long, title: String, text: String) {
+            val b = NotificationCompat.Builder(ctx, CH_NEED).setSmallIcon(R.drawable.ic_note).setContentTitle("Restalker: $title").setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text)).setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT).setCategory(NotificationCompat.CATEGORY_MESSAGE).setContentIntent(openMain(ctx))
+            try { NotificationManagerCompat.from(ctx).notify(idFor("n", id.toString()), b.build()) } catch (e: SecurityException) { }
+        }
+
+        fun fromPc(ctx: Context, title: String, text: String, kind: String, url: String?, actions: List<Map<String, Any?>>? = null) {
             val st = RkApp.store().settings()
             val k = com.restalker.mobile.core.NotifyPrefs.pcKind(kind, title)
             val twice = try { DeskLink.pcHasChannel() && ntfyInstalled(ctx) } catch (e: Exception) { false }
@@ -158,9 +178,19 @@ class Notifier(private val ctx: Context) : Alerts {
             val b = NotificationCompat.Builder(ctx, ch).setSmallIcon(R.drawable.ic_note).setContentTitle("PC: $title").setContentText(text)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(text)).setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH).setCategory(NotificationCompat.CATEGORY_MESSAGE).setContentIntent(openMain(ctx))
-            if (url != null && url.startsWith("https://")) b.addAction(0, "Open", PendingIntent.getActivity(ctx, 1500 + (url.hashCode() and 0xff),
+            // 1.1.8 (owner: "approve/buy more buttons on app notifications"): the PC's own buttons for this message (Approve shipping /
+            // Do not buy / Buy one more ...). A press sends the button's one-time ticket back to the PC, sealed; the PC does it.
+            val nid = idFor("pc", title + text.take(40))
+            var n = 0
+            for (a in com.restalker.mobile.core.PcButtons.take(actions)) {
+                if (a.ticket != null) b.addAction(0, a.label, ActionReceiver.pending(ctx, ActionReceiver.PC_ACT, a.ticket, nid))
+                else if (a.url != null) b.addAction(0, a.label, PendingIntent.getActivity(ctx, 1700 + (a.url.hashCode() and 0xff),
+                    Intent(Intent.ACTION_VIEW, android.net.Uri.parse(a.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+                n++
+            }
+            if (n < 3 && url != null && url.startsWith("https://")) b.addAction(0, "Open", PendingIntent.getActivity(ctx, 1500 + (url.hashCode() and 0xff),
                 Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-            try { NotificationManagerCompat.from(ctx).notify(idFor("pc", title + text.take(40)), b.build()) } catch (e: SecurityException) { }
+            try { NotificationManagerCompat.from(ctx).notify(nid, b.build()) } catch (e: SecurityException) { }
         }
         fun ntfyInstalled(ctx: Context): Boolean = try { ctx.packageManager.getPackageInfo("io.heckel.ntfy", 0); true } catch (e: Exception) { false }
 

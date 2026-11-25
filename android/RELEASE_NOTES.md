@@ -1,3 +1,15 @@
+# Restalker Mobile 1.1.8 (2026-11-25)
+- Trackers on this phone (Settings): if you already get restock alerts from another app - a Discord server, a tracker app, a channel -
+  Restalker can listen to them. You allow it once in Android's "Notification access" and choose which apps are your trackers. When
+  one of them alerts for a product you watch, this phone looks at that product at once (and buys it if it is in stock at or under
+  your cap). An alert's words are never kept or sent; with crowd sharing on, only the product and the tracker's name are shared.
+- Buttons on notifications: "Buy one more" on a purchase (asked once more, then it is set to Buy again), and the PC's own buttons on
+  the PC's messages - Approve shipping / Do not buy / Buy one more - your answer goes back to the PC sealed and the PC does it.
+- Far less data: a look stops the page the moment it has its answer (until now the page went on downloading everything else Amazon
+  puts on it), and fonts and video are not fetched while looking. A report from a phone showed about 720 KB per look.
+- Notices: Restalker can tell every device something important (shown once, plain words).
+- Settings, About: "What's new - all versions" - every released version and what changed in it.
+
 # Restalker Mobile 1.1.7 (2026-11-25)
 - Every linked device buys together (a hard rule): the default for "Who buys" is now "Both buy" - this device starts its checkout at the
   same moment as the PC and your other devices, and the first one at Place your order orders (never two orders). A device on which

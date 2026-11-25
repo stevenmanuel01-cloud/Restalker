@@ -108,6 +108,9 @@ class AmazonWeb(private val appCtx: Context) : Page {
         }
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            // 1.1.8 (data): while only LOOKING (pictures off), fonts and video are not fetched either - a look reads words and prices
+            if (testSite == null) return if (lean && HEAVY.containsMatchIn(request.url.path ?: ""))
+                WebResourceResponse("text/plain", "utf-8", 204, "No Content", emptyMap(), ByteArrayInputStream(ByteArray(0))) else null
             val hook = testSite ?: return null
             val r = hook(request.url.toString(), request.method ?: "GET")
             return if (r == null) WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
@@ -210,7 +213,10 @@ class AmazonWeb(private val appCtx: Context) : Page {
         return null
     }
 
-    override fun images(on: Boolean) = onMain { web.settings.blockNetworkImage = !on }
+    override fun images(on: Boolean) { lean = !on; onMain { web.settings.blockNetworkImage = !on } }
+    /** 1.1.8: stops what the page is still downloading (the page itself stays and can still be asked). */
+    override fun stop() = onMain { try { web.stopLoading() } catch (e: Exception) { } }
+    @Volatile private var lean = false
 
     private val seen = ArrayList<String>()
     override fun visited(): List<String> = synchronized(seen) { val l = seen.toList(); seen.clear(); l }
@@ -225,6 +231,7 @@ class AmazonWeb(private val appCtx: Context) : Page {
     }
 
     companion object {
+        private val HEAVY = Regex("\\.(woff2?|ttf|otf|eot|mp4|webm|m3u8|mpd|m4s|m4v|mp3|aac)$", RegexOption.IGNORE_CASE)
         private val NONE = mapOf<String, Any?>("__none" to true)
         /** Tests only: a stand-in site answers every request (nothing reaches the real internet while it is set). */
         @Volatile var testSite: ((url: String, method: String) -> Pair<String, String>?)? = null
