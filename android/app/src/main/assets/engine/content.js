@@ -826,7 +826,11 @@ async function resume(){
        if(pageShip)return send('ACTION_REQUIRED',p.id,{reason:'Amazon cannot send the product to your address (Amazon says: "'+shipNoteSafe(pageShip)+'") - check the delivery address in your Amazon account'});
      }
      {const lim=notesIn(document,true).concat(notes).find(t=>STORE_LIMIT_RX.test(t));
-      if(lim&&Date.now()-stepT0>800)return send('ACTION_REQUIRED',p.id,{reason:'STORE LIMIT — Amazon will not sell more of it to this account (Amazon says: "'+cleanNote(lim).slice(0,140)+'")'});}
+      // v156: this older rule (v118) saw the same thing as v154's check below - Amazon's limit for this account - but only after 0.8 s,
+      // and told it as "ACTION REQUIRED - STORE LIMIT". Which of the two spoke first depended on how fast Amazon's note appeared. Both
+      // now say the same thing, with the seller of the offer (v155: the limit is kept per seller; Buy 2 / 3 keeps its own rule).
+      if(lim&&Date.now()-stepT0>800){const sl=f?.seller&&f.seller.key?f.seller:{id:'',name:'',key:''};
+        return send('FLOW_BLOCKED',p.id,{reason:'Amazon says you have reached its purchase limit for this item'+(sl.name?' (seller: '+sl.name+')':sl.id?' (seller '+sl.id+')':'')+' — STORE LIMIT (Amazon says: "'+cleanNote(lim).slice(0,120)+'")',limitSeller:sl.key||'*',limitSellerName:sl.name||''})}}
      // (a Buy now checkout that Amazon sent to the cart page without the product: Amazon took it away. Not for a checkout that
      // started from the cart - that page is the cart until it opens the checkout)
      if(!f.perf?.checkoutClickAt&&/\/(?:gp\/)?cart(?:\/|$)/i.test(location.pathname)&&Date.now()-stepT0>1500&&!exactCart(p))
