@@ -617,6 +617,19 @@ function customMetadata(p){const name=productPageTitle();if(!name)return {ok:fal
 // v62 (Restalker): the product page must SHOW the product of Restalker's row before anything is bought - its set name, and its kind in
 // words (a box says box / display / case / "12 packs"; a single pack does not; a bundle says bundle). Diagnostics 60: a single
 // Collector Booster was bought for a Collector Booster BOX row.
+// v157 (diagnostics 100): since v155 this page part is in the page from its first moment, and Amazon sometimes answers with a page that
+// is NOT the product page (it has no product name at all - loaded in a third of a second). Until v156 such a page was judged like a
+// product page: "not the product of your table row: the product name on the page could not be read" (which ended a waiting retry), or,
+// for a listing without a kind, "purchase control unavailable" (which looks like "sold out"). Both were wrong: nothing can be said
+// about the product from such a page. It is now told as what it is - UNREADABLE - with what the page shows (its title and headings,
+// never a personal word), and it is looked at again at once. A page that is still arriving is waited for first.
+const untilRead=(ms=8000)=>new Promise(r=>{if(document.readyState!=='loading')return r(true);let d=false;const f=()=>{if(d)return;d=true;r(true)};document.addEventListener('DOMContentLoaded',f,{once:true});setTimeout(f,ms)});
+function pageLook(){
+ let heads=[];try{heads=[...document.querySelectorAll('h1,h2,h3,h4,[role="heading"]')].map(e=>canon(e.textContent||'')).filter(t=>t.length>2&&t.length<90&&!personalWords(t)).slice(0,3).map(t=>cleanNote(t).slice(0,60))}catch{}
+ let btn=[];try{btn=[...document.querySelectorAll('button,input[type="submit"],a.a-button-text')].map(e=>canon(e.value||e.textContent||'')).filter(t=>t.length>1&&t.length<40).slice(0,3)}catch{}
+ let chars=0;try{chars=(document.body?.innerText||'').length}catch{}
+ return {title:canon(document.title||'').slice(0,80),heads,buttons:btn,chars,html:(document.documentElement?.outerHTML||'').length,ready:document.readyState,path:location.pathname.slice(0,40)};
+}
 function rkShapeProblem(p,title){
  if(!p||(!p.rkShape&&!p.rkTheme))return '';
  const t=String(title||'').toLowerCase().replace(/booster display/g,'booster box').replace(/[^a-z0-9' ]+/g,' ').replace(/\s+/g,' ').trim();
@@ -637,6 +650,7 @@ async function check(p){const ctx=arguments[1]||{};
  if(!Number.isFinite(p.cap)||p.cap<=0)return send('STATUS',p.id,{status:'CAP REQUIRED — not monitoring',price:null});
  if(L.challenge(body()))return send('ACTION_REQUIRED',p.id,{reason:'Amazon verification challenge'});
  if(L.throttled?.(body()))return send('STATUS',p.id,{status:'THROTTLED — Amazon temporarily unavailable; backing off',price:null,retryAfterMs:60000});
+ if(!productPageTitle()){const lk=pageLook();return send('STATUS',p.id,{status:'UNREADABLE — Amazon sent a page without the product ("'+(lk.title||'no title')+'")',price:null,unreadable:lk,retryAfterMs:2500})}
  if(!pageHasProduct(p))return send('STATUS',p.id,{status:'BLOCKED — exact ASIN/product not verified',price:null});
  {const why=rkShapeProblem(p,productPageTitle());if(why)return send('STATUS',p.id,{status:'BLOCKED — not the product of your table row: '+why,price:null});}
  if(p.customProduct){const title=productPageTitle();if(title&&title!==p.name){const tokens=titleTokens(title);if(tokens.length<2)return send('STATUS',p.id,{status:'BLOCKED — custom product title could not be safely tokenized',price:null});const meta=await send('PRODUCT_META',p.id,{name:title,tokens});if(!meta?.ok)return send('STATUS',p.id,{status:'BLOCKED — custom product identity could not be persisted',price:null});p={...p,name:title,tokens};}}
@@ -701,6 +715,7 @@ async function begin(p,lp,hitDetectedAt,eventPushedAt=null){
  const f={id:p.id,seller:buyBoxSeller(),preDom:document.readyState==='loading',lp:fresh,cap:p.cap,asin:p.asin,name:p.name,tokens:Array.isArray(p.tokens)?p.tokens.slice(0,16):[],forbid:Array.isArray(p.forbid)?p.forbid.slice(0,16):[],customProduct:!!p.customProduct,step:'adding',mode:entryKind==='preorder'?'preorder':entryKind==='buy_now'?'buy_now':'fast_cart',priceDeferred:fresh===null,started:Number.isFinite(Number(hitDetectedAt))?Number(hitDetectedAt):Date.now(),addStarted:Date.now(),cartBefore:cartCount(),purchaseClickAt:Date.now(),perf:{eligibleHitAt:Number.isFinite(Number(hitDetectedAt))?Number(hitDetectedAt):Date.now(),eventPushedAt:Number.isFinite(Number(eventPushedAt))&&Number(eventPushedAt)>0?Number(eventPushedAt):null,controlClickAt:Date.now()}};
  if(!await saveFlow(f))return send('FLOW_BLOCKED',p.id,{reason:'Purchase state could not be persisted'});
  try{purchaseButton.click()}catch{await clearFlow();return send('FLOW_BLOCKED',p.id,{reason:'Purchase control click failed'})}
+ void send('RK_PRESS',p.id,{early:!!f.preDom,t:f.addStarted});
  if(f.preDom)void send('RK_PRE_DOM',p.id,{start:true,t:f.addStarted});      // v155: started while the page was still arriving - its arrival at Amazon's next page is watched
 
  // Amazon often adds successfully without navigating or exposing the same confirmation markup.
@@ -954,12 +969,15 @@ if(globalThis.__AMZ_ENABLE_TEST_HOOKS__)globalThis.__AMZ_TEST_HOOKS__={checkoutC
 chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m&&m.type==='RK_FETCH')return false;/* v64: Restalker's page reader (rk_fetch.js) answers that one */(async()=>{
  if(m.type==='RESUME_FLOW'){const f=await loadFlow();if(!f)return r({ok:false});f.approvedShipping=Number(m.approvedShipping);if(Number.isFinite(Number(m.cap))&&Number(m.cap)>0)f.cap=Number(m.cap);f.step='shipping_approval';if(!await saveFlow(f))return r({ok:false});void resumeSafe();return r({ok:true})}
  const base=globalThis.AMAZON_CATALOG.find(x=>x.id===m.product?.id);if(!base&&!m.product?.customProduct)return r({ok:false});const p={...(base||{}),...(m.product||{})};
+ if(m.type==='EXTRACT_CUSTOM_META'&&document.readyState==='loading')await untilRead();
  if(m.type==='EXTRACT_CUSTOM_META')return r(customMetadata(p));
  if(m.type==='REVALIDATE_QUEUED'){
    // v155: asked many times a second while the page is arriving - until a buy button is in the page the answer costs nothing
    // (two lookups by name; the page's text is not read, so the page is not slowed down while it loads)
    if(document.readyState==='loading'&&!document.getElementById('buy-now-button')&&!document.getElementById('add-to-cart-button')&&!document.querySelector('input[name="submit.buy-now"],input[name="submit.add-to-cart"]'))return r({ok:true,eligible:false,ready:'loading',box:false,reason:'the page is still arriving'});
    if(L.challenge(body())||L.throttled?.(body()))return r({ok:true,eligible:false,reason:'Amazon challenge/throttle'});
+   if(!productPageTitle()){const rd=document.readyState;if(rd==='loading')return r({ok:true,eligible:false,ready:rd,box:false,reason:'the page is still arriving'});
+     const lk=pageLook();return r({ok:true,eligible:false,ready:rd,unreadable:lk,reason:'Amazon sent a page without the product ("'+(lk.title||'no title')+'")'})}
    if(!pageHasProduct(p))return r({ok:true,eligible:false,reason:'product identity changed'});
    {const why=rkShapeProblem(p,productPageTitle());if(why)return r({ok:true,eligible:false,reason:'not the product of the table row: '+why});}
    const price=productPrice(p),entry=purchaseEntry(),pre=preorderEvidence();
@@ -969,8 +987,11 @@ chrome.runtime.onMessage.addListener((m,_s,r)=>{if(m&&m.type==='RK_FETCH')return
    // v155: an answer given while the page is still arriving counts only once the buy box is complete (see rkBoxClosed)
    if(eligible&&!box)return r({ok:true,eligible:false,ready,box:false,price:Number.isFinite(price)?price:null,reason:'the buy box is still arriving'});
    if(eligible){const lim=sellerLimited(p);if(lim)return r({ok:true,eligible:false,limited:true,limitSeller:lim.key,limitSellerName:lim.name,ready,box,price:Number.isFinite(price)?price:null,reason:'purchase limit for this seller'+(lim.name?' ('+lim.name+')':'')})}
-   return r({ok:true,eligible,ready,box,early:eligible&&ready==='loading',price:Number.isFinite(price)?price:null,reason:eligible?null:'purchase control no longer available'});
+   // (v157: when it is not buyable, what the buy box shows instead - for the diagnostics)
+   let says=null;if(!eligible){try{says={seeAll:!!document.querySelector('#buybox-see-all-buying-choices,#buybox-see-all-buying-choices-announce'),avail:canon(document.getElementById('availability')?.textContent||document.getElementById('outOfStock')?.textContent||'').slice(0,70)}}catch{}}
+   return r({ok:true,eligible,ready,box,early:eligible&&ready==='loading',price:Number.isFinite(price)?price:null,says,reason:eligible?null:'purchase control no longer available'});
  }
+ if(m.type==='CHECK_PRODUCT'||m.type==='DISCOVER_PRODUCT'||m.type==='EXTRACT_CUSTOM_META'){if(document.readyState==='loading'&&!(m.type==='CHECK_PRODUCT'&&productPageTitle()&&purchaseEntry()))await untilRead()}
  if(m.type==='CHECK_PRODUCT'){watchedProduct={...p};return r((await check(p))||{ok:false})}
  if(m.type==='DISCOVER_PRODUCT'){watchedProduct=null;return r((await discover(p))||{ok:false})}
  if(m.type==='BEGIN_PURCHASE'){{const why=rkShapeProblem(p,productPageTitle());if(why){send('FLOW_BLOCKED',p.id,{reason:'Not bought - this page is not the product of your table row: '+why});return r({ok:false,reason:why})}}void begin(p,m.listingPrice,m.hitDetectedAt).catch(e=>send('FLOW_BLOCKED',p.id,{reason:'Purchase runtime error: '+String(e?.message||e)}));return r({ok:true,started:true})}

@@ -1,3 +1,10 @@
+# Restalker Mobile 1.1.6 (2026-11-24)
+- A purchase starts when the product page has been read (its text is all there) - not while it is still arriving, as 1.1.5 did. On the
+  PC, Amazon answered some purchases that began that early with pages without the product; the PC now measures whether that is the
+  cause. The app still does not wait for pictures and scripts, or a fixed pause, as it did until 1.1.4.
+- A page from Amazon that is not the product page is said so ("Amazon sent a page without the product") - not "out of stock".
+- The checkout is the desktop's own, as of Restalker v157.
+
 # Restalker Mobile 1.1.5 (2026-11-24)
 - Amazon's purchase limit is recognised and kept PER SELLER: when Amazon's checkout says "you've reached the purchase limit for this
   item", that seller's offer is left alone for 6 hours; an offer from another seller at or under your cap is still bought. One

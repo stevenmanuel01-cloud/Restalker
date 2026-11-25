@@ -1972,10 +1972,12 @@ object CoreTests {
         t("217_a_page_that_is_still_arriving_is_asked_again_until_its_buy_box_is_complete") {
             val w = World(); w.add("B0TEST0001", 120.0, true)
             repeat(5) { w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "loading", "box" to false, "reason" to "the page is still arriving")) }
+            // (1.1.6: "buyable" while the page is still arriving is not taken yet - the look goes on until the page has been read)
             w.amz.arriving.add(mapOf("ok" to true, "eligible" to true, "ready" to "loading", "box" to true, "early" to true, "price" to 99.99, "kind" to "buy_now", "title" to "Magic: The Gathering Test Product B0TEST0001 Collector Booster Box"))
+            w.amz.arriving.add(mapOf("ok" to true, "eligible" to true, "ready" to "interactive", "box" to true, "price" to 99.99, "kind" to "buy_now", "title" to "Magic: The Gathering Test Product B0TEST0001 Collector Booster Box"))
             val t0 = w.clock.t; w.check("B0TEST0001")
-            // six looks, the sixth said buyable while the page was still arriving -> bought; nothing waited for after that
-            w.amz.eligibleAsks == 6 && w.amz.places == 1 && w.amz.gotoCount >= 1 && w.clock.t - t0 < 60_000
+            // seven looks: the seventh said buyable with the page read -> bought at once; nothing waited for after that (no fixed pause)
+            w.amz.eligibleAsks == 7 && w.amz.places == 1 && w.amz.gotoCount >= 1 && w.clock.t - t0 < 60_000 && !Engine.EARLY_PRESS
         }
         t("218_not_buyable_counts_only_when_the_page_has_been_read") {
             val w = World(); w.add("B0TEST0001", 120.0, true, stock = false)
@@ -1996,6 +1998,17 @@ object CoreTests {
             val t4 = w4.clock.t; w4.check("B0TEST0004")
             sold && w2.amz.eligibleAsks == 2 && w2.amz.begins == 0 && w2.p("B0TEST0002").overCap && w3.amz.eligibleAsks == 1 &&
                 w4.amz.begins == 0 && w4.clock.t - t4 < Engine.LOOK_MS + 20_000 && w4.amz.eligibleAsks < 400
+        }
+        t("219_a_page_that_is_not_the_product_page_is_said_so_and_nothing_is_bought") {
+            val w = World(); w.add("B0TEST0001", 120.0, true)
+            w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "complete", "reason" to "Amazon sent a page without the product (\"Amazon.com\")", "title" to "Amazon.com"))
+            w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "complete", "reason" to "Amazon sent a page without the product (\"Amazon.com\")", "title" to "Amazon.com"))
+            w.amz.arriving.add(mapOf("ok" to true, "eligible" to false, "ready" to "complete", "reason" to "Amazon sent a page without the product (\"Amazon.com\")", "title" to "Amazon.com"))
+            w.check("B0TEST0001")
+            val p1 = w.p("B0TEST0001")
+            val said = p1.status.contains("page without the product") && !p1.buyable && w.amz.begins == 0 && !p1.status.startsWith("out of stock") && !p1.status.startsWith("NOT THIS PRODUCT")
+            w.clock.t += 60_000; w.check("B0TEST0001")            // the next look gets the real page: bought
+            said && w.amz.places == 1
         }
         t("209_ws_base64_is_right") {
             fun ok(sx: String) = Ws.b64(sx.toByteArray()) == java.util.Base64.getEncoder().encodeToString(sx.toByteArray())
