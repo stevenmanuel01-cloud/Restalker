@@ -97,14 +97,11 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
   console.log('STATUSES ' + JSON.stringify(seen).slice(0, 900));
   say('1 a page without the product is told as UNREADABLE - never as "not the product of your table row" or as sold out', junkServed >= 2 && junkOf() >= 1 && wrongOf().length === 0, junkServed + ' such pages served; wrong answers: ' + JSON.stringify(wrongOf()).slice(0, 160));
   say('2 the waiting retry is kept: when the real page is back, the engine goes to the checkout again by itself', posts >= 2, posts + ' checkouts');
-  say('3 what the page showed is recorded (title, headings, button, size, Amazon\'s answer number) and counted after a press "when the page was read"', !!(ab.ex && /Amazon\.com/.test(ab.ex.title) && ab.ex.heads.join(' ').includes('continue shopping') && ab.ex.code === 200 && ab.ex.after === 'read' && ab.ex.chars < 400) && ab.read.junk >= 1 && ab.read.presses >= 1 && ab.early.presses === 0, JSON.stringify(ab).slice(0, 330));
-  // 2. it happens three times after presses made the "read" way -> early pressing is cleared and comes back by itself
-  junkAfterPost = 1;
-  for (let i = 0; i < 6 && (await SW().evaluate(() => RK_AB.mode)) === 'read'; i++) { stock = false; await rearm(); stock = true; await signal(10 + i); await dash.waitForTimeout(9000); }
-  ab = await SW().evaluate(() => JSON.parse(JSON.stringify({ mode: RK_AB.mode, off: !!RK_EARLY.off, decided: RK_AB.decided, early: RK_AB.early, read: RK_AB.read })));
-  say('4 three such pages after presses made when the page was read: early pressing is cleared by the numbers and switched on again', ab.mode === 'early' && ab.off === false && ab.read.junk >= 3 && /not the cause/.test(ab.decided), JSON.stringify(ab).slice(0, 260));
+  say('3 what the page showed is recorded (title, headings, button, size, Amazon\'s answer number) and counted after the press that came before it', !!(ab.ex && /Amazon\.com/.test(ab.ex.title) && ab.ex.heads.join(' ').includes('continue shopping') && ab.ex.code === 200 && (ab.ex.after === 'read' || ab.ex.after === 'early') && ab.ex.chars < 400) && (ab.read.junk + ab.early.junk) >= 1, JSON.stringify(ab).slice(0, 300));
+  // (v159: what the numbers then DO is the ladder - tested in ladder.js; here only that it starts at the fastest and is kept)
   const kept = await SW().evaluate(async () => (await chrome.storage.local.get('rkAb')).rkAb);
-  say('5 the count and the decision are kept across a restart of the buying browser', !!(kept && kept.mode === 'early' && kept.read && kept.read.junk >= 3), JSON.stringify(kept).slice(0, 120));
+  say('4 v159: the default is the fastest way (press as soon as the buy box is read) - one such page does not change it', ab.mode === 'early' || (ab.early.junk >= 3), JSON.stringify({ mode: ab.mode, early: ab.early, read: ab.read }));
+  say('5 the count is kept across a restart of the buying browser', !!(kept && kept.v === 2 && (kept.read.junk + kept.early.junk) >= 1), JSON.stringify(kept).slice(0, 160));
   // 3. a question that arrives while the page is still arriving is answered from the page once it has been read - never from half a page
   junkAfterPost = 0; stock = false; await rearm(); await dash.waitForTimeout(1500);
   {

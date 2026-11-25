@@ -83,10 +83,10 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
     console.log(`MEASURED (engine before v155) buy box complete at ${D1} ms, page end at ${D1 + D2} ms -> Buy Now pressed ${a.press} ms after the page request`);
     await ctx.close(); server.close(); process.exit(0);
   }
-  // v157: the engine starts in the way of v151-v154 (Buy Now when the page has been read) until its own count clears early pressing
+  // v159: the engine starts with the FASTEST way (Buy Now as soon as the buy box is read); v157/v158 started with the slower one
   let a = await run('boxfirst', 0, 12000);
   const ab0 = await SW().evaluate(() => ({ mode: RK_AB.mode, off: !!RK_EARLY.off, read: RK_AB.read.presses, early: RK_AB.early.presses }));
-  say('0b as delivered, Buy Now is pressed when the page has been read (v157), and the press is counted that way', a.press !== null && a.press >= D1 + D2 && ab0.mode === 'read' && ab0.off === true && ab0.read >= 1 && ab0.early === 0, a.press + ' ms; ' + JSON.stringify(ab0));
+  say('0b as delivered, Buy Now is pressed as soon as the buy box is read - long before the page has been read to its end (v159: the fastest way is the default), and the press is counted that way', a.press !== null && a.press < D1 + D2 - 500 && ab0.mode === 'early' && ab0.off === false && ab0.early >= 1 && ab0.read === 0, a.press + ' ms (page end ' + (D1 + D2) + ' ms); ' + JSON.stringify(ab0));
   await SW().evaluate(() => { RK_AB.mode = 'early'; RK_EARLY.off = false; });          // (the early way, for the checks below)
   // 1. Amazon's own order: buy box first, then title and price, then the long rest of the page
   a = await run('boxfirst', 1);
@@ -138,11 +138,14 @@ const out = []; const say = (name, ok, more) => { out.push([name, ok]); console.
   postMode = 'nowhere'; stock = false; await rearm(); mode = 'boxfirst'; stock = true; const tN = Date.now(); await signal(20);
   let offAt = null; for (let i = 0; i < 300 && offAt === null; i++) { await sleep(500); if (await SW().evaluate(() => !!RK_EARLY.off)) offAt = Date.now() - tN; if (i % 40 === 39) { stock = true; await rearm(); await signal(21 + i); } }
   stock = false;
-  pre = await SW().evaluate(() => ({ starts: RK_PRE.starts, reached: RK_PRE.reached, miss: RK_PRE.miss, off: !!RK_EARLY.off }));
-  say('10 three early starts in a row that arrive nowhere: starting early switches itself off', pre.off === true && pre.miss >= 3, JSON.stringify(pre) + (offAt ? ' after ' + Math.round(offAt / 1000) + ' s' : ''));
+  pre = await SW().evaluate(() => ({ starts: RK_PRE.starts, reached: RK_PRE.reached, miss: RK_PRE.miss, off: !!RK_EARLY.off, offs: RK_PRE.offs, leftMin: Math.round((RK_PRE.offUntil - Date.now()) / 60000), mode: RK_AB.mode }));
+  say('10 three early starts in a row that arrive nowhere: starting early switches itself off - for 10 minutes (v159), not until the browser restarts', pre.off === true && pre.offs === 1 && pre.leftMin >= 8 && pre.leftMin <= 10 && pre.mode === 'early', JSON.stringify(pre) + (offAt ? ' after ' + Math.round(offAt / 1000) + ' s' : ''));
   postMode = 'checkout';
   a = await run('boxfirst', 30, 12000);
-  say('11 after that the engine starts as before v155 (when the page has been read) - it still buys', a.press !== null && a.press >= D1 + D2, a.press + ' ms (page end ' + (D1 + D2) + ' ms)');
+  say('11 while it is off the engine starts as before v155 (when the page has been read) - it still buys', a.press !== null && a.press >= D1 + D2, a.press + ' ms (page end ' + (D1 + D2) + ' ms)');
+  await SW().evaluate(() => { RK_PRE.offUntil = Date.now() - 1; rkEarlyApply(); });
+  a = await run('boxfirst', 31, 12000);
+  say('12 when the 10 minutes are over the early start is back by itself - Buy Now again as soon as the buy box is read', a.press !== null && a.press < D1 + D2 - 500, a.press + ' ms (page end ' + (D1 + D2) + ' ms)');
   const bad = out.filter((x) => !x[1]).length;
   console.log(bad ? `SOME FAILED: ${bad} of ${out.length}` : `ALL PASS (${out.length})`);
   await ctx.close(); server.close(); process.exit(bad ? 1 : 0);
