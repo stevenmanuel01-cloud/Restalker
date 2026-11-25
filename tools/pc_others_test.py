@@ -14,6 +14,7 @@ def center(): return ('<div id="centerCol"><span id="productTitle">%s</span><div
 tail = '</div><div id="feature-bullets">the rest of the page %s</div></div></body></html>' % ("x" * 2000)
 sold = '<div id="centerCol"><span id="productTitle">%s</span><div id="availability"><span>Currently unavailable.</span></div>' % TITLE
 def pieces():
+    if S["mode"] == "junk": return [(0, '<!doctype html><html><head><title>Amazon.com</title></head><body><div class="a-box"><h4>Click the button below to continue shopping</h4><form><button type="submit" class="a-button-text">Continue shopping</button></form></div></body></html>')]
     if not S["stock"]: return [(0, head + sold), (S["D2"], tail)]
     if S["mode"] == "boxfirst": return [(0, head + form_open()), (S["D1"], form_end + center()), (S["D2"], tail)]
     return [(0, head + form_open() + form_end + center() + tail)]
@@ -120,4 +121,9 @@ say("7 a limit for ANOTHER seller does not stop this offer: it is pressed", g["p
 ab._settings["limit"] = {}
 h = run(mode="whole", stock=True)
 say("8 a page that comes in one piece is bought as always", h["posts"] == 1 and h["press"] is not None and h["press"] < 700, "%s ms" % h["press"])
+# 9. Amazon answers with a page without the product (v157/v158): said as that - never as "not your product", nothing pressed
+j = run(mode="junk", stock=True)
+say("9 a page from Amazon without the product: nothing is pressed, and it is NOT taken for 'not your product' (the browser is not stopped for it)", j["posts"] == 0 and j["kind"] == "soldout" and "without the product" in j["why"], "%s: %s" % (j["kind"], j["why"][:90]))
+st9 = [str(x[1]) for x in steps if "product page read" in str(x[1])][-1:]
+say("9b the step says what the page showed (its heading)", bool(st9) and "continue shopping" in st9[0].lower(), st9)
 bad = out.count(False); print(f"SOME FAILED: {bad} of {len(out)}" if bad else f"ALL PASS ({len(out)})"); os._exit(1 if bad else 0)

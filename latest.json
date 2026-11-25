@@ -1,8 +1,8 @@
 {
- "version": "v157",
- "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v157_update.zip",
- "sha256": "e3fdce1d4f2b31edb9c8c3f45752d99987f09881d1e0a60cab8f815156625722",
- "size": 817459,
- "notes": "v157: (1) Amazon sometimes answers with a page that is not the product page (your diagnostics 100: 31 times since v155). Such a page is no longer judged as 'not your product' or 'sold out': it is told as unreadable, looked at again at once, and a waiting retry is kept. (2) Buy Now is pressed when the page has been read again (as v151-v154) while the engine counts whether such pages follow early presses; it switches back to early by itself if the numbers clear it. (3) The diagnostics show what those pages were and what a 'no button' page showed.",
+ "version": "v158",
+ "url": "https://raw.githubusercontent.com/stevenmanuel01-cloud/Restalker/main/releases/restalker_v158_update.zip",
+ "sha256": "cf604fe585e37b8debcd493e67697d7d6316caea443521bd200b8d1fd54284e7",
+ "size": 817444,
+ "notes": "v158 (v157 with one wording fault closed): a page from Amazon without the product is told as unreadable and looked at again - in the other buying browsers too (v157 stopped them with 'not your product' for such a page). Buy Now is pressed when the page has been read while the engine counts whether such pages follow early presses; the diagnostics show what those pages were.",
  "files": 88
 }
