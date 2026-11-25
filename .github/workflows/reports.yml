@@ -25,7 +25,7 @@ jobs:
           set -e
           umask 077; mkdir -p out work
           python3 - <<'PY'
-          import json, os, time, urllib.request
+          import json, os, time, urllib.request, urllib.error
           A, T = os.environ["CLOUDFLARE_ACCOUNT_ID"].strip(), os.environ["CLOUDFLARE_API_TOKEN"].strip()
           req = urllib.request.Request(f"https://api.cloudflare.com/client/v4/accounts/{A}/workers/subdomain", headers={"Authorization": "Bearer " + T})
           sub = json.load(urllib.request.urlopen(req, timeout=30))["result"]["subdomain"]
@@ -33,7 +33,10 @@ jobs:
           since = int((time.time() - hours * 3600) * 1000)
           r = urllib.request.Request(f"https://restalker-relay.{sub}.workers.dev/v1/owner/reports?since={since}",
                                      headers={"Authorization": "Bearer " + os.environ["DIGEST_TOPIC"].strip(), "User-Agent": "restalker-owner"})
-          body = urllib.request.urlopen(r, timeout=60).read()
+          try:
+              body = urllib.request.urlopen(r, timeout=60).read()
+          except urllib.error.HTTPError as e:
+              raise SystemExit("the relay refused: %s %s (the secret here has %d letters)" % (e.code, e.read()[:80], len(os.environ["DIGEST_TOPIC"].strip())))
           d = json.loads(body)
           open("work/reports.json", "wb").write(body)
           print("reports read:", len(d.get("reports") or []), "- sizes:", [len(x.get("text") or "") for x in (d.get("reports") or [])][:20])
