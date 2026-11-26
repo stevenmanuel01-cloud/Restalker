@@ -10,6 +10,57 @@ The PC program updates itself; its title bar shows the version that is running.
 
 ## Restalker Mobile (Android)
 
+### 1.1.8 (2026-11-25)
+
+- Trackers on this phone (Settings): if you already get restock alerts from another app - a Discord server, a tracker app, a channel -
+  Restalker can listen to them. You allow it once in Android's "Notification access" and choose which apps are your trackers. When
+  one of them alerts for a product you watch, this phone looks at that product at once (and buys it if it is in stock at or under
+  your cap). An alert's words are never kept or sent; with crowd sharing on, only the product and the tracker's name are shared.
+- Buttons on notifications: "Buy one more" on a purchase (asked once more, then it is set to Buy again), and the PC's own buttons on
+  the PC's messages - Approve shipping / Do not buy / Buy one more - your answer goes back to the PC sealed and the PC does it.
+- Far less data: a look stops the page the moment it has its answer (until now the page went on downloading everything else Amazon
+  puts on it), and fonts and video are not fetched while looking. A report from a phone showed about 720 KB per look.
+- Notices: Restalker can tell every device something important (shown once, plain words).
+- Settings, About: "What's new - all versions" - every released version and what changed in it.
+- Every linked device buys together (a hard rule): the default for "Who buys" is now "Both buy" - this device starts its checkout at the
+  same moment as the PC and your other devices, and the first one at Place your order orders (never two orders). A device on which
+  you chose "PC only" or "Instead of PC" keeps your choice. Until 1.1.6 the default was "PC only" (this device only watched).
+- The fastest way is the default again: Buy Now is pressed as soon as the buy box has been read, while the page is still arriving.
+  1.1.6 waited for the page to be read on a suspicion. Now the slower way is only TRIED when pages without the product follow early
+  presses, kept only when the numbers prove it better (30 minutes, at most 8 hours), and the fastest way comes back by itself.
+- The wait after checkouts that did not finish is short and never late for news: 30 seconds after three in a row, then 1, 2 and at
+  most 5 minutes while they go on - and a new restock or another price ends the wait at once. Until 1.1.6: 10 minutes, whatever
+  happened meanwhile. One message, not one per try.
+- The diagnostics say how Buy Now is pressed now and why, and who buys.
+- A purchase starts when the product page has been read (its text is all there) - not while it is still arriving, as 1.1.5 did. On the
+  PC, Amazon answered some purchases that began that early with pages without the product; the PC now measures whether that is the
+  cause. The app still does not wait for pictures and scripts, or a fixed pause, as it did until 1.1.4.
+- A page from Amazon that is not the product page is said so ("Amazon sent a page without the product") - not "out of stock".
+- The checkout is the desktop's own, as of Restalker v157.
+- Amazon's purchase limit is recognised and kept PER SELLER: when Amazon's checkout says "you've reached the purchase limit for this
+  item", that seller's offer is left alone for 6 hours; an offer from another seller at or under your cap is still bought. One
+  message, no failed try counted, nothing locked - switch Buy off and on to try sooner. (Until 1.1.4 it was reported as "out of
+  stock" and tried again.)
+- Faster: the app looks at a product page while it is arriving and starts the purchase the moment the buy box has been read. Until
+  1.1.4 it waited for the whole page (every picture and script), then a fixed quarter second.
+- The checkout is the desktop's own, as of Restalker v156 (Amazon's limit note is understood the same way whether it appears at once
+  or a moment later on the checkout page).
+- The Watch tab's banner is tidy: how many products are watched, and one button that says what it does - "Stop watching" /
+  "Start watching". What Restalker is doing right now, how watching works in the background and the linked-desktop line moved to
+  Settings > "Amazon, buying and this phone".
+- Watch all / Buy all: every group on the Watch tab has two buttons for the whole group. Buy all asks for the most you'll pay for
+  the products that have no cap yet; stopping to watch a whole group asks first.
+- Getting started folds to one line (and stays folded), says in a few words what each step is for, and links the setup guide.
+  Every step is optional - for example, skip the Amazon sign-in if you want alerts only.
+- Updates: the yellow line says in plain words where an update stands, shows a turning circle while it is fetched and installed,
+  and its button reads "Install now".
+- After an update the app opens again when its screen was open (Settings > Updates > "Open again after an update"). From Android 10
+  Android allows that only with "Display over other apps"; without it you get a notification to tap. Watching continues either way.
+- Fixed: red marks on products right after an update. A page that fails to load once is no longer flagged - only from the third
+  look in a row.
+- A restock line in Activity now says when NO notification could be shown on this device, and why (for example notifications
+  switched off in the device's settings); a yellow line with a Fix button appears on the Watch tab in that case.
+
 ### 1.1.2 (2026-11-24)
 
 - Faster: while it watches, the app keeps one connection to the Restalker relay open. A restock another Restalker spots, and what your
